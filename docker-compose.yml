@@ -1,0 +1,73 @@
+name: myapp
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: myapp-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-Your_strong_Password123!}"
+    ports:
+      - "14333:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+      - ./init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: >
+        /bin/bash -c '
+        if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then
+          /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -Q "SELECT 1" -b -o /dev/null;
+        elif [ -x /opt/mssql-tools/bin/sqlcmd ]; then
+          /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -Q "SELECT 1" -b -o /dev/null;
+        else
+          timeout 1 bash -c "</dev/tcp/localhost/1433";
+        fi'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: src/MyApp.Api/Dockerfile
+    image: myapp-api:local
+    container_name: myapp-api
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: "http://+:8080"
+      AzureAd__TenantId: "${AZURE_AD_TENANT_ID}"
+      AzureAd__ClientId: "${AZURE_AD_API_CLIENT_ID}"
+      AzureAd__ClientSecret: "${AZURE_AD_CLIENT_SECRET}"
+      AzureAd__Instance: "https://login.microsoftonline.com/"
+      AzureAd__Audience: "api://${AZURE_AD_API_CLIENT_ID}"
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=MyApp;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Password123!};Encrypt=False;TrustServerCertificate=True"
+      Cors__AllowedOrigins__0: "http://localhost:4200"
+      AccessPolicy__AllowedEmailDomains__0: "${ALLOWED_EMAIL_DOMAIN:-example.com}"
+      ExternalApi__BaseUrl: "${EXTERNAL_API_BASE_URL:-}"
+      ExternalApi__ApiKey: "${EXTERNAL_API_KEY:-}"
+    ports:
+      - "5072:8080"
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    image: myapp-web:local
+    container_name: myapp-web
+    depends_on:
+      - api
+    environment:
+      API_UPSTREAM: "http://api:8080"
+      RUNTIME_TENANT_ID: "${AZURE_AD_TENANT_ID}"
+      RUNTIME_WEB_CLIENT_ID: "${AZURE_AD_WEB_CLIENT_ID}"
+      RUNTIME_API_SCOPE: "${AZURE_AD_API_SCOPE}"
+      RUNTIME_API_BASE_URL: "/api"
+    ports:
+      - "4200:80"
+
+volumes:
+  sqlserver-data:

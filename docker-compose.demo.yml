@@ -1,0 +1,53 @@
+# docker-compose.demo.yml
+# -----------------------------------------------------------------------------
+# Demo override that puts an ngrok tunnel in front of the Angular web container
+# so testers can reach a running UAT stack over a single public HTTPS URL.
+#
+# The web container already reverse-proxies "/api" -> the API container
+# (API_UPSTREAM + RUNTIME_API_BASE_URL=/api), so ONE public ngrok URL serves
+# both the SPA and the API. That keeps Entra redirect URIs and CORS to a single
+# origin.
+#
+# Usage (handled for you by ./start-demo.sh):
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+#
+# Requires NGROK_AUTHTOKEN in your .env (a free ngrok account token works).
+# Never commit a real authtoken — keep it only in your local, gitignored .env.
+# -----------------------------------------------------------------------------
+
+services:
+
+  # The public origin = the ngrok URL. The API must allow it via CORS.
+  # start-demo.sh injects the resolved ngrok URL into PUBLIC_URL and recreates
+  # the affected services so cross-origin auth calls work over the tunnel.
+  api:
+    environment:
+      # Allow the ngrok origin (set by start-demo.sh) alongside localhost.
+      Cors__AllowedOrigins__1: "${PUBLIC_URL:-http://localhost:4200}"
+
+  web:
+    environment:
+      # The SPA calls /api on the same (ngrok) origin, so keep it relative.
+      RUNTIME_API_BASE_URL: "/api"
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: myapp-ngrok
+    depends_on:
+      - web
+    environment:
+      NGROK_AUTHTOKEN: "${NGROK_AUTHTOKEN:?Set NGROK_AUTHTOKEN in .env (https://dashboard.ngrok.com/get-started/your-authtoken)}"
+      NGROK_DOMAIN: "${NGROK_DOMAIN:-}"
+    # Tunnel the web container's port 80. --host-header=rewrite makes the
+    # upstream see its own host (avoids virtual-host / cookie issues).
+    # If NGROK_DOMAIN is set (ngrok reserved domain), the URL stays stable
+    # across restarts. If empty, ngrok assigns a random ephemeral URL.
+    # $$ escapes Compose interpolation so the optional --domain flag is built
+    # inside the container shell, not at compose-parse time.
+    command: >
+      sh -c 'ngrok http web:80 --host-header=rewrite --log=stdout
+      $${NGROK_DOMAIN:+--domain=$$NGROK_DOMAIN}'
+    ports:
+      # ngrok's local inspection/API dashboard — start-demo.sh queries this to
+      # discover the public URL programmatically.
+      - "4040:4040"
