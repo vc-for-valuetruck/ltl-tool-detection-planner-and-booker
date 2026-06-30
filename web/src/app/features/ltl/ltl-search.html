@@ -291,7 +291,7 @@
   <!-- ===================== BILLING WORKLIST TAB ===================== -->
   @if (tab() === 'billing') {
     <div class="worklist-bar">
-      <select name="worklistBadge" [(ngModel)]="worklistBadge" (ngModelChange)="loadWorklist()">
+      <select name="worklistBadge" [ngModel]="worklistBadge()" (ngModelChange)="worklistBadge.set($event); loadWorklist()">
         <option value="">All needing attention</option>
         @for (b of billingBadges; track b) {
           <option [value]="b">{{ badgeText(b) }}</option>
