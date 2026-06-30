@@ -35,6 +35,19 @@ export type BillingBadge =
 
 export type AssignmentState = 'Unassigned' | 'Assigned' | 'Unknown';
 
+export type WorkflowStage = 'Match' | 'Assign' | 'Bill' | 'Billed';
+
+export interface WorkflowState {
+  stage: WorkflowStage;
+  stageLabel: string;
+  /** 1-based position in the Search→Match→Assign→Bill stepper (Search=1 … Bill/Billed=4). */
+  stepIndex: number;
+  recommendedAction: string;
+  evidence: string[];
+  isBlocked: boolean;
+  blockers: string[];
+}
+
 export type MatchFactorStatus = 'Strong' | 'Neutral' | 'Weak' | 'Unavailable';
 
 export type LtlSortField =
@@ -115,6 +128,7 @@ export interface LtlLoadSummary {
   exceptions: LtlExceptionFlag[];
   hasExceptions: boolean;
   visibility: VisibilityContext;
+  workflow: WorkflowState;
 }
 
 export interface LtlSearchResponse {
@@ -210,6 +224,8 @@ export interface LtlSearchQuery {
   missingBillingData?: boolean;
   exceptionsOnly?: boolean;
   billingBadge?: BillingBadge;
+  stage?: WorkflowStage;
+  blockedOnly?: boolean;
   sort?: LtlSortField;
   sortDescending?: boolean;
   page?: number;

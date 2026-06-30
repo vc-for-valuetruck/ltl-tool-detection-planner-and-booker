@@ -23,8 +23,10 @@ internal static class LtlTestFactory
     public static BillingReadinessService Billing(LtlOptions? options = null) =>
         new(Options(options), Clock());
 
+    public static WorkflowStageService Workflow() => new();
+
     public static LtlNormalizationService Normalizer(LtlOptions? options = null) =>
-        new(Options(options), Billing(options));
+        new(Options(options), Billing(options), Workflow());
 
     public static MatchScoringService Scorer(LtlOptions? options = null) =>
         new(Options(options), Clock());

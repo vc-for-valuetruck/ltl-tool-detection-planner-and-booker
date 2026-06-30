@@ -300,6 +300,8 @@ public sealed class LtlLoadService(
         if (q.MissingBillingData && s.Billing.MissingFields.Count == 0) return false;
         if (q.ExceptionsOnly && !s.HasExceptions) return false;
         if (q.BillingBadge is not null && !s.Billing.Badges.Contains(q.BillingBadge.Value)) return false;
+        if (q.Stage is not null && s.Workflow.Stage != q.Stage.Value) return false;
+        if (q.BlockedOnly && !s.Workflow.IsBlocked) return false;
 
         if (!string.IsNullOrWhiteSpace(q.OriginState) && !EqualsCi(s.Origin?.State, q.OriginState)) return false;
         if (!string.IsNullOrWhiteSpace(q.DestinationState) && !EqualsCi(s.Destination?.State, q.DestinationState)) return false;

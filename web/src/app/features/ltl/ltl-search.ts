@@ -14,6 +14,7 @@ import {
   LtlSortField,
   MatchResult,
   VisibilityEventView,
+  WorkflowStage,
 } from './ltl.models';
 
 type ConsoleTab = 'search' | 'billing' | 'exceptions';
@@ -44,10 +45,12 @@ interface FilterState {
   deliveryFrom: string;
   deliveryTo: string;
   billingBadge: BillingBadge | '';
+  stage: WorkflowStage | '';
   ltlOnly: boolean;
   readyToBill: boolean;
   missingBillingData: boolean;
   exceptionsOnly: boolean;
+  blockedOnly: boolean;
 }
 
 const EMPTY_FILTERS: FilterState = {
@@ -64,10 +67,12 @@ const EMPTY_FILTERS: FilterState = {
   deliveryFrom: '',
   deliveryTo: '',
   billingBadge: '',
+  stage: '',
   ltlOnly: false,
   readyToBill: false,
   missingBillingData: false,
   exceptionsOnly: false,
+  blockedOnly: false,
 };
 
 /** Local midnight ISO date (yyyy-MM-dd) offset by a number of days from today. */
@@ -78,6 +83,30 @@ function isoDay(offsetDays = 0): string {
 }
 
 const SAVED_VIEWS: SavedView[] = [
+  {
+    id: 'needs-match',
+    label: 'Needs Match',
+    description: 'Unassigned loads awaiting capacity',
+    filters: { stage: 'Match' },
+  },
+  {
+    id: 'in-flight',
+    label: 'In Flight',
+    description: 'Assigned loads moving toward delivery',
+    filters: { stage: 'Assign' },
+  },
+  {
+    id: 'needs-billing',
+    label: 'Needs Billing',
+    description: 'Delivered loads not yet invoiced',
+    filters: { stage: 'Bill' },
+  },
+  {
+    id: 'blocked',
+    label: 'Blocked',
+    description: 'Loads that cannot advance until a gap is resolved',
+    filters: { blockedOnly: true },
+  },
   {
     id: 'unassigned',
     label: 'Unassigned LTL',
@@ -145,6 +174,16 @@ const COLUMNS: SortableColumn[] = [
   { field: 'BillingReadiness', label: 'Billing' },
 ];
 
+/** Ordered Search → Match → Assign → Bill steps for the workflow stepper. */
+const WORKFLOW_STEPS: { index: number; label: string }[] = [
+  { index: 1, label: 'Search' },
+  { index: 2, label: 'Match' },
+  { index: 3, label: 'Assign' },
+  { index: 4, label: 'Bill' },
+];
+
+const WORKFLOW_STAGES: WorkflowStage[] = ['Match', 'Assign', 'Bill', 'Billed'];
+
 const BILLING_BADGES: BillingBadge[] = [
   'ReadyToBill',
   'MissingRate',
@@ -174,6 +213,8 @@ export class LtlSearch {
   protected readonly savedViews = SAVED_VIEWS;
   protected readonly columns = COLUMNS;
   protected readonly billingBadges = BILLING_BADGES;
+  protected readonly workflowStages = WORKFLOW_STAGES;
+  protected readonly workflowSteps = WORKFLOW_STEPS;
 
   protected readonly tab = signal<ConsoleTab>('search');
 
@@ -244,10 +285,12 @@ export class LtlSearch {
     if (f.deliveryFrom) push('deliveryFrom', `Delivery ≥ ${f.deliveryFrom}`);
     if (f.deliveryTo) push('deliveryTo', `Delivery ≤ ${f.deliveryTo}`);
     if (f.billingBadge) push('billingBadge', this.badgeText(f.billingBadge));
+    if (f.stage) push('stage', `Stage: ${f.stage}`);
     if (f.ltlOnly) push('ltlOnly', 'LTL only');
     if (f.readyToBill) push('readyToBill', 'Ready to bill');
     if (f.missingBillingData) push('missingBillingData', 'Missing billing');
     if (f.exceptionsOnly) push('exceptionsOnly', 'Exceptions');
+    if (f.blockedOnly) push('blockedOnly', 'Blocked only');
     return out;
   });
 
@@ -531,10 +574,12 @@ export class LtlSearch {
       deliveryFrom: f.deliveryFrom || undefined,
       deliveryTo: f.deliveryTo || undefined,
       billingBadge: f.billingBadge || undefined,
+      stage: f.stage || undefined,
       ltlOnly: f.ltlOnly || undefined,
       readyToBill: f.readyToBill || undefined,
       missingBillingData: f.missingBillingData || undefined,
       exceptionsOnly: f.exceptionsOnly || undefined,
+      blockedOnly: f.blockedOnly || undefined,
       sort: this.sort(),
       sortDescending: this.sortDescending(),
       page: this.page(),
@@ -566,6 +611,27 @@ export class LtlSearch {
 
   protected badgeText(badge: string): string {
     return badge.replace(/([a-z])([A-Z])/g, '$1 $2');
+  }
+
+  protected stageClass(stage: WorkflowStage, blocked: boolean): string {
+    if (blocked) return 'stage stage-blocked';
+    switch (stage) {
+      case 'Match':
+        return 'stage stage-match';
+      case 'Assign':
+        return 'stage stage-assign';
+      case 'Bill':
+        return 'stage stage-bill';
+      default:
+        return 'stage stage-billed';
+    }
+  }
+
+  /** Stepper cell state for a given step index against the load's current step. */
+  protected stepClass(stepIndex: number, current: number, blocked: boolean): string {
+    if (stepIndex < current) return 'step step-done';
+    if (stepIndex === current) return blocked ? 'step step-current step-blocked' : 'step step-current';
+    return 'step step-todo';
   }
 
   protected matchClass(label: string): string {

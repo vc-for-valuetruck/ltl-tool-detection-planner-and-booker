@@ -10,7 +10,7 @@ namespace LtlTool.Api.Features.Ltl;
 /// <see cref="MissingDataFlag"/> rather than coercing it to a default.
 /// </summary>
 public sealed class LtlNormalizationService(
-    IOptions<LtlOptions> options, BillingReadinessService billing)
+    IOptions<LtlOptions> options, BillingReadinessService billing, WorkflowStageService workflow)
 {
     private readonly LtlOptions _options = options.Value;
 
@@ -90,6 +90,16 @@ public sealed class LtlNormalizationService(
         if (extraExceptions is { Count: > 0 })
             exceptions = [.. exceptions, .. extraExceptions];
 
+        var assignment = DeriveAssignment(load.Status);
+        var status = string.IsNullOrWhiteSpace(load.Status) ? "Unknown" : load.Status;
+        var actualDelivery = load.ActualDeliveryAt ?? load.DeliveredAt;
+        var visibilityContext = visibility ?? VisibilityContext.NotEvaluated;
+        var delivered = actualDelivery is not null || BillingReadinessService.IsDeliveredStatus(load.Status);
+
+        var workflowState = workflow.Evaluate(
+            assignment, status, billingResult, exceptions, missing, visibilityContext,
+            delivered, hasRevenue: revenue is not null);
+
         return new LtlLoadSummary
         {
             Id = load.Id,
@@ -98,14 +108,14 @@ public sealed class LtlNormalizationService(
             PoNumber = load.PONumber,
             CustomerId = load.CustomerId,
             CustomerName = load.CustomerName,
-            Status = string.IsNullOrWhiteSpace(load.Status) ? "Unknown" : load.Status,
-            Assignment = DeriveAssignment(load.Status),
+            Status = status,
+            Assignment = assignment,
             Origin = origin,
             Destination = destination,
             ScheduledPickupAt = scheduledPickup,
             ScheduledDeliveryAt = scheduledDelivery,
             ActualPickupAt = load.ActualPickupAt ?? load.PickedUpAt,
-            ActualDeliveryAt = load.ActualDeliveryAt ?? load.DeliveredAt,
+            ActualDeliveryAt = actualDelivery,
             Equipment = equipment,
             WeightLbs = load.Weight is > 0 ? load.Weight : null,
             Volume = load.Volume is > 0 ? load.Volume : null,
@@ -117,7 +127,8 @@ public sealed class LtlNormalizationService(
             MissingData = missing,
             Billing = billingResult,
             Exceptions = exceptions,
-            Visibility = visibility ?? VisibilityContext.NotEvaluated,
+            Visibility = visibilityContext,
+            Workflow = workflowState,
         };
     }
 
