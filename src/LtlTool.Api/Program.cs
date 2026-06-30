@@ -4,12 +4,17 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
 using LtlTool.Api.Data;
 using LtlTool.Api.Features.Integrations.Alvys;
+using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Options;
 using LtlTool.Api.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(o =>
+        o.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -50,6 +55,10 @@ builder.Services.AddHttpClient("ExternalApi", (sp, client) =>
 // Alvys TMS integration. Live Alvys is the default source of truth for LTL data;
 // credentials stay server-side and are never exposed to the Angular SPA.
 builder.Services.AddAlvysIntegration(builder.Configuration);
+
+// LTL decision-support layer (normalization, billing readiness, match scoring, search,
+// internal assignment audit) on top of the read-only Alvys integration.
+builder.Services.AddLtlDecisionSupport(builder.Configuration);
 
 // CORS for the SPA.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
