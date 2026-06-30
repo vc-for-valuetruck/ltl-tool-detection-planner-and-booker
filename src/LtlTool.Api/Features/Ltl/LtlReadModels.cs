@@ -253,6 +253,8 @@ public sealed class LtlSearchQuery
     public List<string>? Status { get; set; }
     public DateTimeOffset? PickupFrom { get; set; }
     public DateTimeOffset? PickupTo { get; set; }
+    public DateTimeOffset? DeliveryFrom { get; set; }
+    public DateTimeOffset? DeliveryTo { get; set; }
 
     /// <summary>Filter by assignment state (unassigned/assigned). Null = no filter.</summary>
     public AssignmentState? Assignment { get; set; }
@@ -262,6 +264,9 @@ public sealed class LtlSearchQuery
     public bool ReadyToBill { get; set; }
     public bool MissingBillingData { get; set; }
     public bool ExceptionsOnly { get; set; }
+
+    /// <summary>Filter to loads carrying a specific billing-readiness badge. Null = no filter.</summary>
+    public BillingBadge? BillingBadge { get; set; }
 
     public LtlSortField Sort { get; set; } = LtlSortField.PickupDate;
     public bool SortDescending { get; set; }

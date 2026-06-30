@@ -17,6 +17,47 @@ public sealed class AssignmentRequest
 
     /// <summary>Optional free-text justification from the dispatcher.</summary>
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Dispatcher acknowledgement when assigning over one or more non-blocking warnings. Captured
+    /// on the audit so an override is traceable to a person and a reason.
+    /// </summary>
+    public string? OverrideReason { get; set; }
+}
+
+/// <summary>Severity of an assignment-validation finding.</summary>
+public enum AssignmentIssueSeverity
+{
+    /// <summary>Hard rule violation — the internal assignment is refused.</summary>
+    Block,
+    /// <summary>Soft concern — the assignment is allowed but the warning is recorded.</summary>
+    Warn,
+}
+
+/// <summary>A single explainable assignment-validation finding.</summary>
+public sealed class AssignmentIssue
+{
+    public required string Code { get; init; }
+    public required string Message { get; init; }
+    public required AssignmentIssueSeverity Severity { get; init; }
+}
+
+/// <summary>
+/// Outcome of validating a proposed internal assignment against the normalized load and the
+/// resolved fleet candidate. Blockers refuse the assignment; warnings are allowed through (and
+/// recorded on the audit) so the dispatcher keeps control while the decision stays traceable.
+/// </summary>
+public sealed class AssignmentValidationResult
+{
+    public IReadOnlyList<AssignmentIssue> Issues { get; init; } = [];
+
+    public IEnumerable<AssignmentIssue> Blockers =>
+        Issues.Where(i => i.Severity == AssignmentIssueSeverity.Block);
+
+    public IEnumerable<AssignmentIssue> Warnings =>
+        Issues.Where(i => i.Severity == AssignmentIssueSeverity.Warn);
+
+    public bool HasBlockers => Issues.Any(i => i.Severity == AssignmentIssueSeverity.Block);
 }
 
 /// <summary>
@@ -34,6 +75,15 @@ public sealed class AssignmentAudit
     public int? MatchScore { get; init; }
     public string? MatchLabel { get; init; }
     public string? Notes { get; init; }
+
+    /// <summary>Dispatcher acknowledgement recorded when assigning over warnings.</summary>
+    public string? OverrideReason { get; init; }
+
+    /// <summary>
+    /// Non-blocking validation warnings present at decision time (e.g. equipment mismatch, tight
+    /// window, missing billing data). Captured so the override is fully explainable after the fact.
+    /// </summary>
+    public IReadOnlyList<AssignmentIssue> Warnings { get; init; } = [];
 
     /// <summary>The authenticated user who recorded the decision.</summary>
     public required string RecordedBy { get; init; }
@@ -54,7 +104,9 @@ public sealed class AssignmentAudit
 /// </summary>
 public interface IAssignmentAuditStore
 {
-    AssignmentAudit Record(string loadId, AssignmentRequest request, string recordedBy);
+    AssignmentAudit Record(
+        string loadId, AssignmentRequest request, string recordedBy,
+        IReadOnlyList<AssignmentIssue>? warnings = null);
     IReadOnlyList<AssignmentAudit> ForLoad(string loadId);
 }
 
@@ -67,7 +119,9 @@ public sealed class InMemoryAssignmentAuditStore : IAssignmentAuditStore
     private readonly ConcurrentDictionary<string, List<AssignmentAudit>> _byLoad = new();
     private readonly object _gate = new();
 
-    public AssignmentAudit Record(string loadId, AssignmentRequest request, string recordedBy)
+    public AssignmentAudit Record(
+        string loadId, AssignmentRequest request, string recordedBy,
+        IReadOnlyList<AssignmentIssue>? warnings = null)
     {
         var audit = new AssignmentAudit
         {
@@ -79,6 +133,8 @@ public sealed class InMemoryAssignmentAuditStore : IAssignmentAuditStore
             MatchScore = request.MatchScore,
             MatchLabel = request.MatchLabel,
             Notes = request.Notes,
+            OverrideReason = request.OverrideReason,
+            Warnings = warnings ?? [],
             RecordedBy = recordedBy,
             RecordedAt = DateTimeOffset.UtcNow,
         };

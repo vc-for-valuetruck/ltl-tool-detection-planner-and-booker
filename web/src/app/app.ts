@@ -11,7 +11,7 @@ import { RUNTIME_CONFIG, isAuthConfigured } from './runtime-config';
       <h1>LTL Tool Detection, Planner, and Booker</h1>
       <nav class="app-nav">
         <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Home</a>
-        <a routerLink="/ltl" routerLinkActive="active">LTL Loads</a>
+        <a routerLink="/ltl" routerLinkActive="active">LTL Console</a>
       </nav>
       <span class="auth-state" [class.ok]="authConfigured">
         {{ authConfigured ? 'Auth configured' : 'Auth not configured' }}

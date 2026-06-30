@@ -38,6 +38,39 @@ public sealed class MatchService(
             .ToList();
     }
 
+    /// <summary>
+    /// Resolves a single <see cref="MatchCandidate"/> from the read-only fleet master data by the
+    /// ids on a proposed assignment. Members that are not supplied or do not resolve are left null
+    /// (the validator treats absent equipment/driver as unconfirmed rather than inventing it).
+    /// </summary>
+    public async Task<MatchCandidate> ResolveCandidateAsync(
+        string? driverId, string? truckId, string? trailerId, CancellationToken ct)
+    {
+        var pageSize = _options.AlvysPageSize;
+
+        var driversTask = string.IsNullOrWhiteSpace(driverId)
+            ? Task.FromResult(new AlvysDriversResponse())
+            : alvys.SearchDriversAsync(new DriverSearchRequest { PageSize = pageSize }, ct);
+        var trucksTask = string.IsNullOrWhiteSpace(truckId)
+            ? Task.FromResult(new AlvysTrucksResponse())
+            : alvys.SearchTrucksAsync(new TruckSearchRequest { PageSize = pageSize }, ct);
+        var trailersTask = string.IsNullOrWhiteSpace(trailerId)
+            ? Task.FromResult(new AlvysTrailersResponse())
+            : alvys.SearchTrailersAsync(new TrailerSearchRequest { PageSize = pageSize }, ct);
+
+        await Task.WhenAll(driversTask, trucksTask, trailersTask);
+
+        return new MatchCandidate
+        {
+            Driver = (await driversTask).Items.FirstOrDefault(d => IdEquals(d.Id, driverId)),
+            Truck = (await trucksTask).Items.FirstOrDefault(t => IdEquals(t.Id, truckId)),
+            Trailer = (await trailersTask).Items.FirstOrDefault(t => IdEquals(t.Id, trailerId)),
+        };
+    }
+
+    private static bool IdEquals(string? a, string? b) =>
+        !string.IsNullOrWhiteSpace(a) && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
     private async Task<IReadOnlyList<MatchCandidate>> AssembleCandidatesAsync(CancellationToken ct)
     {
         var pageSize = _options.AlvysPageSize;

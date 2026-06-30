@@ -20,7 +20,9 @@ public sealed class LtlControllerTests
         var normalizer = LtlTestFactory.Normalizer();
         var loadService = new LtlLoadService(client, normalizer, options);
         var matchService = new MatchService(client, LtlTestFactory.Scorer(), options);
-        var controller = new LtlController(loadService, matchService, store ?? new InMemoryAssignmentAuditStore());
+        var validation = new AssignmentValidationService(options, LtlTestFactory.Clock());
+        var controller = new LtlController(
+            loadService, matchService, validation, store ?? new InMemoryAssignmentAuditStore());
 
         var identity = user is null ? new ClaimsIdentity() : new ClaimsIdentity([new Claim("preferred_username", user)], "test");
         controller.ControllerContext = new ControllerContext
@@ -106,6 +108,59 @@ public sealed class LtlControllerTests
         Assert.Equal("dispatcher@valuetruck.com", audit.RecordedBy);
         Assert.Equal("DR1", audit.DriverId);
         Assert.Single(store.ForLoad("L1"));
+    }
+
+    [Fact]
+    public async Task Assign_blocks_with_422_when_no_driver_selected()
+    {
+        var client = new FakeAlvysClient { LoadDetail = new AlvysLoad { Id = "L1", Status = "Open" } };
+        var store = new InMemoryAssignmentAuditStore();
+
+        var result = await Build(client, store).Assign("L1", new AssignmentRequest(), default);
+
+        var unprocessable = Assert.IsType<UnprocessableEntityObjectResult>(result.Result);
+        var validation = Assert.IsType<AssignmentValidationResult>(unprocessable.Value);
+        Assert.Contains(validation.Blockers, i => i.Code == "NO_DRIVER");
+        Assert.Empty(store.ForLoad("L1"));
+    }
+
+    [Fact]
+    public async Task Assign_records_override_warnings_on_audit()
+    {
+        var client = new FakeAlvysClient
+        {
+            LoadDetail = new AlvysLoad { Id = "L1", Status = "Open" },
+            Drivers = [new AlvysDriver { Id = "DR1", Name = "Sam", IsActive = true }],
+        };
+        var store = new InMemoryAssignmentAuditStore();
+        var request = new AssignmentRequest { DriverId = "DR1", OverrideReason = "Customer waiting" };
+
+        var result = await Build(client, store).Assign("L1", request, default);
+
+        var created = Assert.IsType<CreatedAtActionResult>(result.Result);
+        var audit = Assert.IsType<AssignmentAudit>(created.Value);
+        Assert.Equal("Customer waiting", audit.OverrideReason);
+        // No rate/weight/lane on the bare load → billing warnings recorded for traceability.
+        Assert.Contains(audit.Warnings, w => w.Code == "MISSING_RATE");
+    }
+
+    [Fact]
+    public async Task Search_filters_by_billing_badge()
+    {
+        var client = new FakeAlvysClient
+        {
+            Loads =
+            [
+                new AlvysLoad { Id = "L1", Status = "Open", CustomerName = "Acme" },
+                new AlvysLoad { Id = "L2", Status = "Open", CustomerName = "Globex", CustomerRate = 500m, Weight = 1000m },
+            ],
+        };
+
+        var query = new LtlSearchQuery { BillingBadge = BillingBadge.MissingRate };
+        var body = Body(await Build(client).Search(query, default));
+
+        Assert.All(body.Items, s => Assert.Contains(BillingBadge.MissingRate, s.Billing.Badges));
+        Assert.Contains(body.Items, s => s.Id == "L1");
     }
 
     [Fact]
