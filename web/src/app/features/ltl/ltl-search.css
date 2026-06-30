@@ -587,3 +587,60 @@ button.primary {
 .drawer {
   width: min(480px, 100%);
 }
+
+/* Workflow stage badge + drawer stepper */
+.stage {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.stage-match { background: #eef2ff; color: #2b59c3; }
+.stage-assign { background: #e9f0fe; color: #1a4ba0; }
+.stage-bill { background: #fff3d6; color: #8a5a00; }
+.stage-billed { background: #e3f6e8; color: #1b6b32; }
+.stage-blocked { background: #fdecef; color: #b00020; }
+
+.stepper {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  font-size: 0.78rem;
+}
+.step { color: #aaa; }
+.step::after { content: '›'; margin-left: 0.4rem; color: #ccc; }
+.step:last-child::after { content: ''; }
+.step-done, .step-current { color: #2b59c3; font-weight: 600; }
+.step-current { text-decoration: underline; }
+.step-blocked { color: #b00020; font-weight: 600; }
+
+.next-action {
+  display: flex;
+  gap: 0.5rem;
+  background: #f6f7fb;
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.85rem;
+}
+.next-action.blocked { background: #fdecef; }
+.next-label {
+  font-weight: 700;
+  font-size: 0.68rem;
+  color: #2b59c3;
+  white-space: nowrap;
+}
+.next-action.blocked .next-label { color: #b00020; }
+.evidence {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: #888;
+}

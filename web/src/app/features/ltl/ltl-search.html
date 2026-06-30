@@ -62,6 +62,12 @@
           <option [value]="b">{{ badgeText(b) }}</option>
         }
       </select>
+      <select name="stage" [(ngModel)]="filters().stage">
+        <option value="">Any workflow stage</option>
+        @for (s of workflowStages; track s) {
+          <option [value]="s">{{ s }}</option>
+        }
+      </select>
       <label class="date">Pickup<input type="date" name="pickupFrom" [(ngModel)]="filters().pickupFrom" /></label>
       <label class="date">to<input type="date" name="pickupTo" [(ngModel)]="filters().pickupTo" /></label>
       <label class="date">Deliver<input type="date" name="deliveryFrom" [(ngModel)]="filters().deliveryFrom" /></label>
@@ -70,6 +76,7 @@
       <label class="check"><input type="checkbox" name="readyToBill" [(ngModel)]="filters().readyToBill" /> Ready to bill</label>
       <label class="check"><input type="checkbox" name="missingBillingData" [(ngModel)]="filters().missingBillingData" /> Missing billing</label>
       <label class="check"><input type="checkbox" name="exceptionsOnly" [(ngModel)]="filters().exceptionsOnly" /> Exceptions</label>
+      <label class="check"><input type="checkbox" name="blockedOnly" [(ngModel)]="filters().blockedOnly" /> Blocked</label>
       <button type="submit" class="primary">Search</button>
       <button type="button" (click)="clearFilters()">Reset</button>
     </form>
@@ -115,6 +122,7 @@
                   {{ col.label }} <span class="sort">{{ sortIndicator(col.field) }}</span>
                 </th>
               }
+              <th>Stage</th>
               <th>Flags</th>
             </tr>
           </thead>
@@ -149,6 +157,12 @@
                 <td>
                   @if (load.revenuePerMile !== null) { &#36;{{ load.revenuePerMile | number: '1.2-2' }} }
                   @else { — }
+                </td>
+                <td>
+                  <span [class]="stageClass(load.workflow.stage, load.workflow.isBlocked)"
+                        [title]="load.workflow.recommendedAction">
+                    {{ load.workflow.stageLabel }}@if (load.workflow.isBlocked) { <span aria-hidden="true"> ⚠</span> }
+                  </span>
                 </td>
                 <td>
                   @for (badge of load.billing.badges; track badge) {
@@ -278,6 +292,32 @@
       <h3>{{ load.customerName || 'Load' }} &middot; {{ load.loadNumber || load.id }}</h3>
       <button type="button" class="close" (click)="closeDrawer()" aria-label="Close">&times;</button>
     </header>
+
+    <!-- Workflow stage + recommended next action -->
+    <div class="drawer-section workflow">
+      <ol class="stepper" aria-label="Workflow stage">
+        @for (step of workflowSteps; track step.index) {
+          <li [class]="stepClass(step.index, load.workflow.stepIndex, load.workflow.isBlocked)">
+            {{ step.label }}
+          </li>
+        }
+      </ol>
+      <div class="next-action" [class.blocked]="load.workflow.isBlocked">
+        <span class="next-label">{{ load.workflow.isBlocked ? 'Blocked' : 'Next' }}</span>
+        <span class="next-text">{{ load.workflow.recommendedAction }}</span>
+      </div>
+      @if (load.workflow.blockers.length > 0) {
+        <ul class="risks">
+          @for (b of load.workflow.blockers; track b) { <li class="blocking">{{ b }}</li> }
+        </ul>
+      }
+      @if (load.workflow.evidence.length > 0) {
+        <div class="evidence">
+          <span>Evidence</span>
+          @for (e of load.workflow.evidence; track e) { <span class="badge badge-muted">{{ e }}</span> }
+        </div>
+      }
+    </div>
 
     <dl class="detail">
       <dt>Status</dt><dd>{{ load.status }} ({{ load.assignment }})</dd>

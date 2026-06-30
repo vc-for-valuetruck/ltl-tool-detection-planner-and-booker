@@ -30,6 +30,10 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         "Trip Completed", "Invoiced", "Financed", "Completed", "Paid",
     };
 
+    /// <summary>True when the status indicates the freight was (or will be) delivered.</summary>
+    public static bool IsDeliveredStatus(string? status) =>
+        !string.IsNullOrWhiteSpace(status) && DeliveredStatuses.Contains(status);
+
     /// <summary>Statuses that hard-block clean billing (cancelled / no-op freight).</summary>
     private static readonly HashSet<string> BlockingStatuses = new(StringComparer.OrdinalIgnoreCase)
     {

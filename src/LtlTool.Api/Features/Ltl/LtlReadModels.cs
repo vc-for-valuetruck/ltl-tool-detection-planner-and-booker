@@ -64,6 +64,68 @@ public enum BillingBadge
     AlreadyInvoiced,
 }
 
+/// <summary>
+/// Where a load currently sits in the dispatcher workflow (Search → Match → Assign → Bill).
+/// Derived purely from normalized signals; it never reflects an Alvys writeback. Search is the
+/// universal entry point (every load is searchable), so a load's <i>current</i> stage is one of
+/// the forward stages below.
+/// </summary>
+public enum WorkflowStage
+{
+    /// <summary>Unassigned/open — needs capacity. The dispatcher should review matches next.</summary>
+    Match,
+    /// <summary>Capacity committed and in motion (covered/dispatched/in-transit), pre-delivery.</summary>
+    Assign,
+    /// <summary>Delivered but not yet invoiced — needs billing attention.</summary>
+    Bill,
+    /// <summary>Already invoiced/closed financially — terminal.</summary>
+    Billed,
+}
+
+/// <summary>
+/// The workflow position of a load with the recommended next action and the evidence backing the
+/// determination. Computed from the normalized summary (assignment, status, billing readiness,
+/// exceptions, missing data, visibility) — a pure decision-support projection with no Alvys
+/// writeback.
+/// </summary>
+public sealed class WorkflowState
+{
+    /// <summary>Neutral default used before the workflow has been evaluated.</summary>
+    public static readonly WorkflowState Unknown = new()
+    {
+        Stage = WorkflowStage.Match,
+        StageLabel = "Match",
+        StepIndex = 2,
+        RecommendedAction = "Review the load.",
+    };
+
+    public required WorkflowStage Stage { get; init; }
+
+    /// <summary>Display label for the stage, e.g. "Match".</summary>
+    public required string StageLabel { get; init; }
+
+    /// <summary>
+    /// 1-based position in the four-step Search → Match → Assign → Bill model, for a stepper UI:
+    /// Search=1, Match=2, Assign=3, Bill/Billed=4.
+    /// </summary>
+    public required int StepIndex { get; init; }
+
+    /// <summary>The single best next action a dispatcher should take on this load.</summary>
+    public required string RecommendedAction { get; init; }
+
+    /// <summary>
+    /// Short, human-readable signals that back the stage/action determination (e.g.
+    /// "Status: Delivered", "Rate on file", "Unassigned"). Never fabricated — only present signals.
+    /// </summary>
+    public IReadOnlyList<string> Evidence { get; init; } = [];
+
+    /// <summary>True when something prevents the load from advancing to the next stage.</summary>
+    public bool IsBlocked { get; init; }
+
+    /// <summary>Why progression is blocked (missing data, billing-blocking exceptions, failed tracking).</summary>
+    public IReadOnlyList<string> Blockers { get; init; } = [];
+}
+
 /// <summary>Coarse assignment state derived from load status (no Alvys writeback).</summary>
 public enum AssignmentState
 {
@@ -144,6 +206,12 @@ public sealed class LtlLoadSummary
     public IReadOnlyList<MissingDataFlag> MissingData { get; init; } = [];
     public BillingReadinessResult Billing { get; init; } = new();
     public IReadOnlyList<LtlExceptionFlag> Exceptions { get; init; } = [];
+
+    /// <summary>
+    /// Where this load sits in the Search → Match → Assign → Bill workflow, with the recommended
+    /// next action and backing evidence. Derived from the signals above; no Alvys writeback.
+    /// </summary>
+    public WorkflowState Workflow { get; init; } = WorkflowState.Unknown;
 
     /// <summary>
     /// Inbound/outbound visibility-history context for the load. Only populated on the detail path
@@ -308,6 +376,12 @@ public sealed class LtlSearchQuery
 
     /// <summary>Filter to loads carrying a specific billing-readiness badge. Null = no filter.</summary>
     public BillingBadge? BillingBadge { get; set; }
+
+    /// <summary>Filter to loads at a specific workflow stage (derived, enforced in-memory). Null = no filter.</summary>
+    public WorkflowStage? Stage { get; set; }
+
+    /// <summary>When true, only loads whose workflow is currently blocked are returned.</summary>
+    public bool BlockedOnly { get; set; }
 
     public LtlSortField Sort { get; set; } = LtlSortField.PickupDate;
     public bool SortDescending { get; set; }
