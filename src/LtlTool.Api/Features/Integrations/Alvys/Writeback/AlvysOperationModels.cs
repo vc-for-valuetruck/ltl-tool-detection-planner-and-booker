@@ -39,6 +39,13 @@ public sealed class AlvysOperationRequest
 
     /// <summary>Optional dispatcher justification captured on the audit trail.</summary>
     public string? Reason { get; set; }
+
+    /// <summary>
+    /// Optional idempotency key for the execute path. A repeat with the same key and an equivalent
+    /// payload is a no-op replay; a repeat with the same key and a different payload is a conflict.
+    /// May also be supplied via the <c>Idempotency-Key</c> request header.
+    /// </summary>
+    public string? IdempotencyKey { get; set; }
 }
 
 /// <summary>What ultimately happened (or would happen) for an operation request.</summary>

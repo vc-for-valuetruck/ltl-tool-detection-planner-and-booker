@@ -29,6 +29,12 @@ public static class AlvysServiceCollectionExtensions
         services.AddScoped<IAlvysWriteGateway, AlvysWriteGateway>();
         services.AddScoped<IAlvysReadinessService, AlvysReadinessService>();
 
+        // Durable operation outbox/audit + idempotency. Persisted in AppDbContext (server-side, never
+        // browser storage); scoped to match the DbContext lifetime. Recording is tool-local and never
+        // sends anything to Alvys in this phase.
+        services.AddScoped<IAlvysOperationStore, EfAlvysOperationStore>();
+        services.AddScoped<IAlvysOperationRecorder, AlvysOperationRecorder>();
+
         var options = configuration.GetSection(AlvysOptions.SectionName).Get<AlvysOptions>()
             ?? new AlvysOptions();
 

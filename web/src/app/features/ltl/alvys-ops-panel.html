@@ -117,5 +117,46 @@
         <p class="muted">Select a load to preview a note payload.</p>
       }
     </div>
+
+    <!-- Recent operation history (audit/outbox) for the current dispatcher. -->
+    <div class="ops-history">
+      <div class="ops-history-head">
+        <h5>Recent operations</h5>
+        <button type="button" class="link" (click)="loadHistory()" [disabled]="historyLoading()">
+          {{ historyLoading() ? 'Refreshing…' : 'Refresh' }}
+        </button>
+      </div>
+
+      @if (historyError(); as err) {
+        <div class="assign-error">{{ err }}</div>
+      } @else if (history().length === 0) {
+        <p class="muted">No operations recorded yet. Dry-runs and attempts appear here.</p>
+      } @else {
+        <table class="ops-table">
+          <thead>
+            <tr><th>When</th><th>Operation</th><th>Channel</th><th>Disposition</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            @for (h of history(); track h.id) {
+              <tr>
+                <td>{{ h.createdAt | date: 'short' }}</td>
+                <td>
+                  {{ h.operationCode }}
+                  @if (h.resourceId) { <div class="muted">{{ h.resourceType }} {{ h.resourceId }}</div> }
+                  @if (h.attemptCount > 1) { <span class="badge badge-muted">×{{ h.attemptCount }}</span> }
+                </td>
+                <td>{{ h.channel }}</td>
+                <td>{{ h.disposition }}</td>
+                <td>
+                  <span [class]="statusClass(h.status)">{{ h.status }}</span>
+                  @if (h.reason) { <div class="muted">{{ h.reason }}</div> }
+                  @if (h.lastError) { <div class="muted required">{{ h.lastError }}</div> }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </div>
   }
 </div>

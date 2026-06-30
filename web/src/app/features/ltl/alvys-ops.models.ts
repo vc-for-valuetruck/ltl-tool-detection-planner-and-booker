@@ -105,3 +105,53 @@ export interface AlvysOperationOutcome {
   blockers: string[];
   requiredToEnable?: string | null;
 }
+
+/** Which channel produced an audit record: a dry-run preview or an execute attempt. */
+export type AlvysOperationChannel = 'DryRun' | 'Execute';
+
+/** Lifecycle status of a persisted audit/outbox record. Nothing is ever sent to Alvys in this phase. */
+export type AlvysOperationRecordStatus = 'Recorded' | 'Blocked' | 'Unsupported';
+
+/**
+ * Owner-safe projection of a persisted Alvys operation audit/outbox record. Carries no secrets and
+ * never another dispatcher's data — only the auditable facts of one of the current owner's attempts.
+ */
+export interface AlvysOperationRecordView {
+  id: string;
+  operationCode: string;
+  channel: AlvysOperationChannel;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  idempotencyKey?: string | null;
+  payloadHash: string;
+  payloadPreview?: string | null;
+  mode: AlvysWritebackMode;
+  disposition: AlvysOperationDisposition;
+  status: AlvysOperationRecordStatus;
+  reason?: string | null;
+  lastError?: string | null;
+  attemptCount: number;
+  correlationId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * The dry-run/execute response: the gateway outcome plus the auditable record it produced and
+ * whether the request was an idempotent replay of an existing executable record.
+ */
+export interface AlvysOperationResponse {
+  outcome: AlvysOperationOutcome;
+  record?: AlvysOperationRecordView | null;
+  replayed: boolean;
+}
+
+/**
+ * The 409 conflict body returned when an idempotency key is reused with a different payload.
+ * Nothing was recorded; reuse the original payload or choose a new key.
+ */
+export interface AlvysOperationConflict {
+  message: string;
+  idempotencyKey: string;
+  existingRecordId: string;
+}

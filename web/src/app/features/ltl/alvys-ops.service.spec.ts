@@ -6,7 +6,11 @@ import {
 } from '@angular/common/http/testing';
 import { AlvysOpsService } from './alvys-ops.service';
 import { RUNTIME_CONFIG } from '../../runtime-config';
-import { AlvysOperationOutcome, AlvysReadinessStatus } from './alvys-ops.models';
+import {
+  AlvysOperationRecordView,
+  AlvysOperationResponse,
+  AlvysReadinessStatus,
+} from './alvys-ops.models';
 
 describe('AlvysOpsService', () => {
   let service: AlvysOpsService;
@@ -41,22 +45,47 @@ describe('AlvysOpsService', () => {
   });
 
   it('posts a dry-run for an operation without executing', () => {
-    let result: AlvysOperationOutcome | undefined;
+    let result: AlvysOperationResponse | undefined;
     service.dryRun('create-load-note', { loadNumber: 'L1', noteText: 'hi' }).subscribe(
-      (o) => (result = o),
+      (r) => (result = r),
     );
 
     const req = http.expectOne('/api/alvys/ops/create-load-note/dry-run');
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ loadNumber: 'L1', noteText: 'hi' });
     req.flush({
-      operationCode: 'create-load-note',
-      disposition: 'Simulated',
-      executed: false,
-    } as Partial<AlvysOperationOutcome>);
+      outcome: { operationCode: 'create-load-note', disposition: 'Simulated', executed: false },
+      replayed: false,
+    } as Partial<AlvysOperationResponse>);
 
-    expect(result?.executed).toBeFalse();
-    expect(result?.disposition).toBe('Simulated');
+    expect(result?.outcome.executed).toBeFalse();
+    expect(result?.outcome.disposition).toBe('Simulated');
+  });
+
+  it('sends the idempotency key as a header on execute', () => {
+    service
+      .execute('create-load-note', { loadNumber: 'L1', noteText: 'hi' }, 'idem-1')
+      .subscribe();
+
+    const req = http.expectOne('/api/alvys/ops/create-load-note/execute');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.headers.get('Idempotency-Key')).toBe('idem-1');
+    req.flush({
+      outcome: { operationCode: 'create-load-note', disposition: 'AuditOnly', executed: false },
+      replayed: false,
+    } as Partial<AlvysOperationResponse>);
+  });
+
+  it('reads owner operation history with a limit', () => {
+    let result: AlvysOperationRecordView[] | undefined;
+    service.history(25).subscribe((r) => (result = r));
+
+    const req = http.expectOne('/api/alvys/ops/history?limit=25');
+    expect(req.request.method).toBe('GET');
+    req.flush([{ id: 'r1', operationCode: 'create-load-note' }] as Partial<AlvysOperationRecordView>[]);
+
+    expect(result?.length).toBe(1);
+    expect(result?.[0].id).toBe('r1');
   });
 
   it('posts the read-sync probe to the probe route', () => {

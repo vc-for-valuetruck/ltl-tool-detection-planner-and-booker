@@ -17,6 +17,8 @@ public sealed class AlvysOperationsEndpointTests(TemplateWebApplicationFactory f
     [Theory]
     [InlineData("/api/alvys/ops/status")]
     [InlineData("/api/alvys/ops/operations")]
+    [InlineData("/api/alvys/ops/history")]
+    [InlineData("/api/alvys/ops/history/abc123")]
     public async Task Get_routes_require_authentication(string route)
     {
         var response = await _factory.CreateClient().GetAsync(route);

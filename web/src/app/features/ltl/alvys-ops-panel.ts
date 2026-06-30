@@ -5,6 +5,7 @@ import { AlvysOpsService } from './alvys-ops.service';
 import {
   AlvysOperationEligibility,
   AlvysOperationOutcome,
+  AlvysOperationRecordView,
   AlvysReadinessStatus,
 } from './alvys-ops.models';
 
@@ -37,6 +38,10 @@ export class AlvysOpsPanel {
   protected readonly outcome = signal<AlvysOperationOutcome | null>(null);
   protected readonly outcomeError = signal<string | null>(null);
 
+  protected readonly history = signal<AlvysOperationRecordView[]>([]);
+  protected readonly historyLoading = signal(false);
+  protected readonly historyError = signal<string | null>(null);
+
   /** Headline posture for the panel banner. */
   protected readonly posture = computed<'audit' | 'simulation' | 'sandbox' | 'unknown'>(() => {
     const s = this.status();
@@ -48,6 +53,7 @@ export class AlvysOpsPanel {
 
   constructor() {
     this.load();
+    this.loadHistory();
   }
 
   protected load(): void {
@@ -89,9 +95,10 @@ export class AlvysOpsPanel {
     this.ops
       .dryRun('create-load-note', { loadNumber: load, noteText: this.noteText().trim() })
       .subscribe({
-        next: (o) => {
-          this.outcome.set(o);
+        next: (r) => {
+          this.outcome.set(r.outcome);
           this.dryRunning.set(false);
+          this.loadHistory();
         },
         error: (err) => {
           this.outcome.set(null);
@@ -99,6 +106,33 @@ export class AlvysOpsPanel {
           this.dryRunning.set(false);
         },
       });
+  }
+
+  /** Loads the current owner's recent operation history (audit/outbox), newest first. */
+  protected loadHistory(): void {
+    this.historyLoading.set(true);
+    this.historyError.set(null);
+    this.ops.history(25).subscribe({
+      next: (records) => {
+        this.history.set(records);
+        this.historyLoading.set(false);
+      },
+      error: (err) => {
+        this.historyError.set(this.describe('History', err));
+        this.historyLoading.set(false);
+      },
+    });
+  }
+
+  protected statusClass(status: AlvysOperationRecordView['status']): string {
+    switch (status) {
+      case 'Blocked':
+        return 'badge badge-block';
+      case 'Unsupported':
+        return 'badge badge-unsupported';
+      default:
+        return 'badge badge-muted';
+    }
   }
 
   protected eligibilityClass(eligibility: AlvysOperationEligibility): string {
