@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": { "value": "ltl-tool-uat" },
+    "location": { "value": "centralus" },
+    "apiImage": { "value": "ghcr.io/valuetruck-vc/ltl-tool-detection-planner-and-booker-api:latest" },
+    "webImage": { "value": "ghcr.io/valuetruck-vc/ltl-tool-detection-planner-and-booker-web:latest" },
+    "registryServer": { "value": "ghcr.io" },
+    "registryUsername": { "value": "<github-username-or-pat-owner>" },
+    "entraInstance": { "value": "https://login.microsoftonline.com/" },
+    "allowedEmailDomain": { "value": "valuetruck.com" },
+    "alvysProvider": { "value": "Fallback" },
+    "alvysApiBaseUrl": { "value": "https://integrations.alvys.com" },
+    "alvysApiVersion": { "value": "v1" },
+    "alvysWritebackMode": { "value": "Disabled" },
+    "ltlDetectionEnabled": { "value": false },
+    "ltlDefaultTimezone": { "value": "America/Chicago" },
+    "entraTenantId": { "value": "<entra-tenant-id>" },
+    "entraApiClientId": { "value": "<api-app-registration-client-id>" },
+    "entraWebClientId": { "value": "<spa-app-registration-client-id>" },
+    "sqlAdminLogin": { "value": "ltladmin" }
+  }
+}

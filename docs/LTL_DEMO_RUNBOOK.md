@@ -51,13 +51,11 @@ make build                  # build images + start SQL Server, API, Web
 
 Health check: `curl http://localhost:5072/api/health` (anonymous liveness).
 
-### Public URL (optional, for a remote audience)
-```bash
-# set NGROK_AUTHTOKEN in .env first
-make demo-up                # boots stack + ngrok, prints the public HTTPS URL
-```
-The demo compose override (`docker-compose.demo.yml`) defaults Alvys to the **Fallback**
-provider, so the stack boots with no live tenant. See §7 for what that means on screen.
+### Shared URL for a remote audience
+For a remote audience, demo against the **Azure-hosted** environment (Container Apps)
+rather than your laptop — testers open the deployed Web URL directly. Deploy and URL
+details are in [`AZURE_HOSTING.md`](AZURE_HOSTING.md). Set `Alvys__Provider=Fallback`
+on the environment to boot with no live tenant. See §7 for what that means on screen.
 
 ### Environment variables that matter for the demo
 
@@ -72,8 +70,8 @@ provider, so the stack boots with no live tenant. See §7 for what that means on
 | `AZURE_AD_*` | your Entra app reg values | Required for real sign-in; SPA shows "Auth not configured" until set. |
 | `LTL_DETECTION_ENABLED` | `false` (safe default) | Leave as-is for the demo. |
 
-> Credentials live only in the gitignored `.env`. Never commit `.env` or a real
-> `NGROK_AUTHTOKEN`.
+> Locally, credentials live only in the gitignored `.env` — never commit `.env`.
+> In Azure, secrets live in Key Vault / GitHub environment secrets, never in the repo.
 
 ---
 
@@ -229,7 +227,7 @@ The demo does **not** require a live tenant. If creds or sandbox data are missin
 - [ ] Billing tab loads; a load shows readiness badges / risks.
 - [ ] Ops panel shows "Audit only" posture + a dry-run note preview.
 - [ ] Decide Fallback vs. Live and set `.env` accordingly; restart if changed.
-- [ ] (Remote audience) `make demo-up` prints a public URL; Entra redirect URI added.
+- [ ] (Remote audience) Azure deployment is live; deployed Web URL added as an Entra SPA redirect URI.
 
 ---
 
@@ -253,4 +251,5 @@ The demo does **not** require a live tenant. If creds or sandbox data are missin
   an empty `ALLOWED_EMAIL_DOMAIN` is acceptable for the audience.
 - One or two **known representative load numbers** in the demo tenant that exercise a
   blocker, a warning, and a ready-to-bill state, so the match/assign/bill story lands.
-- If remote: a reserved **`NGROK_DOMAIN`** for a stable URL across restarts.
+- If remote: demo against the **Azure-hosted** environment so testers get a stable URL
+  (see [`AZURE_HOSTING.md`](AZURE_HOSTING.md)); optionally map a custom domain.

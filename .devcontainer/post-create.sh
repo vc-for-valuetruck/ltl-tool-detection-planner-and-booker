@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-echo "Preparing UAT Codespaces workspace..."
+echo "Preparing dev container workspace..."
 
 if [ -f ".env.example" ] && [ ! -f ".env" ]; then
   cp .env.example .env
@@ -22,6 +22,6 @@ fi
 echo "Pre-pulling Docker images (best effort)..."
 docker compose pull || true
 
-echo "Codespaces setup complete."
-echo "  Docker stack : make up"
-echo "  Lightweight  : bash scripts/start-codespaces-demo.sh"
+echo "Dev container setup complete."
+echo "  Local stack    : make up   (SQL Server + API + Web)"
+echo "  Azure hosting  : see docs/AZURE_HOSTING.md"

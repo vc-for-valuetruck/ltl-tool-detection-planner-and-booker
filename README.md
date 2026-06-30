@@ -11,10 +11,10 @@ It ships a pre-wired full-stack starter:
 - **.NET 10** Web API (vertical-slice features)
 - **Angular 20** SPA (standalone components)
 - **Microsoft Entra ID** (MSAL) authentication plumbing
-- **SQL Server 2022** in Docker (no cloud backend required)
+- **SQL Server 2022** in Docker for local dev (**Azure SQL** in the cloud)
 - **Docker Compose** local runtime
-- **GitHub Codespaces** support for instant UAT sharing
-- **ngrok** public-URL demo path (single origin serves SPA + API)
+- **Azure** hosting: Container Apps (API + Web) + Azure SQL + Key Vault — see
+  [`docs/AZURE_HOSTING.md`](docs/AZURE_HOSTING.md)
 - Safe, generic `.env.example` and setup docs
 
 ---
@@ -23,17 +23,17 @@ It ships a pre-wired full-stack starter:
 
 ```text
 .
-├── docker-compose.yml          # sqlserver + api + web
-├── docker-compose.demo.yml     # + ngrok tunnel (public demo URL)
-├── start-demo.sh / stop-demo.sh# one-command ngrok demo
-├── Makefile                    # up / build / down / logs / reset / demo-up
-├── .env.example                # generic environment variables
+├── docker-compose.yml          # local dev: sqlserver + api + web
+├── Makefile                    # up / build / down / logs / reset
+├── .env.example                # local dev environment variables
 ├── TEMPLATE_SETUP.md           # step-by-step checklist for a new app
-├── init/01-seed.sql            # SQL Server init/seed script
-├── .devcontainer/              # Codespaces / VS Code dev container
-├── docs/                       # codespaces-demo.md, demo-ngrok.md runbooks
-├── scripts/                    # start-codespaces-demo.sh
-├── .github/workflows/ci.yml    # build + test API and build web
+├── init/01-seed.sql            # SQL Server init/seed script (local dev)
+├── .devcontainer/              # VS Code dev container
+├── infra/                      # Azure infrastructure (Bicep)
+├── docs/                       # AZURE_HOSTING.md, runbooks, integration docs
+├── .github/workflows/
+│   ├── ci.yml                  # build + test API, verify SQL migrations, build web
+│   └── deploy-ghcr-azure-container-apps.yml  # build images → deploy to Azure
 ├── LtlTool.sln                   # .NET solution
 ├── src/
 │   ├── LtlTool.Api/              # .NET 10 Web API
@@ -46,9 +46,9 @@ It ships a pre-wired full-stack starter:
 | Frontend | Angular 20 + MSAL Angular |
 | Backend | .NET 10 Web API |
 | Auth | Microsoft Entra ID |
-| Database | SQL Server 2022 (Docker) |
+| Database | SQL Server 2022 (local Docker) / Azure SQL (cloud) |
 | CI | GitHub Actions |
-| UAT | GitHub Codespaces |
+| Hosting | Azure Container Apps + Azure SQL + Key Vault |
 
 ---
 
@@ -257,10 +257,6 @@ make down      # stop
 make logs      # tail logs
 make reset     # wipe volumes, rebuild, re-seed
 
-# Public demo URL via ngrok (needs NGROK_AUTHTOKEN in .env)
-make demo-up   # stack + ngrok tunnel, prints the public URL
-make demo-down # tear down the demo stack + tunnel
-
 # Backend
 dotnet restore
 dotnet build
@@ -282,36 +278,24 @@ npm test -- --watch=false
 > Search → Match → Assign → Bill flow, talking points, fallback path when no live
 > Alvys data is available, and do-not-demo items.
 
-Two ways to share a running build with testers:
+### Azure-hosted environment (UAT / production)
 
-### a) GitHub Codespaces (default)
+The shared running build lives in **Azure** (Container Apps + Azure SQL + Key Vault).
+Testers use the deployed Web URL directly — no local setup or tunnel required.
 
-Open the repo in a **Codespace**, start the stack, and share the forwarded port
-`4200` URL. No local setup or cloud subscription required. The devcontainer
-installs .NET/Node/Docker/GitHub CLI, seeds `.env`, and restores dependencies.
+- Deploy by merging to `main` or running the **Deploy GHCR Images to Azure Container
+  Apps** workflow. It builds the API/Web images, pushes them to GHCR, and rolls them
+  out to the chosen Azure environment.
+- Add the deployed Web URL to the SPA app registration's redirect URIs (one-time).
+- Full architecture, required GitHub vars/secrets, OIDC setup, and rollback:
+  [`docs/AZURE_HOSTING.md`](docs/AZURE_HOSTING.md). Declarative infra: [`infra/`](infra/README.md).
 
-```bash
-make up                                  # or: bash scripts/start-codespaces-demo.sh
-```
-
-- Port `4200` (web) → set **Public** and share. Port `5072` (API) stays private;
-  `/api` is reachable through the `4200` URL (e.g. `<url>/api/health`).
-- Add the exact forwarded `4200` URL to the SPA app registration's redirect URIs.
-- Use **Codespaces secrets** for `MSSQL_SA_PASSWORD`, `AZURE_AD_CLIENT_SECRET`, etc.
-- Full runbook: [`docs/codespaces-demo.md`](docs/codespaces-demo.md).
-
-### b) ngrok public URL (local backup)
-
-Expose a local Docker stack over one public HTTPS URL. The web container proxies
-`/api`, so a single ngrok origin serves both SPA and API.
+### Local verification before sharing
 
 ```bash
-cp .env.example .env     # set NGROK_AUTHTOKEN (free token) + Entra values
-make demo-up             # prints the public URL + the Entra redirect to add
+cp .env.example .env     # set Entra values + MSSQL_SA_PASSWORD
+make build               # SQL Server + API + Web at http://localhost:4200
 ```
-
-- Full runbook: [`docs/demo-ngrok.md`](docs/demo-ngrok.md).
-- **Never commit `NGROK_AUTHTOKEN`** — keep it only in the gitignored `.env`.
 
 ### General
 

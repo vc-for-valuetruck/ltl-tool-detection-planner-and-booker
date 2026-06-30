@@ -1,8 +1,50 @@
-# GHCR → Azure Container Apps Deployment
+# Azure Hosting
 
-This is the persistent launch path for the LTL tool.
+The LTL tool is hosted in **Microsoft Azure**. This document describes the target
+architecture, why each service was chosen, the configuration the platform expects, the
+deploy path, and rollback basics.
 
-GHCR stores the built API/Web container images. Azure Container Apps runs those images and gives the team a public URL that stays up after GitHub Actions finishes.
+## Architecture at a glance
+
+```text
+        Browser (dispatcher / accounting)
+                 │  HTTPS, single origin
+                 ▼
+   ┌───────────────────────────────┐
+   │ Web  → Azure Container Apps    │  nginx serves the Angular SPA and
+   │        (web container image)   │  reverse-proxies /api to the API app
+   └───────────────┬───────────────┘
+                   │  /api (internal)
+                   ▼
+   ┌───────────────────────────────┐     ┌──────────────────────┐
+   │ API  → Azure Container Apps    │────▶│ Azure SQL Database    │
+   │        (.NET 10 image)         │     │ (saved views, outbox) │
+   └───────────────┬───────────────┘     └──────────────────────┘
+                   │ managed identity (no secrets in image)
+                   ▼
+   ┌───────────────────────────────┐
+   │ Azure Key Vault                │  SQL conn string, Entra client secret,
+   │ (application secrets)          │  Alvys credentials (server-side only)
+   └───────────────────────────────┘
+
+   Microsoft Entra ID (MSAL): the SPA acquires tokens; the API validates them.
+   Container images live in GitHub Container Registry (GHCR).
+   Logs/metrics flow to a Log Analytics workspace.
+```
+
+## Service choices and why
+
+| Concern | Choice | Why this fit the repo |
+|---|---|---|
+| **Web frontend** | **Azure Container Apps** (not Static Web Apps) | The web tier is a container (`web/Dockerfile`) that injects auth/runtime config at container start (`docker-entrypoint.sh` → `runtime-config.json`) and reverse-proxies `/api` to the API (`nginx.conf.template`). That single-origin model keeps **one** Entra redirect URI and **zero** CORS config. Azure Static Web Apps bakes config at build time and would split the origin, so Container Apps preserves the existing design with no app-code change. Static Web Apps remains a future option if the SPA moves to build-time config. |
+| **.NET API** | **Azure Container Apps** (not App Service) | The API already ships a container (`src/LtlTool.Api/Dockerfile`) on `:8080`. Container Apps runs that image directly, scales independently, supports Key Vault secret references via managed identity, and shares one environment with the web app. App Service for Containers would also work; Container Apps keeps both tiers in one environment with consistent scaling and revision rollback. |
+| **Database** | **Azure SQL Database** | EF Core migrations are already SQL Server-targeted and CI-verified (`Category=SqlServerMigration`). Azure SQL is the managed, drop-in target for saved views and the operation outbox — no provider change. |
+| **AuthN/Z** | **Microsoft Entra ID + MSAL** | The SPA uses `@azure/msal-angular`; the API validates JWTs via the `AzureAd` options. Hosting only supplies tenant/client/scope values. |
+| **Secrets** | **Azure Key Vault** | SQL connection string, Entra client secret, and Alvys credentials live in Key Vault and are read by the API through a user-assigned managed identity. Nothing secret is committed; the SPA never receives Alvys credentials. |
+| **Images** | **GitHub Container Registry (GHCR)** | CI/CD builds and pushes the API/Web images; Container Apps pulls them. |
+
+Infrastructure can be provisioned declaratively with the Bicep template in
+[`../infra/`](../infra/README.md), or imperatively by the deploy workflow below.
 
 ## What this gives us
 
@@ -176,6 +218,39 @@ PUBLIC_WEB_ORIGIN=<web url from workflow summary>
 ```
 
 4. Re-run the deploy workflow.
+
+## Database migrations
+
+EF Core owns the schema (saved views + operation outbox). Apply migrations against
+Azure SQL after the database exists and before/with the first API rollout:
+
+```bash
+# From a machine with the .NET SDK and the EF tools (dotnet tool install --global dotnet-ef)
+dotnet ef database update \
+  --project src/LtlTool.Api \
+  --connection "Server=tcp:<sql-fqdn>,1433;Database=LtlTool;User Id=<admin>;Password=<password>;Encrypt=True;"
+```
+
+The SQL Server migration path is the same one CI verifies (`Category=SqlServerMigration`),
+so a green CI run is a strong signal the migrations apply cleanly to Azure SQL.
+
+## Rollback
+
+Azure Container Apps keeps immutable revisions, which makes rollback fast:
+
+```bash
+# List revisions (newest first) for either app
+az containerapp revision list -n <app-name> -g <rg> -o table
+
+# Pin 100% of traffic back to the last-known-good revision
+az containerapp ingress traffic set -n <app-name> -g <rg> \
+  --revision-weight <good-revision>=100
+```
+
+Or redeploy a previous image tag by re-running the deploy workflow with `image_tag`
+set to an earlier commit SHA. Database changes are **not** reverted by an app rollback —
+if a migration must be undone, apply the corresponding down-migration deliberately and
+treat it as a separate, reviewed change.
 
 ## Safety posture
 
