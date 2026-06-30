@@ -32,6 +32,13 @@ public sealed class AlvysSearchControllerTests
             new() { Id = "TEN1", Status = "Offered", LoadNumber = "100" };
         public string? DocumentsLoadNumber { get; private set; }
         public string? NotesLoadNumber { get; private set; }
+        public LoadLookup? LoadLookup { get; private set; }
+        public TripLookup? TripLookup { get; private set; }
+        public string? StopsTripId { get; private set; }
+        public AlvysLoad? LoadToReturn { get; set; } =
+            new() { Id = "L1", LoadNumber = "100", OrderNumber = "O-9", Status = "Delivered" };
+        public AlvysTrip? TripToReturn { get; set; } =
+            new() { Id = "T1", TripNumber = "500", Status = "Delivered" };
 
         public Task<AlvysLoadsResponse> SearchLoadsAsync(
             int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
@@ -49,6 +56,25 @@ public sealed class AlvysSearchControllerTests
 
         public Task<AlvysLoad?> GetLoadByNumberAsync(string loadNumber, CancellationToken ct = default)
             => Task.FromResult<AlvysLoad?>(null);
+
+        public Task<AlvysLoad?> GetLoadAsync(LoadLookup lookup, CancellationToken ct = default)
+        {
+            LoadLookup = lookup;
+            return Task.FromResult(LoadToReturn);
+        }
+
+        public Task<AlvysTrip?> GetTripAsync(TripLookup lookup, CancellationToken ct = default)
+        {
+            TripLookup = lookup;
+            return Task.FromResult(TripToReturn);
+        }
+
+        public Task<IReadOnlyList<AlvysTripStopDetail>> ListTripStopsAsync(string tripId, CancellationToken ct = default)
+        {
+            StopsTripId = tripId;
+            return Task.FromResult<IReadOnlyList<AlvysTripStopDetail>>(
+                [new AlvysTripStopDetail { Type = "appointment", Id = "S1", StopType = "Pickup" }]);
+        }
 
         public Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(string loadNumber, CancellationToken ct = default)
         {
@@ -348,6 +374,94 @@ public sealed class AlvysSearchControllerTests
     }
 
     [Fact]
+    public async Task GetLoad_passes_lookup_through_and_returns_load_when_found()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var lookup = new LoadLookup { LoadNumber = "100" };
+
+        var result = await controller.GetLoad(lookup, default);
+        var body = Assert.IsType<AlvysLoad>(Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Same(lookup, client.LoadLookup);
+        Assert.Equal("100", body.LoadNumber);
+    }
+
+    [Fact]
+    public async Task GetLoad_returns_400_when_no_criteria_supplied()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.GetLoad(new LoadLookup(), default);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Null(client.LoadLookup);   // never reaches the client
+    }
+
+    [Fact]
+    public async Task GetLoad_returns_404_when_not_found()
+    {
+        var client = new RecordingAlvysClient { LoadToReturn = null };
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.GetLoad(new LoadLookup { Id = "missing" }, default);
+
+        Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task GetTrip_passes_lookup_through_and_returns_trip_when_found()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var lookup = new TripLookup { TripNumber = "500", IncludeDeleted = true };
+
+        var result = await controller.GetTrip(lookup, default);
+        var body = Assert.IsType<AlvysTrip>(Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Same(lookup, client.TripLookup);
+        Assert.Equal("500", body.TripNumber);
+    }
+
+    [Fact]
+    public async Task GetTrip_returns_400_when_no_criteria_supplied()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.GetTrip(new TripLookup { IncludeDeleted = true }, default);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Null(client.TripLookup);   // never reaches the client
+    }
+
+    [Fact]
+    public async Task GetTrip_returns_404_when_not_found()
+    {
+        var client = new RecordingAlvysClient { TripToReturn = null };
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.GetTrip(new TripLookup { Id = "missing" }, default);
+
+        Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task ListTripStops_passes_trip_id_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.ListTripStops("T1", default);
+        var body = Assert.IsAssignableFrom<IReadOnlyList<AlvysTripStopDetail>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Equal("T1", client.StopsTripId);
+        Assert.Equal("S1", Assert.Single(body).Id);
+    }
+
+    [Fact]
     public async Task Responses_carry_no_credential_or_secret_fields()
     {
         var client = new RecordingAlvysClient();
@@ -368,6 +482,9 @@ public sealed class AlvysSearchControllerTests
             JsonSerializer.Serialize(Assert.IsType<AlvysTender>(((OkObjectResult)(await controller.GetTender("TEN1", default)).Result!).Value)),
             JsonSerializer.Serialize(((OkObjectResult)(await controller.ListLoadDocuments("100", default)).Result!).Value),
             JsonSerializer.Serialize(((OkObjectResult)(await controller.ListLoadNotes("100", default)).Result!).Value),
+            JsonSerializer.Serialize(Assert.IsType<AlvysLoad>(((OkObjectResult)(await controller.GetLoad(new LoadLookup { Id = "L1" }, default)).Result!).Value)),
+            JsonSerializer.Serialize(Assert.IsType<AlvysTrip>(((OkObjectResult)(await controller.GetTrip(new TripLookup { Id = "T1" }, default)).Result!).Value)),
+            JsonSerializer.Serialize(((OkObjectResult)(await controller.ListTripStops("T1", default)).Result!).Value),
         };
 
         string[] forbidden =

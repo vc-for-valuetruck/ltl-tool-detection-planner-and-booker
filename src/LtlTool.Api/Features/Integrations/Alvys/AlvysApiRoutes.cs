@@ -57,9 +57,65 @@ public static class AlvysApiRoutes
     public static string LoadNotes(string? apiVersion, string loadNumber)
         => BuildLoadSubresourcePath(apiVersion, loadNumber, "notes");
 
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/loads?{query}</c> for the read-only load-detail
+    /// lookup. At least one of <see cref="LoadLookup.Id"/>/<see cref="LoadLookup.LoadNumber"/>/
+    /// <see cref="LoadLookup.OrderNumber"/> must be supplied (enforced by
+    /// <see cref="LoadLookup.Validate"/>); only the supplied criteria are emitted and each
+    /// value is URL-encoded so reserved characters resolve to a single query value.
+    /// </summary>
+    public static string LoadDetail(string? apiVersion, LoadLookup lookup)
+    {
+        lookup.Validate();
+        var query = BuildQuery(
+            ("id", lookup.Id),
+            ("loadNumber", lookup.LoadNumber),
+            ("orderNumber", lookup.OrderNumber));
+        return $"api/p/{NormalizeVersion(apiVersion)}/loads{query}";
+    }
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips?{query}</c> for the read-only trip-detail
+    /// lookup. At least one of <see cref="TripLookup.Id"/>/<see cref="TripLookup.TripNumber"/>
+    /// must be supplied (enforced by <see cref="TripLookup.Validate"/>); the optional
+    /// <see cref="TripLookup.IncludeDeleted"/> is emitted as a lowercase <c>true</c>/<c>false</c>
+    /// only when set. Values are URL-encoded.
+    /// </summary>
+    public static string TripDetail(string? apiVersion, TripLookup lookup)
+    {
+        lookup.Validate();
+        var query = BuildQuery(
+            ("id", lookup.Id),
+            ("tripNumber", lookup.TripNumber),
+            ("includeDeleted", lookup.IncludeDeleted?.ToString().ToLowerInvariant()));
+        return $"api/p/{NormalizeVersion(apiVersion)}/trips{query}";
+    }
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/stops</c> for the read-only trip-stops
+    /// listing. <paramref name="tripId"/> is URL-encoded so ids with slashes/spaces/reserved
+    /// characters resolve to a single path segment.
+    /// </summary>
+    public static string TripStops(string? apiVersion, string tripId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/stops";
+
     /// <summary>Relative path <c>api/p/v{version}/{resource}/search</c>.</summary>
     public static string BuildSearchPath(string? apiVersion, string resource)
         => $"api/p/{NormalizeVersion(apiVersion)}/{resource}/search";
+
+    /// <summary>
+    /// Builds a <c>?key=value&amp;...</c> query string from the supplied pairs, skipping
+    /// null/whitespace values and URL-encoding each emitted value. Returns an empty string
+    /// (no <c>?</c>) when nothing is emitted.
+    /// </summary>
+    private static string BuildQuery(params (string Key, string? Value)[] parameters)
+    {
+        var parts = parameters
+            .Where(p => !string.IsNullOrWhiteSpace(p.Value))
+            .Select(p => $"{p.Key}={Uri.EscapeDataString(p.Value!.Trim())}");
+        var query = string.Join("&", parts);
+        return query.Length == 0 ? string.Empty : "?" + query;
+    }
 
     /// <summary>
     /// Relative path <c>api/p/v{version}/loads/{loadNumber}/{subresource}</c>. The

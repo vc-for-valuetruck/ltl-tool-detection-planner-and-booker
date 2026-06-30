@@ -48,6 +48,9 @@ public sealed class AlvysSearchEndpointTests(TemplateWebApplicationFactory facto
     [Theory]
     [InlineData("/api/alvys/loads/100/documents")]
     [InlineData("/api/alvys/loads/100/notes")]
+    [InlineData("/api/alvys/loads?loadNumber=100")]
+    [InlineData("/api/alvys/trips?tripNumber=500")]
+    [InlineData("/api/alvys/trips/T1/stops")]
     public async Task Load_context_routes_require_authentication(string route)
     {
         var client = _factory.CreateClient();

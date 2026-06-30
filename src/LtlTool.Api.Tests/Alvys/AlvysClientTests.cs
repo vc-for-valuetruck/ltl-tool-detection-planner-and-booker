@@ -854,4 +854,224 @@ public sealed class AlvysClientTests
         Assert.Contains(expectedCode, logger.AllText);
         Assert.DoesNotContain("test-token", logger.AllText);   // token never logged
     }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/loads")]
+    [InlineData("2.0", "/api/p/v2.0/loads")]   // normalized — no double "v"
+    public async Task GetLoad_maps_detail_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Id":"L1","LoadNumber":"100","OrderNumber":"O-9","Status":"Delivered","PickedUpAt":"2026-01-02T03:04:05Z","DeliveredAt":"2026-01-03T03:04:05Z","Payments":[{"Amount":1850.50,"PaidAt":"2026-01-10T00:00:00Z","Reference":"CHK-1","Method":"ACH"}]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var load = await client.GetLoadAsync(new LoadLookup { Id = "L1" });
+
+        Assert.NotNull(load);
+        Assert.Equal("L1", load!.Id);
+        Assert.Equal("100", load.LoadNumber);
+        Assert.Equal("O-9", load.OrderNumber);
+        Assert.Equal(1850.50m, Assert.Single(load.Payments!).Amount);
+        Assert.Equal("ACH", load.Payments![0].Method);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Get, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task GetLoad_sends_lookup_as_url_encoded_query()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Id":"L1"}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.GetLoadAsync(new LoadLookup { LoadNumber = "VT 100/A" });
+
+        Assert.Contains("/api/p/v1/loads?loadNumber=VT%20100%2FA", handler.Calls[0].Request.RequestUri?.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task GetLoad_rejects_empty_lookup_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.GetLoadAsync(new LoadLookup()));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task GetLoad_returns_null_on_not_found()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Null(await client.GetLoadAsync(new LoadLookup { Id = "missing" }));
+        Assert.DoesNotContain("failed with HTTP", logger.AllText);   // 404 is not an error
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests, "429")]
+    [InlineData(HttpStatusCode.InternalServerError, "500")]
+    public async Task GetLoad_returns_null_and_logs_status_on_non_success(
+        HttpStatusCode status, string expectedCode)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(status));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Null(await client.GetLoadAsync(new LoadLookup { Id = "L1" }));
+        Assert.Contains(expectedCode, logger.AllText);
+        Assert.DoesNotContain("test-token", logger.AllText);   // token never logged
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/trips")]
+    [InlineData("2.0", "/api/p/v2.0/trips")]   // normalized — no double "v"
+    public async Task GetTrip_maps_detail_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Id":"T1","TripNumber":"500","Status":"Delivered","LoadNumber":"100","OrderNumber":"O-9","Trailer":{"Id":"TR1","EquipmentType":"Reefer"},"PickedUpAt":"2026-01-02T03:04:05Z","DeliveredAt":"2026-01-03T03:04:05Z","CarrierAssignedAt":"2026-01-01T00:00:00Z","DispatcherId":"D1"}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var trip = await client.GetTripAsync(new TripLookup { Id = "T1" });
+
+        Assert.NotNull(trip);
+        Assert.Equal("T1", trip!.Id);
+        Assert.Equal("500", trip.TripNumber);
+        Assert.Equal("O-9", trip.OrderNumber);
+        Assert.Equal("Reefer", trip.Trailer?.EquipmentType);
+        Assert.Equal("D1", trip.DispatcherId);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Get, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task GetTrip_sends_trip_number_and_include_deleted_as_query()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Id":"T1"}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.GetTripAsync(new TripLookup { TripNumber = "TR 7", IncludeDeleted = true });
+
+        var uri = handler.Calls[0].Request.RequestUri?.AbsoluteUri;
+        Assert.Contains("/api/p/v1/trips?tripNumber=TR%207", uri);
+        Assert.Contains("includeDeleted=true", uri);
+    }
+
+    [Fact]
+    public async Task GetTrip_rejects_empty_lookup_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.GetTripAsync(new TripLookup()));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task GetTrip_returns_null_on_not_found()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Null(await client.GetTripAsync(new TripLookup { Id = "missing" }));
+        Assert.DoesNotContain("failed with HTTP", logger.AllText);   // 404 is not an error
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.TooManyRequests, "429")]
+    [InlineData(HttpStatusCode.InternalServerError, "500")]
+    public async Task GetTrip_returns_null_and_logs_status_on_non_success(
+        HttpStatusCode status, string expectedCode)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(status));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Null(await client.GetTripAsync(new TripLookup { Id = "T1" }));
+        Assert.Contains(expectedCode, logger.AllText);
+        Assert.DoesNotContain("test-token", logger.AllText);   // token never logged
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/trips/T1/stops")]
+    [InlineData("2.0", "/api/p/v2.0/trips/T1/stops")]   // normalized — no double "v"
+    public async Task ListTripStops_maps_polymorphic_array_and_preserves_type_discriminator(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """[{"$type":"appointment","Id":"S1","StopType":"Pickup","Status":"Completed","Address":{"Street":"1 Main","City":"Dallas","State":"TX","ZipCode":"75201"},"Coordinates":{"Latitude":32.7,"Longitude":-96.8},"ArrivedAt":"2026-01-02T08:00:00Z","DepartedAt":"2026-01-02T09:00:00Z","CompanyId":"CO1","CompanyName":"Acme","AppointmentRequested":true,"AppointmentConfirmed":true,"AppointmentDate":"2026-01-02T08:00:00Z","ScheduleType":"FCFS","LoadingType":"Live"},{"$type":"delivery_window","Id":"S2","StopType":"Delivery","StopWindow":{"Begin":"2026-01-03T08:00:00Z","End":"2026-01-03T17:00:00Z"},"ScheduleType":"Appt"},{"$type":"waypoint","Id":"S3","StopWindow":{"Begin":"2026-01-02T20:00:00Z"}}]"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var stops = await client.ListTripStopsAsync("T1");
+
+        Assert.Equal(3, stops.Count);
+        Assert.Equal("appointment", stops[0].Type);
+        Assert.Equal("S1", stops[0].Id);
+        Assert.Equal("75201", stops[0].Address?.ZipCode);
+        Assert.Equal(32.7, stops[0].Coordinates?.Latitude);
+        Assert.True(stops[0].AppointmentConfirmed);
+        Assert.Equal("delivery_window", stops[1].Type);
+        Assert.Equal("2026-01-03T17:00:00Z", stops[1].StopWindow?.End?.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+        Assert.Equal("waypoint", stops[2].Type);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Get, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task ListTripStops_url_encodes_trip_id_in_path()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("[]"),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.ListTripStopsAsync("a/b c");
+
+        Assert.Contains("/api/p/v1/trips/a%2Fb%20c/stops", handler.Calls[0].Request.RequestUri?.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task ListTripStops_returns_empty_on_not_found_without_logging_error()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Empty(await client.ListTripStopsAsync("999"));
+        Assert.Empty(logger.Messages);
+    }
+
+    [Fact]
+    public async Task ListTripStops_returns_empty_on_server_error_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Empty(await client.ListTripStopsAsync("T1"));
+        Assert.Contains("500", logger.AllText);
+        Assert.DoesNotContain("test-token", logger.AllText);   // token never logged
+    }
 }

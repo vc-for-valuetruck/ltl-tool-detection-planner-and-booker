@@ -253,8 +253,82 @@ public sealed class AlvysLoad
     [JsonPropertyName("PaidAt")]
     public DateTimeOffset? PaidAt { get; set; }
 
+    [JsonPropertyName("CancelledBy")]
+    public string? CancelledBy { get; set; }
+
+    [JsonPropertyName("PickedUpAt")]
+    public DateTimeOffset? PickedUpAt { get; set; }
+
+    [JsonPropertyName("DeliveredAt")]
+    public DateTimeOffset? DeliveredAt { get; set; }
+
+    [JsonPropertyName("InvoicedAt")]
+    public DateTimeOffset? InvoicedAt { get; set; }
+
+    [JsonPropertyName("LastInvoiceSentAt")]
+    public DateTimeOffset? LastInvoiceSentAt { get; set; }
+
+    [JsonPropertyName("Payments")]
+    public List<AlvysLoadPayment>? Payments { get; set; }
+
     [JsonPropertyName("IsDeleted")]
     public bool? IsDeleted { get; set; }
+}
+
+/// <summary>
+/// A payment applied against a load, as carried on the load-detail response for the
+/// stop-1-to-billed lifecycle (invoiced → paid). Kept minimal/tolerant of unknown fields.
+/// </summary>
+public sealed class AlvysLoadPayment
+{
+    [JsonPropertyName("Amount")]
+    public decimal? Amount { get; set; }
+
+    [JsonPropertyName("PaidAt")]
+    public DateTimeOffset? PaidAt { get; set; }
+
+    [JsonPropertyName("Reference")]
+    public string? Reference { get; set; }
+
+    [JsonPropertyName("Method")]
+    public string? Method { get; set; }
+}
+
+/// <summary>
+/// Query parameters for the read-only load-detail lookup
+/// (<c>GET /api/p/v{version}/loads?id=…|loadNumber=…|orderNumber=…</c>). At least one of
+/// the three must be supplied; bound from the internal endpoint query string and passed
+/// to <see cref="AlvysApiRoutes.LoadDetail"/>. A 404 upstream can mean no such load or an
+/// abandoned creation with no trips — both degrade to <c>null</c>.
+/// </summary>
+public sealed class LoadLookup
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("loadNumber")]
+    public string? LoadNumber { get; set; }
+
+    [JsonPropertyName("orderNumber")]
+    public string? OrderNumber { get; set; }
+
+    /// <summary>True when at least one lookup key is supplied (non-blank).</summary>
+    [JsonIgnore]
+    public bool HasCriteria =>
+        !string.IsNullOrWhiteSpace(Id)
+        || !string.IsNullOrWhiteSpace(LoadNumber)
+        || !string.IsNullOrWhiteSpace(OrderNumber);
+
+    /// <summary>
+    /// Guards that at least one of <see cref="Id"/>/<see cref="LoadNumber"/>/
+    /// <see cref="OrderNumber"/> is supplied before a request reaches Alvys.
+    /// </summary>
+    public void Validate()
+    {
+        if (!HasCriteria)
+            throw new ArgumentException(
+                "A load lookup requires one of id, loadNumber or orderNumber.", nameof(LoadLookup));
+    }
 }
 
 /// <summary>Postal address as returned on Alvys load/trip stops.</summary>
@@ -497,8 +571,17 @@ public sealed class AlvysTrip
     [JsonPropertyName("LoadNumber")]
     public string? LoadNumber { get; set; }
 
+    [JsonPropertyName("OrderNumber")]
+    public string? OrderNumber { get; set; }
+
     [JsonPropertyName("TenderAs")]
     public string? TenderAs { get; set; }
+
+    [JsonPropertyName("TenderAsSubsidiaryType")]
+    public string? TenderAsSubsidiaryType { get; set; }
+
+    [JsonPropertyName("RequiredEquipment")]
+    public List<string>? RequiredEquipment { get; set; }
 
     [JsonPropertyName("Stops")]
     public List<AlvysTripStop>? Stops { get; set; }
@@ -533,6 +616,24 @@ public sealed class AlvysTrip
     [JsonPropertyName("ReleasedDate")]
     public DateTimeOffset? ReleasedDate { get; set; }
 
+    [JsonPropertyName("PickedUpAt")]
+    public DateTimeOffset? PickedUpAt { get; set; }
+
+    [JsonPropertyName("DeliveredAt")]
+    public DateTimeOffset? DeliveredAt { get; set; }
+
+    [JsonPropertyName("CarrierAssignedAt")]
+    public DateTimeOffset? CarrierAssignedAt { get; set; }
+
+    [JsonPropertyName("ReleasedAt")]
+    public DateTimeOffset? ReleasedAt { get; set; }
+
+    [JsonPropertyName("CarrierPaidAt")]
+    public DateTimeOffset? CarrierPaidAt { get; set; }
+
+    [JsonPropertyName("DueDate")]
+    public DateTimeOffset? DueDate { get; set; }
+
     [JsonPropertyName("Truck")]
     public AlvysEquipmentRef? Truck { get; set; }
 
@@ -542,14 +643,158 @@ public sealed class AlvysTrip
     [JsonPropertyName("Driver")]
     public AlvysPartyPay? Driver { get; set; }
 
+    [JsonPropertyName("Driver1")]
+    public AlvysPartyPay? Driver1 { get; set; }
+
+    [JsonPropertyName("Driver2")]
+    public AlvysPartyPay? Driver2 { get; set; }
+
     [JsonPropertyName("Carrier")]
     public AlvysPartyPay? Carrier { get; set; }
 
     [JsonPropertyName("OwnerOperator")]
     public AlvysPartyPay? OwnerOperator { get; set; }
 
+    [JsonPropertyName("DispatcherId")]
+    public string? DispatcherId { get; set; }
+
+    [JsonPropertyName("DispatchedBy")]
+    public string? DispatchedBy { get; set; }
+
+    [JsonPropertyName("ReleasedBy")]
+    public string? ReleasedBy { get; set; }
+
+    [JsonPropertyName("CarrierSalesAgentId")]
+    public string? CarrierSalesAgentId { get; set; }
+
+    [JsonPropertyName("CarrierPayOnHold")]
+    public bool? CarrierPayOnHold { get; set; }
+
+    [JsonPropertyName("References")]
+    public List<AlvysReference>? References { get; set; }
+
+    [JsonPropertyName("UpdatedAt")]
+    public DateTimeOffset? UpdatedAt { get; set; }
+
+    [JsonPropertyName("UpdatedBy")]
+    public string? UpdatedBy { get; set; }
+
     [JsonPropertyName("IsDeleted")]
     public bool? IsDeleted { get; set; }
+}
+
+/// <summary>
+/// Query parameters for the read-only trip-detail lookup
+/// (<c>GET /api/p/v{version}/trips?id=…|tripNumber=…&amp;includeDeleted=…</c>). At least one
+/// of <see cref="Id"/>/<see cref="TripNumber"/> must be supplied; the optional
+/// <see cref="IncludeDeleted"/> is only emitted when set. Bound from the internal endpoint
+/// query string and passed to <see cref="AlvysApiRoutes.TripDetail"/>.
+/// </summary>
+public sealed class TripLookup
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("tripNumber")]
+    public string? TripNumber { get; set; }
+
+    [JsonPropertyName("includeDeleted")]
+    public bool? IncludeDeleted { get; set; }
+
+    /// <summary>True when at least one lookup key is supplied (non-blank).</summary>
+    [JsonIgnore]
+    public bool HasCriteria =>
+        !string.IsNullOrWhiteSpace(Id) || !string.IsNullOrWhiteSpace(TripNumber);
+
+    /// <summary>
+    /// Guards that at least one of <see cref="Id"/>/<see cref="TripNumber"/> is supplied
+    /// before a request reaches Alvys. <see cref="IncludeDeleted"/> alone is not sufficient.
+    /// </summary>
+    public void Validate()
+    {
+        if (!HasCriteria)
+            throw new ArgumentException(
+                "A trip lookup requires one of id or tripNumber.", nameof(TripLookup));
+    }
+}
+
+/// <summary>
+/// A polymorphic stop on a trip, as returned by the read-only
+/// <c>GET /api/p/v{version}/trips/{tripId}/stops</c> listing. Alvys discriminates the stop
+/// shape with a <c>$type</c> of <c>appointment</c>, <c>delivery_window</c> or <c>waypoint</c>,
+/// preserved here in <see cref="Type"/>. Rather than model three subclasses, the union of
+/// fields is flattened into one tolerant projection (only the members relevant to a given
+/// <c>$type</c> are populated); unknown JSON properties are tolerated.
+/// </summary>
+public sealed class AlvysTripStopDetail
+{
+    /// <summary>The Alvys <c>$type</c> discriminator: appointment/delivery_window/waypoint.</summary>
+    [JsonPropertyName("$type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("StopType")]
+    public string? StopType { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("Address")]
+    public AlvysContextAddress? Address { get; set; }
+
+    [JsonPropertyName("Coordinates")]
+    public AlvysCoordinates? Coordinates { get; set; }
+
+    [JsonPropertyName("ArrivedAt")]
+    public DateTimeOffset? ArrivedAt { get; set; }
+
+    [JsonPropertyName("DepartedAt")]
+    public DateTimeOffset? DepartedAt { get; set; }
+
+    [JsonPropertyName("CompanyId")]
+    public string? CompanyId { get; set; }
+
+    [JsonPropertyName("CompanyNumber")]
+    public string? CompanyNumber { get; set; }
+
+    [JsonPropertyName("CompanyName")]
+    public string? CompanyName { get; set; }
+
+    [JsonPropertyName("References")]
+    public List<AlvysReference>? References { get; set; }
+
+    // appointment ($type = appointment)
+    [JsonPropertyName("AppointmentRequested")]
+    public bool? AppointmentRequested { get; set; }
+
+    [JsonPropertyName("AppointmentConfirmed")]
+    public bool? AppointmentConfirmed { get; set; }
+
+    [JsonPropertyName("AppointmentDate")]
+    public DateTimeOffset? AppointmentDate { get; set; }
+
+    // appointment + delivery_window
+    [JsonPropertyName("ScheduleType")]
+    public string? ScheduleType { get; set; }
+
+    [JsonPropertyName("LoadingType")]
+    public string? LoadingType { get; set; }
+
+    // delivery_window + waypoint
+    [JsonPropertyName("StopWindow")]
+    public AlvysStopWindow? StopWindow { get; set; }
+}
+
+/// <summary>An inclusive arrival window (<c>Begin</c>/<c>End</c>) on a trip stop.</summary>
+public sealed class AlvysStopWindow
+{
+    [JsonPropertyName("Begin")]
+    public DateTimeOffset? Begin { get; set; }
+
+    [JsonPropertyName("End")]
+    public DateTimeOffset? End { get; set; }
 }
 
 /// <summary>A stop on a trip: location, schedule and movement timestamps.</summary>

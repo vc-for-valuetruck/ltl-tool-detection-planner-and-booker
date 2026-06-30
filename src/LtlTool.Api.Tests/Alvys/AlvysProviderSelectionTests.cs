@@ -100,4 +100,14 @@ public sealed class AlvysProviderSelectionTests
         Assert.Empty(documents);
         Assert.Empty(notes);
     }
+
+    [Fact]
+    public async Task Fallback_client_returns_null_and_empty_for_load_trip_detail_and_stops()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        Assert.Null(await client.GetLoadAsync(new LoadLookup { Id = "L1" }));
+        Assert.Null(await client.GetTripAsync(new TripLookup { Id = "T1" }));
+        Assert.Empty(await client.ListTripStopsAsync("T1"));
+    }
 }
