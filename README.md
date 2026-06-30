@@ -150,8 +150,26 @@ src/LtlTool.Api/
 ├── Data/AppDbContext.cs     # EF Core context (add your DbSets here)
 └── Features/                # vertical-slice features
     ├── Health/              # GET /api/health (anonymous liveness)
-    └── Me/                  # GET /api/me (protected sample endpoint)
+    ├── Me/                  # GET /api/me (protected sample endpoint)
+    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks}/search (protected, read-only)
+    └── Integrations/Alvys/  # server-side Alvys client (IAlvysClient) — credentials never leave the API
 ```
+
+### Internal read-only Alvys endpoints
+
+The dispatcher SPA never talks to Alvys directly — it calls these protected,
+server-side endpoints, which proxy `IAlvysClient` so Alvys OAuth credentials stay on
+the API. They are **read-only search** endpoints (queries only; no Alvys writeback, no
+`PUT`/`PATCH`/`DELETE`). Alvys models searches as `POST` (the filter set is the body),
+so these are `POST` too. All require the `AllowedEmailDomain` policy (401 when
+unauthenticated). Live Alvys remains the default source of truth.
+
+| Endpoint | Request body | Returns |
+|---|---|---|
+| `POST /api/alvys/loads/search` | `LoadSearchRequest` | paged open-freight loads |
+| `POST /api/alvys/trips/search` | `TripSearchRequest` | paged trips |
+| `POST /api/alvys/trailers/search` | `TrailerSearchRequest` | paged trailer equipment |
+| `POST /api/alvys/trucks/search` | `TruckSearchRequest` | paged truck equipment |
 
 Add new functionality as a folder under `Features/` (controller + service + DTOs).
 

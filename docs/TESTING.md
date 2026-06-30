@@ -40,6 +40,16 @@ Coverage:
   validation (`PageSize > 0`, `LoadNumbers ≤ 150`) throws **before** any network call, and
   non-success responses (incl. 429) surface as empty results / `null` instead of throwing.
 
+- **Internal read-only endpoints** (`AlvysSearchControllerTests`,
+  `AlvysSearchEndpointTests`) — the `/api/alvys/{loads,trips,trailers,trucks}/search`
+  endpoints pass the request body straight through to `IAlvysClient` and return the paged
+  read model unchanged (asserted with a recording fake client). A dedicated test
+  serializes every response and asserts **no credential/secret field** (`client_secret`,
+  `access_token`, `Bearer`, `ClientId`, `TokenUrl`, …) appears. The route-level tests hit
+  the endpoints through `WebApplicationFactory` and assert each returns **401 when
+  unauthenticated** — proving the route is mapped *and* protected (a missing route would
+  be 404), while health stays anonymous.
+
 ## Source-of-truth & fallback behavior under test
 
 - **Live is the default source of truth.** Provider-selection tests assert that the
