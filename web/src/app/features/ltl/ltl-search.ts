@@ -13,6 +13,7 @@ import {
   LtlSearchResponse,
   LtlSortField,
   MatchResult,
+  VisibilityEventView,
 } from './ltl.models';
 
 type ConsoleTab = 'search' | 'billing' | 'exceptions';
@@ -200,6 +201,7 @@ export class LtlSearch {
 
   // Detail drawer / assignment panel.
   protected readonly selected = signal<LtlLoadSummary | null>(null);
+  protected readonly detailLoading = signal(false);
   protected readonly matches = signal<MatchResult[] | null>(null);
   protected readonly matchesLoading = signal(false);
   protected readonly expandedMatch = signal<string | null>(null);
@@ -369,6 +371,18 @@ export class LtlSearch {
   protected select(load: LtlLoadSummary): void {
     this.selected.set(load);
     this.resetAssignmentForm();
+
+    // List rows carry no per-load visibility/invoice context (those are detail-path fetches).
+    // Pull the full detail so the drawer shows invoice-aware billing and visibility failures.
+    this.detailLoading.set(true);
+    this.ltl.getLoad(load.id).subscribe({
+      next: (detail) => {
+        if (this.selected()?.id === load.id) this.selected.set(detail);
+        this.detailLoading.set(false);
+      },
+      error: () => this.detailLoading.set(false),
+    });
+
     this.matches.set(null);
     this.matchesLoading.set(true);
     this.ltl.getMatches(load.id, 5).subscribe({
@@ -389,9 +403,20 @@ export class LtlSearch {
 
   protected closeDrawer(): void {
     this.selected.set(null);
+    this.detailLoading.set(false);
     this.matches.set(null);
     this.expandedMatch.set(null);
     this.resetAssignmentForm();
+  }
+
+  /** Failed/errored visibility shares on the selected load (detail-path only). */
+  protected visibilityFailures(load: LtlLoadSummary): VisibilityEventView[] {
+    return load.visibility.events.filter((e) => e.isFailure);
+  }
+
+  /** Noteworthy, non-failed visibility milestones for the timeline. */
+  protected visibilityMilestones(load: LtlLoadSummary): VisibilityEventView[] {
+    return load.visibility.events.filter((e) => !e.isFailure);
   }
 
   protected toggleFactors(match: MatchResult): void {

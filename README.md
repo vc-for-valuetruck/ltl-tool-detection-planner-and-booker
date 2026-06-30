@@ -393,8 +393,20 @@ The Angular `/ltl` route (`web/src/app/features/ltl/`) is a tabbed enterprise co
 - **Exceptions** — loads carrying operational/billing exceptions.
 
 Selecting a load opens a detail drawer that loads explainable match recommendations on demand
-(expandable per-factor breakdown), billing-readiness badges and risks, exceptions, and an
-**internal assignment panel**. Choosing a recommended match prefills the form and validates it
-live; blockers disable the Assign action while warnings can be overridden with a stated reason.
-The panel is explicitly labelled "Not pushed to Alvys", and the assignment history shows each
-entry's `AlvysWriteback` status.
+(expandable per-factor breakdown, including an **Equipment availability** factor that reads
+`Unavailable` — excluded from the score — when equipment events were not fetched, and `Weak`
+when a maintenance/out-of-service event overlaps the load window), billing-readiness badges and
+risks (already-invoiced state and unpaid-balance from the invoice record), a **tracking
+visibility** section listing failed shares as blocking risks with an expandable milestone
+timeline, exceptions, and an **internal assignment panel**. Choosing a recommended match
+prefills the form and validates it live; blockers disable the Assign action while warnings
+(including equipment-event conflicts) can be overridden with a stated reason. The panel is
+explicitly labelled "Not pushed to Alvys", and the assignment history shows each entry's
+`AlvysWriteback` status.
+
+These decision-support signals are derived from read-only Alvys context and never assert
+availability or billing values from absent data — see
+[docs/ALVYS_INTEGRATION.md](docs/ALVYS_INTEGRATION.md#ltl-decision-support-signals-how-the-context-reaches-the-user)
+for the signals and known limitations (notably that `/api/ltl/exceptions` enriches only the
+first `MaxVisibilityEnriched` loads — default 25 — with visibility; visibility-only failures
+beyond that cap surface on the load detail path only).

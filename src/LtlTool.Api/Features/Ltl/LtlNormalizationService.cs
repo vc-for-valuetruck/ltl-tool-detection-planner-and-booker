@@ -32,12 +32,16 @@ public sealed class LtlNormalizationService(
     /// Normalize a load. <paramref name="documents"/> is optional and only used to enable POD
     /// evaluation in the billing-readiness fold-in. <paramref name="invoices"/> is optional and,
     /// when supplied (detail path), confirms already-invoiced state and surfaces invoice-derived
-    /// billing risks.
+    /// billing risks. <paramref name="visibility"/> and <paramref name="extraExceptions"/> let the
+    /// caller fold in visibility-history context and any externally-derived exceptions (e.g. failed
+    /// visibility shares) without this service taking an Alvys dependency for the per-load fetch.
     /// </summary>
     public LtlLoadSummary Normalize(
         AlvysLoad load,
         IReadOnlyList<AlvysLoadDocument>? documents = null,
-        IReadOnlyList<AlvysInvoice>? invoices = null)
+        IReadOnlyList<AlvysInvoice>? invoices = null,
+        VisibilityContext? visibility = null,
+        IReadOnlyList<LtlExceptionFlag>? extraExceptions = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -83,6 +87,8 @@ public sealed class LtlNormalizationService(
         if (string.IsNullOrWhiteSpace(load.Status)) missing.Add(MissingDataFlag.InvoiceStatus);
 
         var exceptions = billing.DeriveExceptions(load, billingResult);
+        if (extraExceptions is { Count: > 0 })
+            exceptions = [.. exceptions, .. extraExceptions];
 
         return new LtlLoadSummary
         {
@@ -111,6 +117,7 @@ public sealed class LtlNormalizationService(
             MissingData = missing,
             Billing = billingResult,
             Exceptions = exceptions,
+            Visibility = visibility ?? VisibilityContext.NotEvaluated,
         };
     }
 

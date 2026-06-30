@@ -27,7 +27,8 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
 {
     private readonly LtlMatchOptions _match = options.Value.Match;
 
-    public MatchResult Score(LtlLoadSummary load, MatchCandidate candidate)
+    public MatchResult Score(
+        LtlLoadSummary load, MatchCandidate candidate, EquipmentEventAssessment? events = null)
     {
         var factors = new List<MatchFactor>();
         var disqualifiers = new List<string>();
@@ -38,6 +39,7 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
         factors.Add(ScoreDriverReadiness(candidate.Driver, now, disqualifiers));
         factors.Add(ScoreFleetAlignment(load, candidate));
         factors.Add(ScoreGeography(load, candidate.Driver));
+        factors.Add(ScoreEquipmentEvents(events));
         factors.Add(NotScored("Hours of Service", "HOS data is not available in this slice."));
         factors.Add(NotScored("Historical performance", "Lane/driver history is not available in this slice."));
 
@@ -176,6 +178,35 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
         }
 
         return new MatchFactor { Name = name, Status = MatchFactorStatus.Neutral, Detail = "Subsidiary data present but not cross-confirmed.", Points = _match.FleetAlignmentWeight * 0.5, MaxPoints = _match.FleetAlignmentWeight };
+    }
+
+    private MatchFactor ScoreEquipmentEvents(EquipmentEventAssessment? events)
+    {
+        const string name = "Equipment availability";
+
+        // Never assert availability from absent data: when events were not fetched for a known
+        // window, this factor is unavailable and excluded from the denominator.
+        if (events is not { Evaluated: true })
+            return NotScored(name, "Truck/trailer event data was not available for the load window.");
+
+        if (events.HasConflict)
+            return new MatchFactor
+            {
+                Name = name,
+                Status = MatchFactorStatus.Weak,
+                Detail = $"Equipment event conflict: {string.Join(" ", events.Conflicts)}",
+                Points = 0,
+                MaxPoints = _match.EquipmentEventsWeight,
+            };
+
+        return new MatchFactor
+        {
+            Name = name,
+            Status = MatchFactorStatus.Strong,
+            Detail = "No repair/maintenance events overlap the load window.",
+            Points = _match.EquipmentEventsWeight,
+            MaxPoints = _match.EquipmentEventsWeight,
+        };
     }
 
     private MatchFactor ScoreGeography(LtlLoadSummary load, AlvysDriver? driver)

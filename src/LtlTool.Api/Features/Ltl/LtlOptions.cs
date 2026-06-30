@@ -44,6 +44,20 @@ public sealed class LtlOptions
     /// </summary>
     public int StaleUninvoicedDays { get; set; } = 7;
 
+    /// <summary>
+    /// Upper bound on how many already-flagged loads in the exception sweep are enriched with a
+    /// per-load visibility-history fetch. Bounds the extra upstream calls; loads past the cap keep
+    /// their load-derived exceptions only (visibility-only signals still surface on the detail path).
+    /// </summary>
+    public int MaxVisibilityEnriched { get; set; } = 25;
+
+    /// <summary>
+    /// Equipment-event types (case-insensitive substring) that count as an availability conflict
+    /// when they overlap a load's pickup/delivery window (repair/maintenance/out-of-service/other).
+    /// </summary>
+    public List<string> EquipmentConflictEventTypes { get; set; } =
+        ["Repair", "Maintenance", "Out of Service", "Other"];
+
     /// <summary>Match scoring weights/thresholds.</summary>
     public LtlMatchOptions Match { get; set; } = new();
 }
@@ -59,6 +73,14 @@ public sealed class LtlMatchOptions
     public double DriverReadinessWeight { get; set; } = 25;
     public double FleetAlignmentWeight { get; set; } = 10;
     public double GeographyWeight { get; set; } = 10;
+
+    /// <summary>
+    /// Weight of the equipment-availability factor (truck/trailer repair/maintenance events
+    /// overlapping the load window). Only scored when event data was actually fetched for the
+    /// candidate over a known window — otherwise reported as not-scored and excluded from the
+    /// denominator.
+    /// </summary>
+    public double EquipmentEventsWeight { get; set; } = 15;
 
     /// <summary>Score (0–100) at/above which a candidate is an Excellent Match.</summary>
     public int ExcellentThreshold { get; set; } = 85;

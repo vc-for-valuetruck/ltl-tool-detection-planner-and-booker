@@ -28,6 +28,11 @@ internal static class LtlTestFactory
 
     public static MatchScoringService Scorer(LtlOptions? options = null) =>
         new(Options(options), Clock());
+
+    public static VisibilityAnalyzer Visibility() => new();
+
+    public static EquipmentEventAnalyzer EquipmentEvents(LtlOptions? options = null) =>
+        new(Options(options));
 }
 
 /// <summary>
@@ -44,6 +49,10 @@ internal sealed class FakeAlvysClient : IAlvysClient
     public List<AlvysTrailerEquipment> Trailers { get; set; } = [];
     public List<AlvysDispatchPreference> DispatchPreferences { get; set; } = [];
     public List<AlvysInvoice> Invoices { get; set; } = [];
+    public List<AlvysVisibilityHistoryEvent> InboundVisibility { get; set; } = [];
+    public List<AlvysVisibilityHistoryEvent> OutboundVisibility { get; set; } = [];
+    public List<AlvysTruckEvent> TruckEvents { get; set; } = [];
+    public List<AlvysTrailerEvent> TrailerEvents { get; set; } = [];
 
     public Task<AlvysLoadsResponse> SearchLoadsAsync(
         int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
@@ -109,11 +118,11 @@ internal sealed class FakeAlvysClient : IAlvysClient
     public Task<AlvysInvoice?> GetInvoiceAsync(InvoiceLookup lookup, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListInboundVisibilityHistoryAsync(string loadNumber, CancellationToken ct = default)
-        => throw new NotSupportedException();
+        => Task.FromResult<IReadOnlyList<AlvysVisibilityHistoryEvent>>(InboundVisibility);
     public Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListOutboundVisibilityHistoryAsync(string loadNumber, CancellationToken ct = default)
-        => throw new NotSupportedException();
+        => Task.FromResult<IReadOnlyList<AlvysVisibilityHistoryEvent>>(OutboundVisibility);
     public Task<IReadOnlyList<AlvysTruckEvent>> SearchTruckEventsAsync(TruckEventSearchRequest request, CancellationToken ct = default)
-        => throw new NotSupportedException();
+        => Task.FromResult<IReadOnlyList<AlvysTruckEvent>>(TruckEvents);
     public Task<IReadOnlyList<AlvysTrailerEvent>> SearchTrailerEventsAsync(TrailerEventSearchRequest request, CancellationToken ct = default)
-        => throw new NotSupportedException();
+        => Task.FromResult<IReadOnlyList<AlvysTrailerEvent>>(TrailerEvents);
 }

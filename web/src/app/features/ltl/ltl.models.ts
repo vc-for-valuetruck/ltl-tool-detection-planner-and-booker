@@ -71,6 +71,22 @@ export interface BillingReadinessResult {
   podEvaluated: boolean;
 }
 
+export interface VisibilityEventView {
+  direction: string;
+  eventType: string | null;
+  status: string | null;
+  sharedAt: string | null;
+  destination: string | null;
+  reason: string | null;
+  error: string | null;
+  isFailure: boolean;
+}
+
+export interface VisibilityContext {
+  evaluated: boolean;
+  events: VisibilityEventView[];
+}
+
 export interface LtlLoadSummary {
   id: string;
   loadNumber: string | null;
@@ -98,6 +114,7 @@ export interface LtlLoadSummary {
   billing: BillingReadinessResult;
   exceptions: LtlExceptionFlag[];
   hasExceptions: boolean;
+  visibility: VisibilityContext;
 }
 
 export interface LtlSearchResponse {

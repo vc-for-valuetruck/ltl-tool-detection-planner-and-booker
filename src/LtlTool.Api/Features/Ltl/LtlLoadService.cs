@@ -16,7 +16,8 @@ namespace LtlTool.Api.Features.Ltl;
 /// <see cref="LtlSearchResponse.Truncated"/> so the UI can say so honestly.
 /// </summary>
 public sealed class LtlLoadService(
-    IAlvysClient alvys, LtlNormalizationService normalizer, IOptions<LtlOptions> options)
+    IAlvysClient alvys, LtlNormalizationService normalizer, VisibilityAnalyzer visibility,
+    IOptions<LtlOptions> options)
 {
     private readonly LtlOptions _options = options.Value;
 
@@ -57,7 +58,31 @@ public sealed class LtlLoadService(
         var loadNumber = load.LoadNumber ?? idOrNumber;
         var documents = await alvys.ListLoadDocumentsAsync(loadNumber, ct);
         var invoices = await FetchInvoicesForLoadAsync(loadNumber, ct);
-        return normalizer.Normalize(load, documents, invoices);
+        var (context, visibilityExceptions) = await FetchVisibilityAsync(loadNumber, ct);
+        return normalizer.Normalize(load, documents, invoices, context, visibilityExceptions);
+    }
+
+    /// <summary>
+    /// Fetches the inbound + outbound visibility history for a single load (read-only) and turns it
+    /// into a detail-timeline context plus any failed-share exception flags. Degrades to a
+    /// not-evaluated context with no exceptions when there is no load number to look up.
+    /// </summary>
+    private async Task<(VisibilityContext Context, IReadOnlyList<LtlExceptionFlag> Exceptions)>
+        FetchVisibilityAsync(string loadNumber, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(loadNumber))
+            return (VisibilityContext.NotEvaluated, []);
+
+        var inboundTask = alvys.ListInboundVisibilityHistoryAsync(loadNumber, ct);
+        var outboundTask = alvys.ListOutboundVisibilityHistoryAsync(loadNumber, ct);
+        await Task.WhenAll(inboundTask, outboundTask);
+
+        var inbound = await inboundTask;
+        var outbound = await outboundTask;
+
+        var context = visibility.BuildContext(inbound, outbound);
+        var exceptions = visibility.DeriveExceptions(loadNumber, inbound, outbound);
+        return (context, exceptions);
     }
 
     /// <summary>
@@ -91,7 +116,14 @@ public sealed class LtlLoadService(
         BillingBadge? badge, CancellationToken ct)
     {
         var (loads, _) = await SweepAsync(new LoadSearchRequest { PageSize = _options.AlvysPageSize }, ct);
-        var normalized = loads.Select(l => normalizer.Normalize(l));
+
+        // Bulk-fetch invoices for the whole swept set in one paged search (LoadNumbers is a list
+        // filter upstream) rather than one call per load, so invoice-backed billing readiness
+        // extends to the worklist without an N-call fan-out.
+        var invoicesByLoad = await FetchInvoicesForLoadsAsync(loads, ct);
+
+        var normalized = loads.Select(l =>
+            normalizer.Normalize(l, invoices: InvoicesFor(l, invoicesByLoad)));
 
         return normalized
             .Where(s => !s.Billing.IsAlreadyInvoiced)
@@ -101,16 +133,97 @@ public sealed class LtlLoadService(
             .ToList();
     }
 
-    /// <summary>Loads carrying one or more operational/billing exceptions.</summary>
+    /// <summary>
+    /// Loads carrying one or more operational/billing exceptions. The first
+    /// <see cref="LtlOptions.MaxVisibilityEnriched"/> scanned loads are additionally enriched with a
+    /// per-load visibility-history fetch so failed/errored tracking shares surface here too; loads
+    /// past that bound keep their load-derived exceptions only (visibility-only signals still
+    /// surface on the detail path). This bound keeps the extra upstream calls fixed.
+    /// </summary>
     public async Task<IReadOnlyList<LtlLoadSummary>> ExceptionsAsync(CancellationToken ct)
     {
         var (loads, _) = await SweepAsync(new LoadSearchRequest { PageSize = _options.AlvysPageSize }, ct);
-        return loads
-            .Select(l => normalizer.Normalize(l))
+
+        var enrichLimit = Math.Max(0, _options.MaxVisibilityEnriched);
+        var summaries = new List<LtlLoadSummary>(loads.Count);
+        var enriched = 0;
+
+        foreach (var load in loads)
+        {
+            var loadNumber = load.LoadNumber;
+            if (enriched < enrichLimit && !string.IsNullOrWhiteSpace(loadNumber))
+            {
+                var (context, visibilityExceptions) = await FetchVisibilityAsync(loadNumber, ct);
+                summaries.Add(normalizer.Normalize(
+                    load, visibility: context, extraExceptions: visibilityExceptions));
+                enriched++;
+            }
+            else
+            {
+                summaries.Add(normalizer.Normalize(load));
+            }
+        }
+
+        return summaries
             .Where(s => s.HasExceptions)
             .OrderByDescending(s => s.Exceptions.Count(e => e.BlocksBilling))
             .ThenByDescending(s => s.Exceptions.Count)
             .ToList();
+    }
+
+    /// <summary>
+    /// Bulk-fetches invoices for a set of loads in one paged invoice search keyed by load number,
+    /// returning a load-number → invoices map. Returns an empty map when there are no load numbers
+    /// or the upstream degrades — never fabricates billing state.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, List<AlvysInvoice>>> FetchInvoicesForLoadsAsync(
+        IReadOnlyList<AlvysLoad> loads, CancellationToken ct)
+    {
+        var loadNumbers = loads
+            .Select(l => l.LoadNumber)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var map = new Dictionary<string, List<AlvysInvoice>>(StringComparer.OrdinalIgnoreCase);
+        if (loadNumbers.Count == 0) return map;
+
+        var page = 0;
+        var pageSize = _options.AlvysPageSize;
+        var fetched = 0;
+
+        while (true)
+        {
+            var response = await alvys.SearchInvoicesAsync(
+                new InvoiceSearchRequest { Page = page, PageSize = pageSize, LoadNumbers = loadNumbers }, ct);
+            if (response.Items.Count == 0) break;
+
+            foreach (var invoice in response.Items)
+            {
+                foreach (var loadRef in invoice.Loads ?? [])
+                {
+                    if (string.IsNullOrWhiteSpace(loadRef.LoadNumber)) continue;
+                    if (!map.TryGetValue(loadRef.LoadNumber!, out var list))
+                        map[loadRef.LoadNumber!] = list = [];
+                    list.Add(invoice);
+                }
+            }
+
+            fetched += response.Items.Count;
+            if (fetched >= response.Total || response.Items.Count < pageSize) break;
+            if (fetched >= _options.MaxLoadsScanned) break;
+            page++;
+        }
+
+        return map;
+    }
+
+    private static IReadOnlyList<AlvysInvoice>? InvoicesFor(
+        AlvysLoad load, IReadOnlyDictionary<string, List<AlvysInvoice>> invoicesByLoad)
+    {
+        if (string.IsNullOrWhiteSpace(load.LoadNumber)) return null;
+        return invoicesByLoad.TryGetValue(load.LoadNumber!, out var list) ? list : [];
     }
 
     private LoadSearchRequest BuildUpstreamRequest(LtlSearchQuery query)

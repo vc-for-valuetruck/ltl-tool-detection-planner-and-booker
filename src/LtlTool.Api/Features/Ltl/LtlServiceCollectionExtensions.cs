@@ -21,6 +21,8 @@ public static class LtlServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
 
         services.AddScoped<BillingReadinessService>();
+        services.AddScoped<VisibilityAnalyzer>();
+        services.AddScoped<EquipmentEventAnalyzer>();
         services.AddScoped<LtlNormalizationService>();
         services.AddScoped<MatchScoringService>();
         services.AddScoped<MatchService>();

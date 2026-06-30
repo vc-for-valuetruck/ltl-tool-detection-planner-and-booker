@@ -146,4 +146,28 @@ public sealed class AssignmentValidationServiceTests
 
         Assert.Contains(result.Warnings, i => i.Code == "PICKUP_WINDOW_PASSED");
     }
+
+    [Fact]
+    public void Equipment_event_conflict_warns_only_when_evaluated()
+    {
+        var request = new AssignmentRequest { DriverId = "DR1", TrailerId = "TR1" };
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = Trailer() };
+        var events = new EquipmentEventAssessment { Evaluated = true, Conflicts = ["Truck Repair overlaps the load window."] };
+
+        var result = Service().Validate(Load(), request, candidate, events);
+
+        Assert.False(result.HasBlockers);
+        Assert.Contains(result.Warnings, i => i.Code == "EQUIPMENT_EVENT_CONFLICT");
+    }
+
+    [Fact]
+    public void Unevaluated_equipment_events_never_warn()
+    {
+        var request = new AssignmentRequest { DriverId = "DR1", TrailerId = "TR1" };
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = Trailer() };
+
+        var result = Service().Validate(Load(), request, candidate, EquipmentEventAssessment.NotEvaluated);
+
+        Assert.DoesNotContain(result.Warnings, i => i.Code == "EQUIPMENT_EVENT_CONFLICT");
+    }
 }
