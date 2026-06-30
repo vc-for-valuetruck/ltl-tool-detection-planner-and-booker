@@ -30,10 +30,10 @@ public static class AlvysServiceCollectionExtensions
         services.AddScoped<IAlvysReadinessService, AlvysReadinessService>();
 
         // Durable operation outbox/audit + idempotency. Persisted in AppDbContext (server-side, never
-        // browser storage); scoped to match the DbContext lifetime. Recording is tool-local and never
-        // sends anything to Alvys in this phase.
+        // browser storage); scoped to match the DbContext lifetime.
         services.AddScoped<IAlvysOperationStore, EfAlvysOperationStore>();
         services.AddScoped<IAlvysOperationRecorder, AlvysOperationRecorder>();
+        services.AddScoped<IAlvysWriteClient, AlvysHttpWriteClient>();
 
         var options = configuration.GetSection(AlvysOptions.SectionName).Get<AlvysOptions>()
             ?? new AlvysOptions();
@@ -47,6 +47,10 @@ public static class AlvysServiceCollectionExtensions
             client.BaseAddress = new Uri(options.ApiBaseUrl.TrimEnd('/') + "/");
             client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
         });
+
+        // Sandbox write client — base address is overridden at call time with the sandbox URL.
+        services.AddHttpClient(AlvysHttpWriteClient.SandboxHttpClientName,
+            client => client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds));
 
         services.AddSingleton<IAlvysTokenProvider, AlvysTokenProvider>();
 

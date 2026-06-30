@@ -145,7 +145,7 @@ public sealed class EfAlvysOperationStoreTests : IDisposable
         string firstId;
         using (var ctx = NewContext())
         {
-            var recorder = new AlvysOperationRecorder(gateway, new EfAlvysOperationStore(ctx), clock);
+            var recorder = new AlvysOperationRecorder(gateway, new EfAlvysOperationStore(ctx), clock, new NoOpAlvysWriteClient());
             var first = recorder.RecordExecute("d@vt.com", "create-load-note",
                 new AlvysOperationRequest { LoadNumber = "L1", NoteText = "n", IdempotencyKey = "dur-key" });
             firstId = first.Record!.Id;
@@ -154,7 +154,7 @@ public sealed class EfAlvysOperationStoreTests : IDisposable
         // New context: the replay must find the persisted executable record, not create a second.
         using (var ctx = NewContext())
         {
-            var recorder = new AlvysOperationRecorder(gateway, new EfAlvysOperationStore(ctx), clock);
+            var recorder = new AlvysOperationRecorder(gateway, new EfAlvysOperationStore(ctx), clock, new NoOpAlvysWriteClient());
             var replay = recorder.RecordExecute("d@vt.com", "create-load-note",
                 new AlvysOperationRequest { LoadNumber = "L1", NoteText = "n", IdempotencyKey = "dur-key" });
 

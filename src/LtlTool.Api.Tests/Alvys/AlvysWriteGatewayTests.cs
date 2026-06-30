@@ -44,7 +44,11 @@ public sealed class AlvysWriteGatewayTests
         Assert.Equal(AlvysOperationDisposition.Simulated, outcome.Disposition);
         Assert.NotNull(outcome.Payload);
         Assert.Equal("Assigned to driver D1 over a tight window.", outcome.Payload!.Body["Description"]);
-        Assert.Equal("Dispatcher", outcome.Payload.Body["NoteType"]);
+        // Default NoteType is General (Alvys accepted values: System/General/Assignment/Safety).
+        Assert.Equal("General", outcome.Payload.Body["NoteType"]);
+        // The note Id is generated at dispatch time (write client), not in the deterministic
+        // payload, so equivalent note requests still de-duplicate by idempotency key.
+        Assert.False(outcome.Payload.Body.ContainsKey("Id"));
     }
 
     [Fact]
@@ -67,18 +71,19 @@ public sealed class AlvysWriteGatewayTests
     }
 
     [Fact]
-    public void Sandbox_mode_resolves_to_unsupported_because_no_endpoint_is_documented()
+    public void Sandbox_mode_fully_configured_signals_sandbox_execution_eligible()
     {
-        // Even fully configured for sandbox, an undocumented mutating endpoint must not be executed.
+        // Fully configured sandbox + Supported operation: gateway signals eligibility; the recorder
+        // dispatches the live call so the gateway itself never executes.
         var outcome = Gateway(
                 AlvysWritebackMode.Sandbox, environment: "sandbox",
                 sandboxBaseUrl: "https://sandbox.example.com", hasCredentials: true)
             .Execute("create-load-note", ValidNote());
 
-        Assert.Equal(AlvysOperationDisposition.Unsupported, outcome.Disposition);
+        Assert.Equal(AlvysOperationDisposition.SandboxExecuted, outcome.Disposition);
+        Assert.True(outcome.SandboxExecutionEligible);
         Assert.False(outcome.Executed);
-        Assert.NotNull(outcome.RequiredToEnable);
-        Assert.Contains("endpoint", outcome.RequiredToEnable!, System.StringComparison.OrdinalIgnoreCase);
+        Assert.Null(outcome.RequiredToEnable);
     }
 
     [Fact]
@@ -95,23 +100,46 @@ public sealed class AlvysWriteGatewayTests
     [Fact]
     public void Etag_required_operations_block_without_an_etag()
     {
+        // tender-accept blocks on missing ETag and missing StopCompanyLinks.
         var outcome = Gateway(AlvysWritebackMode.Simulation)
             .Execute("tender-accept", new AlvysOperationRequest { TenderId = "T1" });
 
         Assert.Equal(AlvysOperationDisposition.Blocked, outcome.Disposition);
         Assert.Contains(outcome.Validation, i => i.Code == "ETAG_REQUIRED");
+        Assert.Contains(outcome.Validation, i => i.Code == "STOP_COMPANY_LINKS_REQUIRED");
     }
 
     [Fact]
-    public void Etag_required_operation_builds_payload_when_etag_supplied()
+    public void Etag_required_operation_builds_payload_when_etag_and_links_supplied()
     {
         var outcome = Gateway(AlvysWritebackMode.Simulation)
-            .DryRun("tender-accept", new AlvysOperationRequest { TenderId = "T1", Etag = "v1" });
+            .DryRun("tender-accept", new AlvysOperationRequest
+            {
+                TenderId = "T1",
+                Etag = "v1",
+                StopCompanyLinks = [new TenderStopCompanyLink { StopId = "S1", CompanyId = "C1" }],
+            });
 
         Assert.Equal(AlvysOperationDisposition.Simulated, outcome.Disposition);
         Assert.NotNull(outcome.Payload);
         Assert.True(outcome.Payload!.RequiresEtag);
         Assert.True(outcome.Payload.EtagSupplied);
+        Assert.True(outcome.Payload.Body.ContainsKey("StopCompanyLinks"));
+    }
+
+    [Fact]
+    public void Tender_accept_rejects_blank_stop_company_links()
+    {
+        var outcome = Gateway(AlvysWritebackMode.Simulation)
+            .Execute("tender-accept", new AlvysOperationRequest
+            {
+                TenderId = "T1",
+                Etag = "v1",
+                StopCompanyLinks = [new TenderStopCompanyLink { StopId = "", CompanyId = "" }],
+            });
+
+        Assert.Equal(AlvysOperationDisposition.Blocked, outcome.Disposition);
+        Assert.Contains(outcome.Validation, i => i.Code == "STOP_COMPANY_LINK_INVALID");
     }
 
     [Fact]
@@ -126,19 +154,49 @@ public sealed class AlvysWriteGatewayTests
     }
 
     [Fact]
-    public void Load_update_payload_carries_scoped_fields()
+    public void Load_update_payload_carries_writable_order_number()
     {
         var outcome = Gateway(AlvysWritebackMode.Simulation).DryRun("load-update",
             new AlvysOperationRequest
             {
                 LoadNumber = "L100",
                 Etag = "v2",
-                Fields = new() { ["CustomerReference"] = "PO-9", ["Notes"] = "rebill" },
+                Fields = new() { ["OrderNumber"] = "SHIP-100245" },
             });
 
         Assert.NotNull(outcome.Payload);
-        Assert.Equal("PO-9", outcome.Payload!.Body["CustomerReference"]);
-        Assert.Equal("rebill", outcome.Payload.Body["Notes"]);
+        Assert.Equal("SHIP-100245", outcome.Payload!.Body["OrderNumber"]);
+    }
+
+    [Fact]
+    public void Load_update_rejects_fields_outside_the_writable_allowlist()
+    {
+        var outcome = Gateway(AlvysWritebackMode.Simulation).Execute("load-update",
+            new AlvysOperationRequest
+            {
+                LoadNumber = "L100",
+                Etag = "v2",
+                Fields = new() { ["Status"] = "Delivered", ["CustomerId"] = "C9" },
+            });
+
+        Assert.Equal(AlvysOperationDisposition.Blocked, outcome.Disposition);
+        Assert.Contains(outcome.Validation, i => i.Code == "FIELD_NOT_WRITABLE");
+        Assert.Null(outcome.Payload);
+    }
+
+    [Fact]
+    public void Load_update_rejects_order_number_longer_than_30_chars()
+    {
+        var outcome = Gateway(AlvysWritebackMode.Simulation).Execute("load-update",
+            new AlvysOperationRequest
+            {
+                LoadNumber = "L100",
+                Etag = "v2",
+                Fields = new() { ["OrderNumber"] = new string('X', 31) },
+            });
+
+        Assert.Equal(AlvysOperationDisposition.Blocked, outcome.Disposition);
+        Assert.Contains(outcome.Validation, i => i.Code == "ORDER_NUMBER_TOO_LONG");
     }
 
     [Fact]

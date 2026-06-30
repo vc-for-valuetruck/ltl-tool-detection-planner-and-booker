@@ -103,6 +103,62 @@ public static class AlvysApiRoutes
         => BuildLoadSubresourcePath(apiVersion, loadNumber, "notes");
 
     /// <summary>
+    /// Relative path <c>api/p/v{version}/loads/{loadNumber}/notes</c> for creating a note
+    /// (POST). Same path as <see cref="LoadNotes"/>; the verb distinguishes read from write.
+    /// </summary>
+    public static string CreateLoadNote(string? apiVersion, string loadNumber)
+        => BuildLoadSubresourcePath(apiVersion, loadNumber, "notes");
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/loads/{loadNumber}</c> for a partial update (PATCH)
+    /// of a load resource. <paramref name="loadNumber"/> is URL-encoded.
+    /// </summary>
+    public static string LoadPatch(string? apiVersion, string loadNumber)
+        => $"api/p/{NormalizeVersion(apiVersion)}/loads/{Uri.EscapeDataString(loadNumber)}";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/assign</c> for assigning a carrier and
+    /// assets to a trip (POST). <paramref name="tripId"/> is URL-encoded.
+    /// </summary>
+    public static string TripAssign(string? apiVersion, string tripId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/assign";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/dispatch</c> for dispatching a trip
+    /// that already has a carrier and assets assigned (POST). <paramref name="tripId"/> is URL-encoded.
+    /// </summary>
+    public static string TripDispatch(string? apiVersion, string tripId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/dispatch";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/carriers/{carrierId}/status</c> for updating a carrier's
+    /// operational status (PATCH). <paramref name="carrierId"/> is URL-encoded.
+    /// </summary>
+    public static string CarrierStatusPatch(string? apiVersion, string carrierId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/carriers/{Uri.EscapeDataString(carrierId)}/status";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/tenders/{tenderId}/accept</c> for accepting an inbound
+    /// tender. <paramref name="tenderId"/> is URL-encoded.
+    /// </summary>
+    public static string TenderAccept(string? apiVersion, string tenderId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/tenders/{Uri.EscapeDataString(tenderId)}/accept";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/stops/{stopId}/arrival</c> for recording
+    /// a trip stop arrival (PUT). Both id segments are URL-encoded.
+    /// </summary>
+    public static string TripStopArrival(string? apiVersion, string tripId, string stopId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/stops/{Uri.EscapeDataString(stopId)}/arrival";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/stops/{stopId}/departure</c> for recording
+    /// a trip stop departure (PUT). Both id segments are URL-encoded.
+    /// </summary>
+    public static string TripStopDeparture(string? apiVersion, string tripId, string stopId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/stops/{Uri.EscapeDataString(stopId)}/departure";
+
+    /// <summary>
     /// Relative path <c>api/p/v{version}/loads?{query}</c> for the read-only load-detail
     /// lookup. At least one of <see cref="LoadLookup.Id"/>/<see cref="LoadLookup.LoadNumber"/>/
     /// <see cref="LoadLookup.OrderNumber"/> must be supplied (enforced by

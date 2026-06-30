@@ -57,9 +57,9 @@ public sealed class AlvysReadinessServiceTests
     }
 
     [Fact]
-    public void Sandbox_mode_fully_configured_still_reports_unsupported_operations()
+    public void Sandbox_mode_fully_configured_reports_sandbox_eligible_operations()
     {
-        // No documented mutating endpoint exists, so even a fully-configured sandbox cannot execute.
+        // All operations are Supported; fully configured sandbox marks every operation as eligible.
         var status = Service(
             AlvysWritebackMode.Sandbox, environment: "sandbox",
             sandboxBaseUrl: "https://sandbox.example.com", hasCredentials: true).GetStatus();
@@ -68,8 +68,8 @@ public sealed class AlvysReadinessServiceTests
         Assert.Empty(status.Blockers);
         Assert.All(status.Operations, o =>
         {
-            Assert.Equal(AlvysOperationEligibility.Unsupported, o.Eligibility);
-            Assert.NotNull(o.RequiredToEnable);
+            Assert.Equal(AlvysOperationEligibility.SandboxEligible, o.Eligibility);
+            Assert.Null(o.RequiredToEnable);
         });
     }
 

@@ -1,6 +1,43 @@
 namespace LtlTool.Api.Features.Integrations.Alvys.Writeback;
 
 /// <summary>
+/// The Alvys-documented values for the <c>NoteType</c> field on create-note requests.
+/// Only these four values are accepted; any other value will be rejected by the API.
+/// </summary>
+public static class AlvysNoteTypes
+{
+    public const string System = "System";
+    public const string General = "General";
+    public const string Assignment = "Assignment";
+    public const string Safety = "Safety";
+
+    public static readonly IReadOnlyList<string> All = [System, General, Assignment, Safety];
+
+    public static bool IsValid(string? value) =>
+        All.Contains(value, StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// The allowlist of load fields writable via the Alvys load-update (PATCH) endpoint. Today only
+/// <c>OrderNumber</c> is writable (≤30 chars). The list is the safety boundary: any other field
+/// is rejected before a live PATCH is built, so an over-broad caller can never mutate fields Alvys
+/// does not expose for write.
+/// </summary>
+public static class AlvysLoadUpdateFields
+{
+    public const string OrderNumber = "OrderNumber";
+    public const int OrderNumberMaxLength = 30;
+
+    public static readonly IReadOnlyList<string> Writable = [OrderNumber];
+
+    public static bool IsWritable(string? field) =>
+        Writable.Contains(field, StringComparer.OrdinalIgnoreCase);
+
+    public static bool IsOrderNumber(string? field) =>
+        string.Equals(field, OrderNumber, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
 /// The write-oriented Alvys operations relevant to the Search → Match → Assign → Bill workflow.
 /// Each is modelled here as a definition only — payload construction and dry-run preview are
 /// always available, but <b>live execution</b> is gated separately (see
@@ -18,6 +55,12 @@ public enum AlvysWriteOperationKind
     TripStopDeparture,
     /// <summary>Update a scoped set of fields on a load (optimistic-concurrency / ETag gated).</summary>
     LoadUpdate,
+    /// <summary>Assign a carrier and/or assets (driver, truck, trailer) to a trip.</summary>
+    TripAssign,
+    /// <summary>Dispatch a trip that already has a carrier and assets assigned.</summary>
+    TripDispatch,
+    /// <summary>Update a carrier's operational status (optimistic-concurrency / ETag gated).</summary>
+    CarrierStatusUpdate,
 }
 
 /// <summary>
@@ -64,10 +107,11 @@ public sealed class AlvysWriteOperationDescriptor
 }
 
 /// <summary>
-/// The catalogue of supported/known write operations. Live execution is currently
-/// <see cref="AlvysLiveSupport.Unsupported"/> for every entry: the Alvys integration docs captured
-/// in this repo cover read endpoints only, so we deliberately do not invent mutating routes. Each
-/// descriptor records exactly what is needed to turn live sandbox execution on.
+/// The catalogue of supported/known write operations. All five operations are
+/// <see cref="AlvysLiveSupport.Supported"/> and will execute against the Alvys sandbox when
+/// <see cref="AlvysWritebackMode.Sandbox"/> is fully configured. Sandbox execution is still
+/// gated by configuration (recognised environment + sandbox base URL + credentials) so flipping
+/// the mode alone can never reach a live/production tenant.
 /// </summary>
 public static class AlvysWriteOperationRegistry
 {
@@ -83,11 +127,8 @@ public static class AlvysWriteOperationRegistry
                 "traceable in Alvys.",
             WorkflowStage = "Assign/Bill",
             RequiresEtag = false,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys create-note endpoint (verb + path + request body) for " +
-                "loads/{loadNumber}/notes. The repo currently documents the read-only GET notes " +
-                "listing only; no POST note-creation contract is published.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
         new()
         {
@@ -97,11 +138,8 @@ public static class AlvysWriteOperationRegistry
             Description = "Accept an inbound EDI/tender offer that has been selected for booking.",
             WorkflowStage = "Match/Assign",
             RequiresEtag = true,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys tender-accept endpoint (verb + path + body) and its ETag/" +
-                "concurrency contract. The repo documents tender search + get-by-id (read-only) " +
-                "only; no accept/reject/cancel contract is published.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
         new()
         {
@@ -111,10 +149,8 @@ public static class AlvysWriteOperationRegistry
             Description = "Record an arrival timestamp against a trip stop.",
             WorkflowStage = "Assign",
             RequiresEtag = false,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys trip-stop arrival endpoint (verb + path + body). The repo " +
-                "documents the read-only GET trips/{tripId}/stops listing only.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
         new()
         {
@@ -124,10 +160,8 @@ public static class AlvysWriteOperationRegistry
             Description = "Record a departure timestamp against a trip stop.",
             WorkflowStage = "Assign",
             RequiresEtag = false,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys trip-stop departure endpoint (verb + path + body). The repo " +
-                "documents the read-only GET trips/{tripId}/stops listing only.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
         new()
         {
@@ -135,15 +169,50 @@ public static class AlvysWriteOperationRegistry
             Kind = AlvysWriteOperationKind.LoadUpdate,
             Title = "Update load fields",
             Description =
-                "Update a scoped set of editable load fields with optimistic-concurrency (ETag) " +
-                "protection.",
+                "Update editable load fields with optimistic-concurrency (ETag) protection. " +
+                "Currently only OrderNumber (≤30 chars) is writable via this endpoint.",
             WorkflowStage = "Assign/Bill",
             RequiresEtag = true,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys load-update endpoint (verb + path), the exact set of safely " +
-                "editable fields, and the ETag/concurrency contract. The repo documents read-only " +
-                "load search/detail only and the load read model carries no ETag.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+        new()
+        {
+            Code = "trip-assign",
+            Kind = AlvysWriteOperationKind.TripAssign,
+            Title = "Assign carrier and assets to trip",
+            Description =
+                "Assign a carrier and optionally a driver, truck, and trailer to an existing trip.",
+            WorkflowStage = "Assign",
+            RequiresEtag = false,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+        new()
+        {
+            Code = "trip-dispatch",
+            Kind = AlvysWriteOperationKind.TripDispatch,
+            Title = "Dispatch trip",
+            Description =
+                "Dispatch a trip that already has a carrier and assets assigned. The trip must be " +
+                "covered before dispatching.",
+            WorkflowStage = "Assign",
+            RequiresEtag = false,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+        new()
+        {
+            Code = "carrier-status-update",
+            Kind = AlvysWriteOperationKind.CarrierStatusUpdate,
+            Title = "Update carrier status",
+            Description =
+                "Update a carrier's operational status (e.g. Active, Inactive) with optimistic-" +
+                "concurrency (ETag) protection.",
+            WorkflowStage = "Assign",
+            RequiresEtag = true,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
     ];
 

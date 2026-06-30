@@ -8,11 +8,11 @@ namespace LtlTool.Api.Features.Integrations.Alvys.Writeback;
 /// configured <see cref="AlvysWritebackMode"/> and the operation's live-execution support.
 ///
 /// <para>
-/// In this phase the gateway <b>never</b> performs a live Alvys mutation: there is no documented
-/// mutating endpoint, so even in <see cref="AlvysWritebackMode.Sandbox"/> every operation resolves
-/// to <see cref="AlvysOperationDisposition.Unsupported"/> with the documentation required to enable
-/// it. Disabled mode yields audit-only; Simulation yields a dry-run preview. The execute path and
-/// the dry-run path share payload construction so the preview is exactly what would be sent.
+/// The gateway itself never performs a live network call — it sets
+/// <see cref="AlvysOperationOutcome.SandboxExecutionEligible"/> to signal the recorder that it
+/// should dispatch the live sandbox call. Disabled mode yields audit-only; Simulation yields a
+/// dry-run preview. The execute path and the dry-run path share payload construction so the preview
+/// is exactly what would be sent.
 /// </para>
 /// </summary>
 public interface IAlvysWriteGateway
@@ -75,11 +75,11 @@ public sealed class AlvysWriteGateway(
         var payload = BuildPayload(op, request);
         var blockers = SandboxBlockers(op);
 
-        // Decide disposition. Live execution is never reached in this phase because every operation
-        // is Unsupported, but the branching is written so that enabling a supported operation +
-        // ready sandbox config is the only path to execution.
+        // Decide disposition. Sandbox execution is gated by mode + config blockers + live support;
+        // when all gates pass on the execute path the recorder dispatches the live call.
         AlvysOperationDisposition disposition;
         string message;
+        var sandboxExecutionEligible = false;
 
         if (op.LiveSupport == AlvysLiveSupport.Unsupported)
         {
@@ -119,10 +119,11 @@ public sealed class AlvysWriteGateway(
             }
             else
             {
-                // The single future place a live sandbox call would be issued. Intentionally not
-                // implemented while every operation is Unsupported, so no live mutation can occur.
-                disposition = AlvysOperationDisposition.Unsupported;
-                message = "Live sandbox execution is not wired for this operation.";
+                // All gates passed: the recorder will dispatch the live sandbox call and update
+                // the disposition to SandboxExecuted on success.
+                disposition = AlvysOperationDisposition.SandboxExecuted;
+                message = "Sandbox execution eligible — dispatching to Alvys sandbox.";
+                sandboxExecutionEligible = true;
             }
         }
 
@@ -133,6 +134,7 @@ public sealed class AlvysWriteGateway(
             Mode = _write.Mode,
             Disposition = disposition,
             Executed = false,
+            SandboxExecutionEligible = sandboxExecutionEligible,
             Message = message,
             Payload = payload,
             Blockers = blockers,
@@ -158,11 +160,31 @@ public sealed class AlvysWriteGateway(
                     "A load number is required.");
                 Require(!string.IsNullOrWhiteSpace(request.NoteText), "NOTE_TEXT_REQUIRED",
                     "Note text is required.");
+                // NoteType must be one of the four Alvys-accepted values.
+                if (!string.IsNullOrWhiteSpace(request.NoteType) &&
+                    !AlvysNoteTypes.IsValid(request.NoteType))
+                {
+                    issues.Add(new AlvysOperationIssue
+                    {
+                        Code = "NOTE_TYPE_INVALID",
+                        Message = $"NoteType '{request.NoteType}' is not valid. " +
+                                  $"Must be one of: {string.Join(", ", AlvysNoteTypes.All)}.",
+                    });
+                }
                 break;
 
             case AlvysWriteOperationKind.TenderAccept:
                 Require(!string.IsNullOrWhiteSpace(request.TenderId), "TENDER_ID_REQUIRED",
                     "A tender id is required.");
+                Require(request.StopCompanyLinks is { Count: > 0 }, "STOP_COMPANY_LINKS_REQUIRED",
+                    "At least one StopCompanyLink (StopId + CompanyId) is required to accept a tender.");
+                // Every link must carry both ids — blanks must never reach Alvys.
+                foreach (var link in request.StopCompanyLinks ?? [])
+                {
+                    Require(!string.IsNullOrWhiteSpace(link.StopId) && !string.IsNullOrWhiteSpace(link.CompanyId),
+                        "STOP_COMPANY_LINK_INVALID",
+                        "Each StopCompanyLink must include a non-empty StopId and CompanyId.");
+                }
                 break;
 
             case AlvysWriteOperationKind.TripStopArrival:
@@ -187,7 +209,49 @@ public sealed class AlvysWriteGateway(
                 Require(!string.IsNullOrWhiteSpace(request.LoadNumber), "LOAD_NUMBER_REQUIRED",
                     "A load number is required.");
                 Require(request.Fields is { Count: > 0 }, "FIELDS_REQUIRED",
-                    "At least one field to update is required.");
+                    "At least one field to update is required. Currently only 'OrderNumber' is " +
+                    "writable via this endpoint (max 30 chars).");
+                // Allowlist: only documented-writable fields may reach the live PATCH body.
+                foreach (var (key, value) in request.Fields ?? [])
+                {
+                    if (!AlvysLoadUpdateFields.IsWritable(key))
+                    {
+                        issues.Add(new AlvysOperationIssue
+                        {
+                            Code = "FIELD_NOT_WRITABLE",
+                            Message = $"Field '{key}' is not writable via load-update. " +
+                                      $"Allowed: {string.Join(", ", AlvysLoadUpdateFields.Writable)}.",
+                        });
+                        continue;
+                    }
+                    if (AlvysLoadUpdateFields.IsOrderNumber(key))
+                    {
+                        Require(!string.IsNullOrWhiteSpace(value), "ORDER_NUMBER_BLANK",
+                            "OrderNumber cannot be blank.");
+                        Require(value is null || value.Length <= AlvysLoadUpdateFields.OrderNumberMaxLength,
+                            "ORDER_NUMBER_TOO_LONG",
+                            $"OrderNumber must be {AlvysLoadUpdateFields.OrderNumberMaxLength} characters or fewer.");
+                    }
+                }
+                break;
+
+            case AlvysWriteOperationKind.TripAssign:
+                Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
+                    "A trip id is required.");
+                Require(!string.IsNullOrWhiteSpace(request.CarrierId), "CARRIER_ID_REQUIRED",
+                    "A carrier id is required to assign to the trip.");
+                break;
+
+            case AlvysWriteOperationKind.TripDispatch:
+                Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
+                    "A trip id is required.");
+                break;
+
+            case AlvysWriteOperationKind.CarrierStatusUpdate:
+                Require(!string.IsNullOrWhiteSpace(request.CarrierId), "CARRIER_ID_REQUIRED",
+                    "A carrier id is required.");
+                Require(!string.IsNullOrWhiteSpace(request.Status), "STATUS_REQUIRED",
+                    "A status value is required (e.g. Active, Inactive).");
                 break;
         }
 
@@ -210,33 +274,56 @@ public sealed class AlvysWriteGateway(
         switch (op.Kind)
         {
             case AlvysWriteOperationKind.CreateLoadNote:
+                // Alvys requires a client-supplied Id; it is generated by the write client at
+                // dispatch time so it stays out of the deterministic payload hash / idempotency key.
                 body["Description"] = request.NoteText;
-                body["NoteType"] = string.IsNullOrWhiteSpace(request.NoteType)
-                    ? "Dispatcher" : request.NoteType;
-                target = $"Create note on load {request.LoadNumber}";
+                body["NoteType"] = string.IsNullOrWhiteSpace(request.NoteType) || !AlvysNoteTypes.IsValid(request.NoteType)
+                    ? AlvysNoteTypes.General : request.NoteType.Trim();
+                target = $"POST /loads/{request.LoadNumber}/notes";
                 break;
 
             case AlvysWriteOperationKind.TenderAccept:
-                body["TenderId"] = request.TenderId;
-                target = $"Accept tender {request.TenderId}";
+                // TenderId goes in the path; body is StopCompanyLinks + optional FleetId.
+                body["StopCompanyLinks"] = (request.StopCompanyLinks ?? [])
+                    .Select(l => new Dictionary<string, object?> { ["StopId"] = l.StopId, ["CompanyId"] = l.CompanyId })
+                    .ToArray();
+                if (!string.IsNullOrWhiteSpace(request.FleetId))
+                    body["FleetId"] = request.FleetId;
+                target = $"POST /tenders/{request.TenderId}/accept";
                 break;
 
             case AlvysWriteOperationKind.TripStopArrival:
-                body["StopId"] = request.StopId;
                 body["ArrivedAt"] = request.ArrivedAt;
-                target = $"Record arrival on trip {request.TripId} stop {request.StopId}";
+                target = $"PUT /trips/{request.TripId}/stops/{request.StopId}/arrival";
                 break;
 
             case AlvysWriteOperationKind.TripStopDeparture:
-                body["StopId"] = request.StopId;
                 body["DepartedAt"] = request.DepartedAt;
-                target = $"Record departure on trip {request.TripId} stop {request.StopId}";
+                target = $"PUT /trips/{request.TripId}/stops/{request.StopId}/departure";
                 break;
 
             case AlvysWriteOperationKind.LoadUpdate:
                 foreach (var (key, value) in request.Fields ?? [])
                     body[key] = value;
-                target = $"Update load {request.LoadNumber}";
+                target = $"PATCH /loads/{request.LoadNumber}";
+                break;
+
+            case AlvysWriteOperationKind.TripAssign:
+                body["CarrierId"] = request.CarrierId;
+                if (!string.IsNullOrWhiteSpace(request.DriverId)) body["DriverId"] = request.DriverId;
+                if (!string.IsNullOrWhiteSpace(request.TruckId)) body["TruckId"] = request.TruckId;
+                if (!string.IsNullOrWhiteSpace(request.TrailerId)) body["TrailerId"] = request.TrailerId;
+                target = $"POST /trips/{request.TripId}/assign";
+                break;
+
+            case AlvysWriteOperationKind.TripDispatch:
+                // Body is intentionally empty — dispatch is a state transition on the trip.
+                target = $"POST /trips/{request.TripId}/dispatch";
+                break;
+
+            case AlvysWriteOperationKind.CarrierStatusUpdate:
+                body["Status"] = request.Status;
+                target = $"PATCH /carriers/{request.CarrierId}/status";
                 break;
 
             default:
@@ -261,9 +348,6 @@ public sealed class AlvysWriteGateway(
     private List<string> SandboxBlockers(AlvysWriteOperationDescriptor op)
     {
         var blockers = new List<string>();
-
-        if (op.LiveSupport == AlvysLiveSupport.Unsupported)
-            blockers.Add("No documented Alvys mutating endpoint for this operation.");
 
         if (_write.Mode != AlvysWritebackMode.Sandbox)
             blockers.Add($"Writeback mode is {_write.Mode}, not Sandbox.");

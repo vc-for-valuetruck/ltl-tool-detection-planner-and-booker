@@ -1,6 +1,25 @@
 namespace LtlTool.Api.Features.Integrations.Alvys.Writeback;
 
 /// <summary>
+/// The result of a live sandbox HTTP call made by <see cref="IAlvysWriteClient"/>. Captures
+/// only the fields needed for the outbox record — no auth material, no secret headers.
+/// </summary>
+public sealed class AlvysWriteCallResult
+{
+    public required bool IsSuccess { get; init; }
+    public required int StatusCode { get; init; }
+
+    /// <summary>ETag returned by the response (null when the operation doesn't produce one).</summary>
+    public string? ETag { get; init; }
+
+    /// <summary>Response body JSON (bounded; never includes auth material).</summary>
+    public string? Body { get; init; }
+
+    /// <summary>Error detail when <see cref="IsSuccess"/> is false.</summary>
+    public string? Error { get; init; }
+}
+
+/// <summary>
 /// Inputs for a write-oriented Alvys operation. A single shape covers every operation; only the
 /// fields relevant to the requested operation are read, and the gateway validates that the required
 /// ones are present before building a payload.
@@ -13,17 +32,44 @@ public sealed class AlvysOperationRequest
     /// <summary>Target tender id (tender-accept).</summary>
     public string? TenderId { get; set; }
 
-    /// <summary>Target trip id (trip-stop arrival/departure).</summary>
+    /// <summary>Target trip id (trip-stop arrival/departure, trip-assign, trip-dispatch).</summary>
     public string? TripId { get; set; }
 
     /// <summary>Target stop id (trip-stop arrival/departure).</summary>
     public string? StopId { get; set; }
 
+    /// <summary>Target carrier id (carrier-status-update, trip-assign).</summary>
+    public string? CarrierId { get; set; }
+
+    /// <summary>Driver id for trip-assign.</summary>
+    public string? DriverId { get; set; }
+
+    /// <summary>Truck id for trip-assign.</summary>
+    public string? TruckId { get; set; }
+
+    /// <summary>Trailer id for trip-assign.</summary>
+    public string? TrailerId { get; set; }
+
+    /// <summary>Status value for carrier-status-update (e.g. <c>Active</c>, <c>Inactive</c>).</summary>
+    public string? Status { get; set; }
+
     /// <summary>Note body (create-load-note).</summary>
     public string? NoteText { get; set; }
 
-    /// <summary>Note classification (create-load-note); defaults to a generic dispatcher note.</summary>
+    /// <summary>
+    /// Note classification (create-load-note). Must be one of: <c>System</c>, <c>General</c>,
+    /// <c>Assignment</c>, <c>Safety</c>. Defaults to <c>General</c> when omitted.
+    /// </summary>
     public string? NoteType { get; set; }
+
+    /// <summary>
+    /// Stop-to-company links for tender-accept. Each entry maps a tender stop id to the Alvys
+    /// company id that should be linked to that stop.
+    /// </summary>
+    public List<TenderStopCompanyLink>? StopCompanyLinks { get; set; }
+
+    /// <summary>Optional fleet id to assign on tender-accept.</summary>
+    public string? FleetId { get; set; }
 
     /// <summary>Arrival timestamp (trip-stop-arrival).</summary>
     public DateTimeOffset? ArrivedAt { get; set; }
@@ -76,6 +122,12 @@ public enum AlvysOperationDisposition
     /// and sandbox configuration is ready.)
     /// </summary>
     SandboxExecuted,
+
+    /// <summary>
+    /// A live sandbox execution was attempted but Alvys rejected it (non-2xx response or transport
+    /// error). Nothing durable changed upstream; the failure is surfaced to the caller.
+    /// </summary>
+    SandboxFailed,
 }
 
 /// <summary>A single validation finding on an operation request.</summary>
@@ -122,6 +174,13 @@ public sealed class AlvysOperationOutcome
     /// <summary>Always <c>false</c> in this phase — no live Alvys mutation is performed.</summary>
     public bool Executed { get; init; }
 
+    /// <summary>
+    /// True when the operation is Supported and the sandbox is fully configured; the recorder
+    /// should dispatch a live call via <see cref="IAlvysWriteClient"/> and update this outcome.
+    /// Always false for dry-run and for Unsupported/blocked operations.
+    /// </summary>
+    public bool SandboxExecutionEligible { get; init; }
+
     /// <summary>A one-line, dispatcher-facing summary of the disposition.</summary>
     public required string Message { get; init; }
 
@@ -135,4 +194,14 @@ public sealed class AlvysOperationOutcome
 
     /// <summary>What is required to enable live sandbox execution, when unsupported.</summary>
     public string? RequiredToEnable { get; init; }
+}
+
+/// <summary>
+/// Maps a tender stop to the Alvys company that should be linked to it on acceptance.
+/// Required by the <c>tender-accept</c> operation (<c>POST /tenders/{tenderId}/accept</c>).
+/// </summary>
+public sealed class TenderStopCompanyLink
+{
+    public required string StopId { get; set; }
+    public required string CompanyId { get; set; }
 }
