@@ -33,6 +33,10 @@ services:
       Alvys__TenantId: "${ALVYS_TENANT_ID:-}"
       Alvys__ClientId: "${ALVYS_CLIENT_ID:-}"
       Alvys__ClientSecret: "${ALVYS_CLIENT_SECRET:-}"
+      # Alvys writeback boundary — Disabled for the demo; never mutates Alvys.
+      Alvys__Writeback__Mode: "${ALVYS_WRITEBACK_MODE:-Disabled}"
+      Alvys__Writeback__Environment: "${ALVYS_WRITEBACK_ENVIRONMENT:-}"
+      Alvys__Writeback__SandboxBaseUrl: "${ALVYS_WRITEBACK_SANDBOX_BASE_URL:-}"
       # LTL app settings.
       Ltl__DetectionEnabled: "${LTL_DETECTION_ENABLED:-false}"
       Ltl__DefaultTimezone: "${LTL_DEFAULT_TIMEZONE:-America/Chicago}"

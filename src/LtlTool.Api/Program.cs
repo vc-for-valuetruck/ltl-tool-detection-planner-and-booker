@@ -91,6 +91,13 @@ if (!app.Environment.IsEnvironment("Testing"))
     {
         startupLogger.LogInformation("Alvys provider configured: {Provider}.", alvys.Provider);
     }
+
+    var writeback = app.Services
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<LtlTool.Api.Features.Integrations.Alvys.Writeback.AlvysWriteOptions>>()
+        .Value;
+    startupLogger.LogInformation(
+        "Alvys writeback mode: {Mode} (no live Alvys mutation is performed in this phase).",
+        writeback.Mode);
 }
 
 if (app.Environment.IsDevelopment())

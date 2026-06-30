@@ -590,6 +590,11 @@
       }
     </div>
 
+    <!-- Alvys writeback readiness (sandbox-gated; audit/simulation only in this phase) -->
+    <div class="drawer-section">
+      <app-alvys-ops-panel [loadNumber]="load.loadNumber" />
+    </div>
+
     <!-- Assignment history -->
     @if (history().length > 0) {
       <div class="drawer-section">
