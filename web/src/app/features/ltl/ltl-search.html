@@ -24,21 +24,118 @@
 
   <!-- ===================== SEARCH TAB ===================== -->
   @if (tab() === 'search') {
-    <!-- Saved-view chips -->
-    <div class="chips" role="group" aria-label="Saved views">
-      @for (view of savedViews; track view.id) {
-        <button
-          type="button"
-          class="chip"
-          [class.active]="activeView() === view.id"
-          [title]="view.description"
-          (click)="applyView(view)"
-        >
-          {{ view.label }}
-        </button>
+    <!-- Saved views: shared presets + the dispatcher's own views -->
+    <div class="saved-views" data-testid="saved-views">
+      @if (savedViewsError(); as err) {
+        <div class="state state-error saved-views-error" role="alert">
+          {{ err }}<button type="button" (click)="loadSavedViews()">Retry</button>
+        </div>
       }
-      @if (activeView()) {
-        <button type="button" class="chip chip-clear" (click)="clearFilters()">Clear view</button>
+
+      <div class="saved-views-group">
+        <span class="saved-views-label">Presets</span>
+        @if (savedViewsLoading() && presets().length === 0) {
+          <span class="muted">Loading…</span>
+        } @else {
+          <div class="chips" role="group" aria-label="Built-in presets">
+            @for (view of presets(); track view.id) {
+              <button
+                type="button"
+                class="chip"
+                data-testid="preset-chip"
+                [class.active]="activeView() === view.id"
+                [title]="view.description || view.name"
+                [attr.aria-pressed]="activeView() === view.id"
+                (click)="applyView(view)"
+              >
+                {{ view.name }}
+              </button>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="saved-views-group">
+        <span class="saved-views-label">My views</span>
+        <div class="chips" role="group" aria-label="My saved views">
+          @for (view of userViews(); track view.id) {
+            <span class="chip chip-user" [class.active]="activeView() === view.id" data-testid="user-view">
+              <button
+                type="button"
+                class="chip-apply"
+                [title]="view.description || view.name"
+                [attr.aria-pressed]="activeView() === view.id"
+                (click)="applyView(view)"
+              >
+                {{ view.name }}
+              </button>
+              <button
+                type="button"
+                class="chip-edit"
+                [attr.aria-label]="'Rename or update ' + view.name"
+                title="Rename / update"
+                (click)="startEditView(view)"
+              >&#9998;</button>
+              <button
+                type="button"
+                class="chip-del"
+                [attr.aria-label]="'Delete ' + view.name"
+                title="Delete"
+                (click)="deleteView(view)"
+              >&times;</button>
+            </span>
+          }
+          @if (userViews().length === 0 && !savedViewsLoading()) {
+            <span class="muted">No saved views yet — refine filters, then “Save current view”.</span>
+          }
+        </div>
+      </div>
+
+      <div class="saved-views-actions">
+        <button type="button" class="link" data-testid="save-view" (click)="startSaveView()">
+          + Save current view
+        </button>
+        @if (activeView()) {
+          <button type="button" class="chip chip-clear" (click)="clearFilters()">Clear view</button>
+        }
+      </div>
+
+      @if (viewFormOpen()) {
+        <form class="view-form" data-testid="view-form" (ngSubmit)="saveView()">
+          <span class="view-form-title">
+            {{ editingViewId() ? 'Update saved view' : 'Save current filters as a view' }}
+          </span>
+          <label>
+            Name
+            <input
+              type="text"
+              name="viewName"
+              maxlength="80"
+              placeholder="e.g. Midwest reefer, this week"
+              data-testid="view-name"
+              [ngModel]="viewName()"
+              (ngModelChange)="viewName.set($event)"
+            />
+          </label>
+          <label>
+            Description <span class="muted">(optional)</span>
+            <input
+              type="text"
+              name="viewDescription"
+              maxlength="280"
+              [ngModel]="viewDescription()"
+              (ngModelChange)="viewDescription.set($event)"
+            />
+          </label>
+          <p class="staged-note">Saved to this tool only — never written back to Alvys.</p>
+          @if (viewFormError(); as err) { <div class="assign-error">{{ err }}</div> }
+          <div class="view-form-actions">
+            <button type="submit" class="primary" [disabled]="viewSaving() || !viewName().trim()">
+              {{ viewSaving() ? 'Saving…' : editingViewId() ? 'Update view' : 'Save view' }}
+            </button>
+            <button type="button" (click)="cancelViewForm()">Cancel</button>
+          </div>
+        </form>
       }
     </div>
 
