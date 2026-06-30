@@ -337,6 +337,75 @@ public sealed class AlvysReference
     public string? Value { get; set; }
 }
 
+/// <summary>
+/// A document attached to a load, as returned by the read-only
+/// <c>GET /api/p/v{version}/loads/{loadNumber}/documents</c> listing. The id is a
+/// lowercase <c>id</c>; the remaining fields are PascalCase per the Alvys docs.
+/// <see cref="DownloadUrl"/> is a time-limited link (<see cref="ExpiresAt"/>) and is
+/// treated as read-only data — documents are not fetched/downloaded in this slice.
+/// Unknown JSON properties are tolerated.
+/// </summary>
+public sealed class AlvysLoadDocument
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("AttachmentPath")]
+    public string? AttachmentPath { get; set; }
+
+    [JsonPropertyName("AttachmentType")]
+    public string? AttachmentType { get; set; }
+
+    [JsonPropertyName("AttachmentSize")]
+    public long? AttachmentSize { get; set; }
+
+    [JsonPropertyName("UploadedAt")]
+    public DateTimeOffset? UploadedAt { get; set; }
+
+    [JsonPropertyName("ParentId")]
+    public string? ParentId { get; set; }
+
+    [JsonPropertyName("ParentType")]
+    public string? ParentType { get; set; }
+
+    [JsonPropertyName("UploadedBy")]
+    public string? UploadedBy { get; set; }
+
+    [JsonPropertyName("DownloadUrl")]
+    public string? DownloadUrl { get; set; }
+
+    [JsonPropertyName("ExpiresAt")]
+    public DateTimeOffset? ExpiresAt { get; set; }
+}
+
+/// <summary>
+/// A note on a load, as returned by the read-only
+/// <c>GET /api/p/v{version}/loads/{loadNumber}/notes</c> listing. Distinct from the
+/// inline load <see cref="AlvysNote"/> (Text/CreatedAt/CreatedBy): the dedicated notes
+/// endpoint returns a richer shape (<c>Id</c>/<c>Description</c>/<c>NoteType</c>/
+/// <c>CreatedAt</c>/<c>CreatedBy</c>/<c>CreatedById</c>). Unknown JSON properties are tolerated.
+/// </summary>
+public sealed class AlvysLoadNote
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("Description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("NoteType")]
+    public string? NoteType { get; set; }
+
+    [JsonPropertyName("CreatedAt")]
+    public DateTimeOffset? CreatedAt { get; set; }
+
+    [JsonPropertyName("CreatedBy")]
+    public string? CreatedBy { get; set; }
+
+    [JsonPropertyName("CreatedById")]
+    public string? CreatedById { get; set; }
+}
+
 /// <summary>A single customer accessorial line.</summary>
 public sealed class AlvysAccessorialDetail
 {

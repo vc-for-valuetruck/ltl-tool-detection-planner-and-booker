@@ -33,4 +33,16 @@ public sealed class AlvysSearchEndpointTests(TemplateWebApplicationFactory facto
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+
+    [Theory]
+    [InlineData("/api/alvys/loads/100/documents")]
+    [InlineData("/api/alvys/loads/100/notes")]
+    public async Task Load_context_routes_require_authentication(string route)
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync(route);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
 }

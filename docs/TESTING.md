@@ -27,7 +27,7 @@ Coverage:
   default even when credentials are absent. The fallback returns empty shapes for every
   resource — loads, trips, trailers, trucks, plus the context resources (dispatch
   preferences as an empty array; locations, drivers, customers and users as empty paged
-  envelopes).
+  envelopes) and the load-context listings (documents and notes as empty arrays).
 - **Token provider** (`AlvysTokenProviderTests`) — token is acquired and cached
   (one network call for repeated reads), missing credentials throw before any network
   call, and a failed token request **never logs the client secret** (logs status only).
@@ -35,7 +35,9 @@ Coverage:
   `trips/search`, `trailers/search`, `trucks/search`, `dispatchpreferences/search`,
   `locations/search`, `drivers/search`, `customers/search` and `users/search` build
   `/api/p/v{version}/...` relative paths, and the configured version is normalized so
-  `v2.0` and `2.0` both yield `v2.0` (no double `v`).
+  `v2.0` and `2.0` both yield `v2.0` (no double `v`). The load-context paths
+  (`loads/{loadNumber}/documents`, `loads/{loadNumber}/notes`) build the same way and
+  **URL-encode** the `loadNumber` segment (e.g. `VT 100/A` → `VT%20100%2FA`).
 - **Loads, trips, equipment & context search** (`AlvysClientTests`) — paged responses
   parse for every endpoint (including nested fleet/capacity/fuel-card/address/note/contact
   fields), the dispatch-preferences **bare-array** response parses to a list, the bearer
@@ -43,17 +45,22 @@ Coverage:
   versioned path, and only supplied filters serialize (PascalCase, nulls omitted). Request
   validation (`PageSize > 0`, `LoadNumbers ≤ 150`) throws **before** any network call, and
   non-success responses (incl. 429) surface as empty results / `null` instead of throwing.
+- **Load documents & notes** (`AlvysClientTests`) — the `GET` listings parse their
+  **bare-array** responses to lists, issue an HTTP `GET` with the bearer token against the
+  versioned path, URL-encode the `loadNumber` segment, and surface 404 as an empty list
+  (no error logged) and 429/500 as an empty list (status-only log) instead of throwing.
 
 - **Internal read-only endpoints** (`AlvysSearchControllerTests`,
   `AlvysSearchEndpointTests`) — the
   `/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users}/search`
-  endpoints pass the request body straight through to `IAlvysClient` and return the read
-  model unchanged (asserted with a recording fake client). A dedicated test
-  serializes every response and asserts **no credential/secret field** (`client_secret`,
-  `access_token`, `Bearer`, `ClientId`, `TokenUrl`, …) appears. The route-level tests hit
-  the endpoints through `WebApplicationFactory` and assert each returns **401 when
-  unauthenticated** — proving the route is mapped *and* protected (a missing route would
-  be 404), while health stays anonymous.
+  endpoints pass the request body straight through to `IAlvysClient`, and the
+  `GET /api/alvys/loads/{loadNumber}/{documents,notes}` listings pass the load number
+  through, each returning the read model unchanged (asserted with a recording fake client).
+  A dedicated test serializes every response and asserts **no credential/secret field**
+  (`client_secret`, `access_token`, `Bearer`, `ClientId`, `TokenUrl`, …) appears. The
+  route-level tests hit the endpoints through `WebApplicationFactory` and assert each
+  returns **401 when unauthenticated** — proving the route is mapped *and* protected (a
+  missing route would be 404), while health stays anonymous.
 
 ## Source-of-truth & fallback behavior under test
 

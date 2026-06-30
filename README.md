@@ -151,7 +151,7 @@ src/LtlTool.Api/
 └── Features/                # vertical-slice features
     ├── Health/              # GET /api/health (anonymous liveness)
     ├── Me/                  # GET /api/me (protected sample endpoint)
-    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users}/search (protected, read-only)
+    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users}/search + GET /api/alvys/loads/{loadNumber}/{documents,notes} (protected, read-only)
     └── Integrations/Alvys/  # server-side Alvys client (IAlvysClient) — credentials never leave the API
 ```
 
@@ -175,6 +175,11 @@ unauthenticated). Live Alvys remains the default source of truth.
 | `POST /api/alvys/drivers/search` | `DriverSearchRequest` | paged drivers (assignment/readiness) |
 | `POST /api/alvys/customers/search` | `CustomerSearchRequest` | paged customers (billing/matching context) |
 | `POST /api/alvys/users/search` | `UserSearchRequest` | paged users (dispatcher names/roles) |
+| `GET /api/alvys/loads/{loadNumber}/documents` | _(path param)_ | load documents — rate con / POD / customer backup (bare array) |
+| `GET /api/alvys/loads/{loadNumber}/notes` | _(path param)_ | load notes — operational comments / audit context (bare array) |
+
+The load document/note listings are `GET` by load number (no body); the rest are `POST`
+searches. All are read-only (no note/document creation, no `PUT`/`PATCH`/`DELETE`).
 
 Add new functionality as a folder under `Features/` (controller + service + DTOs).
 
