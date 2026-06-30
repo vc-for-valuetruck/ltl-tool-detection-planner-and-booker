@@ -62,6 +62,25 @@ public sealed class AlvysSearchController(IAlvysClient alvys) : ControllerBase
         => Ok(await alvys.ListLoadNotesAsync(loadNumber, ct));
 
     /// <summary>
+    /// Read-only single-load lookup by <c>id</c>, <c>loadNumber</c> or <c>orderNumber</c>
+    /// query parameter (at least one required). Returns 400 when no criterion is supplied and
+    /// 404 when the load is not found (or upstream degraded to <c>null</c> — a 404 can also
+    /// mean an abandoned creation with no trips), mirroring the other read paths.
+    /// </summary>
+    [HttpGet("loads")]
+    [ProducesResponseType(typeof(AlvysLoad), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AlvysLoad>> GetLoad([FromQuery] LoadLookup lookup, CancellationToken ct)
+    {
+        if (!lookup.HasCriteria)
+            return BadRequest("Supply one of id, loadNumber or orderNumber.");
+
+        var load = await alvys.GetLoadAsync(lookup, ct);
+        return load is null ? NotFound() : Ok(load);
+    }
+
+    /// <summary>
     /// Read-only trip search. Passes <paramref name="request"/> through to
     /// <see cref="IAlvysClient.SearchTripsAsync(TripSearchRequest, CancellationToken)"/>.
     /// </summary>
@@ -70,6 +89,38 @@ public sealed class AlvysSearchController(IAlvysClient alvys) : ControllerBase
     public async Task<ActionResult<AlvysTripsResponse>> SearchTrips(
         [FromBody] TripSearchRequest request, CancellationToken ct)
         => Ok(await alvys.SearchTripsAsync(request, ct));
+
+    /// <summary>
+    /// Read-only single-trip lookup by <c>id</c> or <c>tripNumber</c> query parameter (at
+    /// least one required), with an optional <c>includeDeleted</c> flag. Returns 400 when no
+    /// criterion is supplied and 404 when the trip is not found (or upstream degraded to
+    /// <c>null</c>).
+    /// </summary>
+    [HttpGet("trips")]
+    [ProducesResponseType(typeof(AlvysTrip), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AlvysTrip>> GetTrip([FromQuery] TripLookup lookup, CancellationToken ct)
+    {
+        if (!lookup.HasCriteria)
+            return BadRequest("Supply one of id or tripNumber.");
+
+        var trip = await alvys.GetTripAsync(lookup, ct);
+        return trip is null ? NotFound() : Ok(trip);
+    }
+
+    /// <summary>
+    /// Read-only listing of the polymorphic stops on a trip (route assembly: appointment/
+    /// delivery-window/waypoint stops with their schedule windows and movement timestamps).
+    /// Passes <paramref name="tripId"/> through to
+    /// <see cref="IAlvysClient.ListTripStopsAsync(string, CancellationToken)"/> and returns the
+    /// bare Alvys array.
+    /// </summary>
+    [HttpGet("trips/{tripId}/stops")]
+    [ProducesResponseType(typeof(IReadOnlyList<AlvysTripStopDetail>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AlvysTripStopDetail>>> ListTripStops(
+        string tripId, CancellationToken ct)
+        => Ok(await alvys.ListTripStopsAsync(tripId, ct));
 
     /// <summary>
     /// Read-only trailer equipment search. Passes <paramref name="request"/> through to

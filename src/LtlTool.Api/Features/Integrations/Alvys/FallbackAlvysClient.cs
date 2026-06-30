@@ -22,6 +22,16 @@ public sealed class FallbackAlvysClient : IAlvysClient
     public Task<AlvysLoad?> GetLoadByNumberAsync(string loadNumber, CancellationToken ct = default)
         => Task.FromResult<AlvysLoad?>(null);
 
+    public Task<AlvysLoad?> GetLoadAsync(LoadLookup lookup, CancellationToken ct = default)
+        => Task.FromResult<AlvysLoad?>(null);
+
+    public Task<AlvysTrip?> GetTripAsync(TripLookup lookup, CancellationToken ct = default)
+        => Task.FromResult<AlvysTrip?>(null);
+
+    public Task<IReadOnlyList<AlvysTripStopDetail>> ListTripStopsAsync(
+        string tripId, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AlvysTripStopDetail>>([]);
+
     public Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(
         string loadNumber, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AlvysLoadDocument>>([]);

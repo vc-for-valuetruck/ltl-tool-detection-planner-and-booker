@@ -151,7 +151,7 @@ src/LtlTool.Api/
 └── Features/                # vertical-slice features
     ├── Health/              # GET /api/health (anonymous liveness)
     ├── Me/                  # GET /api/me (protected sample endpoint)
-    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search + GET /api/alvys/tenders/{id} + GET /api/alvys/loads/{loadNumber}/{documents,notes} (protected, read-only)
+    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search + GET /api/alvys/tenders/{id} + GET /api/alvys/{loads,trips}?… + GET /api/alvys/loads/{loadNumber}/{documents,notes} + GET /api/alvys/trips/{tripId}/stops (protected, read-only)
     └── Integrations/Alvys/  # server-side Alvys client (IAlvysClient) — credentials never leave the API
 ```
 
@@ -178,12 +178,16 @@ Alvys remains the default source of truth.
 | `POST /api/alvys/users/search` | `UserSearchRequest` | paged users (dispatcher names/roles) |
 | `POST /api/alvys/tenders/search` | `TenderSearchRequest` | paged inbound tenders (EDI offers) |
 | `GET /api/alvys/tenders/{tenderId}` | _(path param)_ | single tender (404 when not found) |
+| `GET /api/alvys/loads?id=…\|loadNumber=…\|orderNumber=…` | _(query)_ | single load detail (400 if no criterion, 404 when not found) |
+| `GET /api/alvys/trips?id=…\|tripNumber=…[&includeDeleted=…]` | _(query)_ | single trip detail (400 if no criterion, 404 when not found) |
+| `GET /api/alvys/trips/{tripId}/stops` | _(path param)_ | polymorphic trip stops — route assembly (bare array) |
 | `GET /api/alvys/loads/{loadNumber}/documents` | _(path param)_ | load documents — rate con / POD / customer backup (bare array) |
 | `GET /api/alvys/loads/{loadNumber}/notes` | _(path param)_ | load notes — operational comments / audit context (bare array) |
 
-The tender by-id and load document/note listings are `GET` (no body; single tender
-returns 404 when not found); the rest are `POST` searches. All are read-only (no tender
-accept/reject, no note/document creation, no `PUT`/`PATCH`/`DELETE`).
+The tender by-id, load/trip detail lookups, trip-stops and load document/note listings are
+`GET` (load/trip detail take query parameters and return 400 with no criterion / 404 when
+not found); the rest are `POST` searches. All are read-only (no tender accept/reject, no
+note/document creation, no `PUT`/`PATCH`/`DELETE`).
 
 Add new functionality as a folder under `Features/` (controller + service + DTOs).
 

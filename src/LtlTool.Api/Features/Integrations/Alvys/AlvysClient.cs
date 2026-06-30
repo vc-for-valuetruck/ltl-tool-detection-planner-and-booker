@@ -59,6 +59,25 @@ public sealed class AlvysClient(
         return response.Items.FirstOrDefault();
     }
 
+    public Task<AlvysLoad?> GetLoadAsync(LoadLookup lookup, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.LoadDetail(_options.ApiVersion, lookup);
+        return GetAsync<AlvysLoad>(path, ct);
+    }
+
+    public Task<AlvysTrip?> GetTripAsync(TripLookup lookup, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.TripDetail(_options.ApiVersion, lookup);
+        return GetAsync<AlvysTrip>(path, ct);
+    }
+
+    public async Task<IReadOnlyList<AlvysTripStopDetail>> ListTripStopsAsync(
+        string tripId, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.TripStops(_options.ApiVersion, tripId);
+        return await GetListAsync<AlvysTripStopDetail>(path, ct) ?? [];
+    }
+
     public async Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(
         string loadNumber, CancellationToken ct = default)
     {

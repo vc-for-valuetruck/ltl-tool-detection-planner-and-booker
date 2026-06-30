@@ -30,6 +30,29 @@ public interface IAlvysClient
     Task<AlvysLoad?> GetLoadByNumberAsync(string loadNumber, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns a single load by id/loadNumber/orderNumber via
+    /// <c>GET /api/p/v{version}/loads?…</c> (at least one criterion required). Returns
+    /// <c>null</c> when not found (a 404 can also mean an abandoned creation with no trips)
+    /// or on a non-success/transport error — degrading gracefully like the other read paths.
+    /// </summary>
+    Task<AlvysLoad?> GetLoadAsync(LoadLookup lookup, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a single trip by id/tripNumber via <c>GET /api/p/v{version}/trips?…</c>
+    /// (at least one of id/tripNumber required; <c>includeDeleted</c> optional). Returns
+    /// <c>null</c> when not found or on a non-success/transport error.
+    /// </summary>
+    Task<AlvysTrip?> GetTripAsync(TripLookup lookup, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the polymorphic stops on a trip via
+    /// <c>GET /api/p/v{version}/trips/{tripId}/stops</c>. The Alvys response is a bare array
+    /// of appointment/delivery_window/waypoint stops (the <c>$type</c> is preserved), so this
+    /// returns a list rather than a paged envelope.
+    /// </summary>
+    Task<IReadOnlyList<AlvysTripStopDetail>> ListTripStopsAsync(string tripId, CancellationToken ct = default);
+
+    /// <summary>
     /// Lists documents attached to a load via <c>GET /api/p/v{version}/loads/{loadNumber}/documents</c>.
     /// The Alvys response is a bare array, so this returns a list rather than a paged
     /// envelope. Read-only: the time-limited <see cref="AlvysLoadDocument.DownloadUrl"/> is

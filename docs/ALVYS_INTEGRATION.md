@@ -58,12 +58,12 @@ All under `src/LtlTool.Api/Features/Integrations/Alvys/`:
 | File | Purpose |
 | --- | --- |
 | `AlvysOptions.cs` | Strongly-typed config (`ApiBaseUrl` host + `ApiVersion`) + `AlvysProvider` enum (`Live`/`Fallback`). |
-| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `ListLoadDocumentsAsync`, `ListLoadNotesAsync`, `SearchTripsAsync`, `SearchTrailersAsync`, `SearchTrucksAsync`, `SearchDispatchPreferencesAsync`, `SearchLocationsAsync`, `SearchDriversAsync`, `SearchCustomersAsync`, `SearchUsersAsync`, `SearchTendersAsync`, `GetTenderByIdAsync`). |
+| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `GetLoadAsync`, `ListLoadDocumentsAsync`, `ListLoadNotesAsync`, `SearchTripsAsync`, `GetTripAsync`, `ListTripStopsAsync`, `SearchTrailersAsync`, `SearchTrucksAsync`, `SearchDispatchPreferencesAsync`, `SearchLocationsAsync`, `SearchDriversAsync`, `SearchCustomersAsync`, `SearchUsersAsync`, `SearchTendersAsync`, `GetTenderByIdAsync`). |
 | `AlvysClient.cs` | Live client; default source of truth. Named `HttpClient` + bearer token per request. |
-| `AlvysApiRoutes.cs` | Builds versioned `/api/p/v{version}/...` paths (search paths + the `tenders/{tenderId}` GET path, which URL-encodes the id) and normalizes the version (no double `v`). |
+| `AlvysApiRoutes.cs` | Builds versioned `/api/p/v{version}/...` paths (search paths, the `tenders/{tenderId}` GET path, the load/trip detail GET paths with URL-encoded query parameters, and the `trips/{tripId}/stops` GET path) and normalizes the version (no double `v`). |
 | `AlvysTokenProvider.cs` | OAuth2 token acquisition + caching (`IAlvysTokenProvider`). |
 | `FallbackAlvysClient.cs` | Non-default empty-result stub for local/UAT only. |
-| `AlvysDtos.cs` | Load + trip + trailer + truck + dispatch-preference + location + driver + customer + user + tender search request/response DTOs (+ tender detail), load-document/load-note list item DTOs, + token response. |
+| `AlvysDtos.cs` | Load + trip + trailer + truck + dispatch-preference + location + driver + customer + user + tender search request/response DTOs (+ tender/load/trip detail), `LoadLookup`/`TripLookup` query DTOs, polymorphic `AlvysTripStopDetail`, load-document/load-note list item DTOs, + token response. |
 | `AlvysServiceCollectionExtensions.cs` | DI wiring + provider selection (live default). |
 
 ## Internal read-only API endpoints
@@ -89,6 +89,9 @@ no token/config/secret is ever in the response (covered by
 | `POST /api/alvys/users/search` | `UserSearchRequest` | `SearchUsersAsync` | `POST /api/p/v{version}/users/search` |
 | `POST /api/alvys/tenders/search` | `TenderSearchRequest` | `SearchTendersAsync` | `POST /api/p/v{version}/tenders/search` |
 | `GET /api/alvys/tenders/{tenderId}` | _(path param)_ | `GetTenderByIdAsync` | `GET /api/p/v{version}/tenders/{tenderId}` |
+| `GET /api/alvys/loads?id=…\|loadNumber=…\|orderNumber=…` | `LoadLookup` _(query)_ | `GetLoadAsync` | `GET /api/p/v{version}/loads?…` |
+| `GET /api/alvys/trips?id=…\|tripNumber=…[&includeDeleted=…]` | `TripLookup` _(query)_ | `GetTripAsync` | `GET /api/p/v{version}/trips?…` |
+| `GET /api/alvys/trips/{tripId}/stops` | _(path param)_ | `ListTripStopsAsync` | `GET /api/p/v{version}/trips/{tripId}/stops` |
 | `GET /api/alvys/loads/{loadNumber}/documents` | _(path param)_ | `ListLoadDocumentsAsync` | `GET /api/p/v{version}/loads/{loadNumber}/documents` |
 | `GET /api/alvys/loads/{loadNumber}/notes` | _(path param)_ | `ListLoadNotesAsync` | `GET /api/p/v{version}/loads/{loadNumber}/notes` |
 
@@ -97,8 +100,14 @@ no token/config/secret is ever in the response (covered by
   matched before authorization runs — see `AlvysSearchEndpointTests`. Health stays
   anonymous.
 - **HTTP verb.** Searches are `POST` because the filter set is the request body, not
-  because anything is mutated. Single-record reads (the tender-by-id lookup) and the two
-  load sub-resource listings (documents, notes) are `GET`. All are queries only.
+  because anything is mutated. Single-record reads (the tender-by-id, load and trip
+  lookups) and the sub-resource listings (load documents/notes, trip stops) are `GET`.
+  All are queries only.
+- **Lookup query parameters.** The load lookup requires one of `id`/`loadNumber`/
+  `orderNumber`; the trip lookup requires one of `id`/`tripNumber` (with optional
+  `includeDeleted`). The controller returns **400** when no criterion is supplied (before
+  any upstream call) and **404** when the record is not found or upstream degrades to
+  `null`.
 - **No internal mutation endpoints exist** — there is no `PUT`/`PATCH`/`DELETE`, no POST
   note/document creation, and no Alvys writeback in this phase. The tender slice is
   read-only: no accept/reject/cancel/update/create.
@@ -146,6 +155,51 @@ mileage, assigned truck/trailer and driver/carrier/operator pay context.
   `Trailer.{Id,EquipmentType,EquipmentLength}`, driver/carrier/owner-operator pay
   context, and `IsDeleted`. Nested payroll/accessorial classes are kept flexible and
   unknown JSON is tolerated.
+
+### Route assembly + lifecycle detail: load/trip detail and trip stops
+
+These three read-only `GET` paths give the planner/booker the stop-1-to-billed lifecycle
+context: a single load or trip by identifier, and the polymorphic stop list that assembles
+a trip's route. All degrade gracefully — a 404 (or any non-success/transport error) becomes
+`null`/`[]` rather than an exception.
+
+#### `loads?…` → `GET /api/p/v{version}/loads?id=…|loadNumber=…|orderNumber=…`
+
+- **Request** (`LoadLookup`): one of `id`, `loadNumber`, `orderNumber` is required; values
+  are URL-encoded into the query string by `AlvysApiRoutes.LoadDetail`, which calls
+  `LoadLookup.Validate()` (throws before any HTTP call when none is supplied).
+- **Response** (`AlvysLoad`): the same projection returned by `loads/search`, additively
+  extended with detail-only fields — `CancelledBy`, `PickedUpAt`, `DeliveredAt`,
+  `InvoicedAt`, `LastInvoiceSentAt` and `Payments[]` (`AlvysLoadPayment`:
+  `Amount`/`PaidAt`/`Reference`/`Method`). A 404 can mean no such load **or** an abandoned
+  creation with no trips — both degrade to `null`. Unknown JSON is tolerated.
+
+#### `trips?…` → `GET /api/p/v{version}/trips?id=…|tripNumber=…[&includeDeleted=…]`
+
+- **Request** (`TripLookup`): one of `id`/`tripNumber` is required (`includeDeleted` alone
+  is insufficient); `includeDeleted` is appended as lowercase `true`/`false` only when set.
+  URL-encoded by `AlvysApiRoutes.TripDetail`, which calls `TripLookup.Validate()`.
+- **Response** (`AlvysTrip`): the same projection returned by `trips/search`, additively
+  extended with detail fields — `OrderNumber`, `TenderAsSubsidiaryType`,
+  `RequiredEquipment[]`, `PickedUpAt`, `DeliveredAt`, `CarrierAssignedAt`, `ReleasedAt`,
+  `CarrierPaidAt`, `DueDate`, `Driver1`/`Driver2`, `DispatcherId`, `DispatchedBy`,
+  `ReleasedBy`, `CarrierSalesAgentId`, `CarrierPayOnHold`, `References[]`, `UpdatedAt`,
+  `UpdatedBy`. `Temperature` and `RatesV2` are deliberately not modelled (tolerated as
+  unknown JSON). A 404 degrades to `null`.
+
+#### `trips/{tripId}/stops` → `GET /api/p/v{version}/trips/{tripId}/stops`
+
+- **Request:** `tripId` path parameter only (URL-encoded by `AlvysApiRoutes.TripStops`).
+  No body.
+- **Response** (`AlvysTripStopDetail[]`): the upstream array is **polymorphic** — Alvys
+  discriminates each stop with a `$type` of `appointment`, `delivery_window` or `waypoint`.
+  Rather than three subclasses, the union of fields is flattened into one tolerant
+  projection that preserves the `$type` in `Type` (`[JsonPropertyName("$type")]`): common
+  fields (`Id`, `StopType`, `Status`, `Address` (`AlvysContextAddress`), `Coordinates`,
+  `ArrivedAt`, `DepartedAt`, `Company*`, `References[]`), appointment fields
+  (`AppointmentRequested`/`AppointmentConfirmed`/`AppointmentDate`/`ScheduleType`/
+  `LoadingType`) and the `delivery_window`/`waypoint` `StopWindow` (`Begin`/`End`). Only
+  the members relevant to a given `$type` are populated; a 404 degrades to `[]`.
 
 ### `trailers/search` → `POST /api/p/v{version}/trailers/search`
 
@@ -379,10 +433,12 @@ of truth for the auth/client pattern. Exact files reviewed at `main`:
 
 This integration phase is **read-only**. The internal API endpoints — the
 `/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search`
-searches plus the `GET /api/alvys/tenders/{tenderId}` lookup and the
-`GET /api/alvys/loads/{loadNumber}/{documents,notes}` listings — and the upstream Alvys
+searches plus the `GET /api/alvys/tenders/{tenderId}` lookup, the
+`GET /api/alvys/{loads,trips}?…` load/trip detail lookups, and the
+`GET /api/alvys/loads/{loadNumber}/{documents,notes}` and
+`GET /api/alvys/trips/{tripId}/stops` listings — and the upstream Alvys
 client calls issue queries only. Alvys models searches as `POST` (the filter set is the
-request body) and exposes single-record reads and the load sub-resource listings as `GET`,
+request body) and exposes single-record reads and the sub-resource listings as `GET`,
 but no data is created, updated or deleted and there is no writeback to Alvys. For tenders
 specifically there is no accept/reject/cancel/update/create. No `PUT`/`PATCH`/`DELETE`, no
 POST note/document creation, and no POST-mutation (other than the Alvys-defined search
@@ -391,10 +447,11 @@ provider is opt-in for local/UAT and returns empty (shape-preserving) results.
 
 ## Next slice
 
-The read-only endpoints now cover loads, trips, equipment (trucks/trailers), the LTL
-matching context (locations, drivers, dispatch preferences, customers, users) and inbound
-tenders (search + by-id) — enough to start the LTL candidate matcher. Next: the matcher
-domain logic (consolidation candidate
+The read-only endpoints now cover loads (search + detail), trips (search + detail + stops),
+equipment (trucks/trailers), the LTL matching context (locations, drivers, dispatch
+preferences, customers, users) and inbound tenders (search + by-id) — enough to assemble a
+trip's route and read the stop-1-to-billed lifecycle, and to start the LTL candidate
+matcher. Next: the matcher domain logic (consolidation candidate
 detection using load geography + customer billing separation + equipment/driver readiness),
 richer normalized read models for the planner/booker views, and the Angular services that
 consume `/api/alvys/*`. Writeback (booking/assignment) remains out of scope until the
