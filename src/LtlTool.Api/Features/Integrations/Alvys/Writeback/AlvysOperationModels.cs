@@ -122,6 +122,12 @@ public enum AlvysOperationDisposition
     /// and sandbox configuration is ready.)
     /// </summary>
     SandboxExecuted,
+
+    /// <summary>
+    /// A live sandbox execution was attempted but Alvys rejected it (non-2xx response or transport
+    /// error). Nothing durable changed upstream; the failure is surfaced to the caller.
+    /// </summary>
+    SandboxFailed,
 }
 
 /// <summary>A single validation finding on an operation request.</summary>

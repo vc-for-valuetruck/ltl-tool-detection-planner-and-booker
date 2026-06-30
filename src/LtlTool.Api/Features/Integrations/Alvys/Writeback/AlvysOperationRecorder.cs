@@ -91,7 +91,7 @@ public sealed class AlvysOperationRecorder(
     {
         var outcome = gateway.Execute(operationCode, request);
         var key = NormalizeKey(request.IdempotencyKey);
-        var hash = AlvysPayloadHasher.Hash(operationCode, outcome.Payload?.Body);
+        var hash = ComputeExecuteHash(operationCode, request, outcome);
 
         if (key is not null)
         {
@@ -135,7 +135,7 @@ public sealed class AlvysOperationRecorder(
     {
         var outcome = gateway.Execute(operationCode, request);
         var key = NormalizeKey(request.IdempotencyKey);
-        var hash = AlvysPayloadHasher.Hash(operationCode, outcome.Payload?.Body);
+        var hash = ComputeExecuteHash(operationCode, request, outcome);
 
         if (key is not null)
         {
@@ -154,6 +154,22 @@ public sealed class AlvysOperationRecorder(
 
                 existing.AttemptCount += 1;
                 existing.UpdatedAt = clock.GetUtcNow();
+
+                // A prior attempt that never reached Alvys (failed write) may be re-sent under the
+                // same key once the request is eligible again — idempotent retry after a transient
+                // failure. A previously successful record is just replayed, never re-sent.
+                if (existing.Status == AlvysOperationRecordStatus.Blocked
+                    && outcome.SandboxExecutionEligible && outcome.Payload is not null)
+                {
+                    var replayedOutcome = await DispatchAndApplyAsync(operationCode, request, outcome, existing, ct);
+                    return new AlvysRecordResult
+                    {
+                        Outcome = replayedOutcome,
+                        Disposition = AlvysRecordDisposition.DuplicateReplay,
+                        Record = existing,
+                    };
+                }
+
                 store.Update(existing);
                 return new AlvysRecordResult
                 {
@@ -169,22 +185,7 @@ public sealed class AlvysOperationRecorder(
         // Dispatch the live sandbox call when the gateway signals eligibility.
         if (outcome.SandboxExecutionEligible && outcome.Payload is not null)
         {
-            var op = AlvysWriteOperationRegistry.Find(operationCode)!;
-            var callResult = await writeClient.ExecuteAsync(op, request, outcome.Payload, ct);
-
-            record.AttemptCount = 1;
-            record.UpdatedAt = clock.GetUtcNow();
-            if (callResult.IsSuccess)
-            {
-                record.Status = AlvysOperationRecordStatus.Recorded;
-                record.LastError = null;
-            }
-            else
-            {
-                record.Status = AlvysOperationRecordStatus.Blocked;
-                record.LastError = callResult.Error;
-            }
-            store.Update(record);
+            outcome = await DispatchAndApplyAsync(operationCode, request, outcome, record, ct);
         }
 
         return new AlvysRecordResult
@@ -192,6 +193,80 @@ public sealed class AlvysOperationRecorder(
             Outcome = outcome,
             Disposition = AlvysRecordDisposition.Created,
             Record = record,
+        };
+    }
+
+    /// <summary>
+    /// Issues the live sandbox call, updates the persisted record's status/error, and returns an
+    /// outcome that reflects the actual result (success → SandboxExecuted/Executed; failure →
+    /// SandboxFailed so the controller surfaces a non-2xx to the caller).
+    /// </summary>
+    private async Task<AlvysOperationOutcome> DispatchAndApplyAsync(
+        string operationCode, AlvysOperationRequest request, AlvysOperationOutcome outcome,
+        AlvysOperationRecord record, CancellationToken ct)
+    {
+        var op = AlvysWriteOperationRegistry.Find(operationCode)!;
+        var callResult = await writeClient.ExecuteAsync(op, request, outcome.Payload!, ct);
+
+        record.UpdatedAt = clock.GetUtcNow();
+        if (callResult.IsSuccess)
+        {
+            record.Status = AlvysOperationRecordStatus.Recorded;
+            record.LastError = null;
+            store.Update(record);
+            return WithExecution(outcome, executed: true, AlvysOperationDisposition.SandboxExecuted,
+                "Sandbox execution succeeded — sent to the Alvys sandbox.");
+        }
+
+        record.Status = AlvysOperationRecordStatus.Blocked;
+        record.LastError = callResult.Error;
+        store.Update(record);
+        return WithExecution(outcome, executed: false, AlvysOperationDisposition.SandboxFailed,
+            $"Sandbox execution failed: {callResult.Error ?? "the Alvys sandbox rejected the request"}.");
+    }
+
+    /// <summary>Clones an outcome overriding only the post-execution fields.</summary>
+    private static AlvysOperationOutcome WithExecution(
+        AlvysOperationOutcome o, bool executed, AlvysOperationDisposition disposition, string message) => new()
+    {
+        OperationCode = o.OperationCode,
+        Title = o.Title,
+        Mode = o.Mode,
+        Disposition = disposition,
+        Executed = executed,
+        SandboxExecutionEligible = o.SandboxExecutionEligible,
+        Message = message,
+        Payload = o.Payload,
+        Validation = o.Validation,
+        Blockers = o.Blockers,
+        RequiredToEnable = o.RequiredToEnable,
+    };
+
+    /// <summary>
+    /// Canonical idempotency hash for an execute request. Includes the resource identity (every
+    /// path/URL identifier) alongside the payload body, so the same key + same body targeting a
+    /// different tender/trip/stop/carrier/load is never mistaken for a duplicate.
+    /// </summary>
+    private static string ComputeExecuteHash(
+        string operationCode, AlvysOperationRequest request, AlvysOperationOutcome outcome) =>
+        AlvysPayloadHasher.Hash(
+            $"{operationCode}@{ResourceIdentity(operationCode, request)}", outcome.Payload?.Body);
+
+    /// <summary>Canonical string of every path identifier an operation targets.</summary>
+    private static string ResourceIdentity(string operationCode, AlvysOperationRequest request)
+    {
+        var op = AlvysWriteOperationRegistry.Find(operationCode);
+        return op?.Kind switch
+        {
+            AlvysWriteOperationKind.CreateLoadNote => $"load:{request.LoadNumber}",
+            AlvysWriteOperationKind.LoadUpdate => $"load:{request.LoadNumber}",
+            AlvysWriteOperationKind.TenderAccept => $"tender:{request.TenderId}",
+            AlvysWriteOperationKind.TripStopArrival => $"trip:{request.TripId}/stop:{request.StopId}",
+            AlvysWriteOperationKind.TripStopDeparture => $"trip:{request.TripId}/stop:{request.StopId}",
+            AlvysWriteOperationKind.TripAssign => $"trip:{request.TripId}",
+            AlvysWriteOperationKind.TripDispatch => $"trip:{request.TripId}",
+            AlvysWriteOperationKind.CarrierStatusUpdate => $"carrier:{request.CarrierId}",
+            _ => string.Empty,
         };
     }
 
@@ -216,7 +291,7 @@ public sealed class AlvysOperationRecorder(
             ResourceType = resourceType,
             ResourceId = resourceId,
             IdempotencyKey = idempotencyKey,
-            PayloadHash = payloadHash ?? AlvysPayloadHasher.Hash(operationCode, outcome.Payload?.Body),
+            PayloadHash = payloadHash ?? ComputeExecuteHash(operationCode, request, outcome),
             PayloadPreview = BuildPreview(outcome.Payload?.Body),
             Mode = outcome.Mode,
             Disposition = outcome.Disposition,
@@ -236,6 +311,7 @@ public sealed class AlvysOperationRecorder(
     private static AlvysOperationRecordStatus ToStatus(AlvysOperationDisposition disposition) => disposition switch
     {
         AlvysOperationDisposition.Blocked => AlvysOperationRecordStatus.Blocked,
+        AlvysOperationDisposition.SandboxFailed => AlvysOperationRecordStatus.Blocked,
         AlvysOperationDisposition.Unsupported => AlvysOperationRecordStatus.Unsupported,
         _ => AlvysOperationRecordStatus.Recorded,
     };

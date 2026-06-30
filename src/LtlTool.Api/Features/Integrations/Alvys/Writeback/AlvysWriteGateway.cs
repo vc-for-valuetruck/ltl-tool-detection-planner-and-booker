@@ -178,6 +178,13 @@ public sealed class AlvysWriteGateway(
                     "A tender id is required.");
                 Require(request.StopCompanyLinks is { Count: > 0 }, "STOP_COMPANY_LINKS_REQUIRED",
                     "At least one StopCompanyLink (StopId + CompanyId) is required to accept a tender.");
+                // Every link must carry both ids — blanks must never reach Alvys.
+                foreach (var link in request.StopCompanyLinks ?? [])
+                {
+                    Require(!string.IsNullOrWhiteSpace(link.StopId) && !string.IsNullOrWhiteSpace(link.CompanyId),
+                        "STOP_COMPANY_LINK_INVALID",
+                        "Each StopCompanyLink must include a non-empty StopId and CompanyId.");
+                }
                 break;
 
             case AlvysWriteOperationKind.TripStopArrival:
@@ -204,6 +211,28 @@ public sealed class AlvysWriteGateway(
                 Require(request.Fields is { Count: > 0 }, "FIELDS_REQUIRED",
                     "At least one field to update is required. Currently only 'OrderNumber' is " +
                     "writable via this endpoint (max 30 chars).");
+                // Allowlist: only documented-writable fields may reach the live PATCH body.
+                foreach (var (key, value) in request.Fields ?? [])
+                {
+                    if (!AlvysLoadUpdateFields.IsWritable(key))
+                    {
+                        issues.Add(new AlvysOperationIssue
+                        {
+                            Code = "FIELD_NOT_WRITABLE",
+                            Message = $"Field '{key}' is not writable via load-update. " +
+                                      $"Allowed: {string.Join(", ", AlvysLoadUpdateFields.Writable)}.",
+                        });
+                        continue;
+                    }
+                    if (AlvysLoadUpdateFields.IsOrderNumber(key))
+                    {
+                        Require(!string.IsNullOrWhiteSpace(value), "ORDER_NUMBER_BLANK",
+                            "OrderNumber cannot be blank.");
+                        Require(value is null || value.Length <= AlvysLoadUpdateFields.OrderNumberMaxLength,
+                            "ORDER_NUMBER_TOO_LONG",
+                            $"OrderNumber must be {AlvysLoadUpdateFields.OrderNumberMaxLength} characters or fewer.");
+                    }
+                }
                 break;
 
             case AlvysWriteOperationKind.TripAssign:

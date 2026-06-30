@@ -143,6 +143,102 @@ public sealed class AlvysOperationRecorderTests
         Assert.Equal(AlvysOperationRecordStatus.Blocked, result.Record!.Status);
     }
 
+    [Fact]
+    public void Same_key_different_resource_is_a_conflict_not_a_replay()
+    {
+        // Same idempotency key + same note body but a different target load must not de-duplicate:
+        // the resource identity is part of the canonical hash.
+        var (recorder, _) = Build(AlvysWritebackMode.Simulation);
+
+        var first = recorder.RecordExecute("owner@vt.com", "create-load-note",
+            new AlvysOperationRequest { LoadNumber = "L100", NoteText = "same", IdempotencyKey = "shared" });
+        var second = recorder.RecordExecute("owner@vt.com", "create-load-note",
+            new AlvysOperationRequest { LoadNumber = "L200", NoteText = "same", IdempotencyKey = "shared" });
+
+        Assert.Equal(AlvysRecordDisposition.Created, first.Disposition);
+        Assert.Equal(AlvysRecordDisposition.Conflict, second.Disposition);
+    }
+
+    [Fact]
+    public async Task Sandbox_eligible_execute_dispatches_and_reports_success()
+    {
+        var (recorder, _, client) = BuildSandbox();
+
+        var result = await recorder.RecordExecuteAsync("owner@vt.com", "create-load-note", Note("k"));
+
+        Assert.Equal(1, client.Calls);
+        Assert.Equal(AlvysOperationDisposition.SandboxExecuted, result.Outcome.Disposition);
+        Assert.True(result.Outcome.Executed);
+        Assert.Equal(AlvysOperationRecordStatus.Recorded, result.Record!.Status);
+    }
+
+    [Fact]
+    public async Task Sandbox_write_failure_surfaces_as_sandbox_failed()
+    {
+        var (recorder, _, client) = BuildSandbox();
+        client.Result = new AlvysWriteCallResult { IsSuccess = false, StatusCode = 422, Error = "HTTP 422" };
+
+        var result = await recorder.RecordExecuteAsync("owner@vt.com", "create-load-note", Note("k"));
+
+        Assert.Equal(AlvysOperationDisposition.SandboxFailed, result.Outcome.Disposition);
+        Assert.False(result.Outcome.Executed);
+        Assert.Equal(AlvysOperationRecordStatus.Blocked, result.Record!.Status);
+        Assert.Equal("HTTP 422", result.Record.LastError);
+    }
+
+    [Fact]
+    public async Task Failed_sandbox_write_can_be_retried_with_the_same_key()
+    {
+        var (recorder, _, client) = BuildSandbox();
+        client.Result = new AlvysWriteCallResult { IsSuccess = false, StatusCode = 503, Error = "HTTP 503" };
+
+        var first = await recorder.RecordExecuteAsync("owner@vt.com", "create-load-note", Note("retry-key"));
+        Assert.Equal(AlvysOperationDisposition.SandboxFailed, first.Outcome.Disposition);
+
+        // The transient failure cleared; retrying the same key must re-dispatch, not silently replay.
+        client.Result = new AlvysWriteCallResult { IsSuccess = true, StatusCode = 201 };
+        var retry = await recorder.RecordExecuteAsync("owner@vt.com", "create-load-note", Note("retry-key"));
+
+        Assert.Equal(2, client.Calls);
+        Assert.Equal(AlvysRecordDisposition.DuplicateReplay, retry.Disposition);
+        Assert.Equal(AlvysOperationDisposition.SandboxExecuted, retry.Outcome.Disposition);
+        Assert.Equal(first.Record!.Id, retry.Record!.Id);
+        Assert.Equal(AlvysOperationRecordStatus.Recorded, retry.Record.Status);
+    }
+
+    private static (AlvysOperationRecorder Recorder, InMemoryAlvysOperationStore Store, FakeWriteClient Client) BuildSandbox()
+    {
+        var write = Microsoft.Extensions.Options.Options.Create(new AlvysWriteOptions
+        {
+            Mode = AlvysWritebackMode.Sandbox,
+            Environment = "sandbox",
+            SandboxBaseUrl = "https://sandbox.example.com",
+        });
+        var alvys = Microsoft.Extensions.Options.Options.Create(new AlvysOptions
+        {
+            ClientId = "id",
+            ClientSecret = "secret",
+        });
+        var gateway = new AlvysWriteGateway(write, alvys);
+        var store = new InMemoryAlvysOperationStore();
+        var client = new FakeWriteClient();
+        return (new AlvysOperationRecorder(gateway, store, new FixedClock(Now), client), store, client);
+    }
+
+    private sealed class FakeWriteClient : IAlvysWriteClient
+    {
+        public AlvysWriteCallResult Result { get; set; } = new() { IsSuccess = true, StatusCode = 200 };
+        public int Calls { get; private set; }
+
+        public Task<AlvysWriteCallResult> ExecuteAsync(
+            AlvysWriteOperationDescriptor op, AlvysOperationRequest request,
+            AlvysOperationPayload payload, CancellationToken ct = default)
+        {
+            Calls++;
+            return Task.FromResult(Result);
+        }
+    }
+
     private sealed class FixedClock(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;

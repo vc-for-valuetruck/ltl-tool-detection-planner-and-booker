@@ -79,6 +79,7 @@ public sealed class AlvysOperationsController(
     [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(typeof(AlvysOperationConflict), StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<AlvysOperationResponse>> Execute(
         string operation, [FromBody] AlvysOperationRequest request, CancellationToken ct)
     {
@@ -106,9 +107,13 @@ public sealed class AlvysOperationsController(
         }
 
         var response = ToResponse(result);
-        return result.Outcome.Disposition == AlvysOperationDisposition.Blocked
-            ? UnprocessableEntity(response)
-            : Ok(response);
+        return result.Outcome.Disposition switch
+        {
+            AlvysOperationDisposition.Blocked => UnprocessableEntity(response),
+            // The sandbox call was attempted but Alvys rejected it — surface a gateway error.
+            AlvysOperationDisposition.SandboxFailed => StatusCode(StatusCodes.Status502BadGateway, response),
+            _ => Ok(response),
+        };
     }
 
     /// <summary>The current owner's operation history (audit/outbox), newest first.</summary>

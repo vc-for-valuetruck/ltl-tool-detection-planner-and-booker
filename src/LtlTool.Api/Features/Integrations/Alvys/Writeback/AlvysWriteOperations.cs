@@ -18,6 +18,26 @@ public static class AlvysNoteTypes
 }
 
 /// <summary>
+/// The allowlist of load fields writable via the Alvys load-update (PATCH) endpoint. Today only
+/// <c>OrderNumber</c> is writable (≤30 chars). The list is the safety boundary: any other field
+/// is rejected before a live PATCH is built, so an over-broad caller can never mutate fields Alvys
+/// does not expose for write.
+/// </summary>
+public static class AlvysLoadUpdateFields
+{
+    public const string OrderNumber = "OrderNumber";
+    public const int OrderNumberMaxLength = 30;
+
+    public static readonly IReadOnlyList<string> Writable = [OrderNumber];
+
+    public static bool IsWritable(string? field) =>
+        Writable.Contains(field, StringComparer.OrdinalIgnoreCase);
+
+    public static bool IsOrderNumber(string? field) =>
+        string.Equals(field, OrderNumber, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
 /// The write-oriented Alvys operations relevant to the Search → Match → Assign → Bill workflow.
 /// Each is modelled here as a definition only — payload construction and dry-run preview are
 /// always available, but <b>live execution</b> is gated separately (see

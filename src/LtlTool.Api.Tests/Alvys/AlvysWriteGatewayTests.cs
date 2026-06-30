@@ -128,6 +128,21 @@ public sealed class AlvysWriteGatewayTests
     }
 
     [Fact]
+    public void Tender_accept_rejects_blank_stop_company_links()
+    {
+        var outcome = Gateway(AlvysWritebackMode.Simulation)
+            .Execute("tender-accept", new AlvysOperationRequest
+            {
+                TenderId = "T1",
+                Etag = "v1",
+                StopCompanyLinks = [new TenderStopCompanyLink { StopId = "", CompanyId = "" }],
+            });
+
+        Assert.Equal(AlvysOperationDisposition.Blocked, outcome.Disposition);
+        Assert.Contains(outcome.Validation, i => i.Code == "STOP_COMPANY_LINK_INVALID");
+    }
+
+    [Fact]
     public void Load_update_requires_fields_and_etag()
     {
         var outcome = Gateway(AlvysWritebackMode.Simulation)
@@ -139,19 +154,49 @@ public sealed class AlvysWriteGatewayTests
     }
 
     [Fact]
-    public void Load_update_payload_carries_scoped_fields()
+    public void Load_update_payload_carries_writable_order_number()
     {
         var outcome = Gateway(AlvysWritebackMode.Simulation).DryRun("load-update",
             new AlvysOperationRequest
             {
                 LoadNumber = "L100",
                 Etag = "v2",
-                Fields = new() { ["CustomerReference"] = "PO-9", ["Notes"] = "rebill" },
+                Fields = new() { ["OrderNumber"] = "SHIP-100245" },
             });
 
         Assert.NotNull(outcome.Payload);
-        Assert.Equal("PO-9", outcome.Payload!.Body["CustomerReference"]);
-        Assert.Equal("rebill", outcome.Payload.Body["Notes"]);
+        Assert.Equal("SHIP-100245", outcome.Payload!.Body["OrderNumber"]);
+    }
+
+    [Fact]
+    public void Load_update_rejects_fields_outside_the_writable_allowlist()
+    {
+        var outcome = Gateway(AlvysWritebackMode.Simulation).Execute("load-update",
+            new AlvysOperationRequest
+            {
+                LoadNumber = "L100",
+                Etag = "v2",
+                Fields = new() { ["Status"] = "Delivered", ["CustomerId"] = "C9" },
+            });
+
+        Assert.Equal(AlvysOperationDisposition.Blocked, outcome.Disposition);
+        Assert.Contains(outcome.Validation, i => i.Code == "FIELD_NOT_WRITABLE");
+        Assert.Null(outcome.Payload);
+    }
+
+    [Fact]
+    public void Load_update_rejects_order_number_longer_than_30_chars()
+    {
+        var outcome = Gateway(AlvysWritebackMode.Simulation).Execute("load-update",
+            new AlvysOperationRequest
+            {
+                LoadNumber = "L100",
+                Etag = "v2",
+                Fields = new() { ["OrderNumber"] = new string('X', 31) },
+            });
+
+        Assert.Equal(AlvysOperationDisposition.Blocked, outcome.Disposition);
+        Assert.Contains(outcome.Validation, i => i.Code == "ORDER_NUMBER_TOO_LONG");
     }
 
     [Fact]
