@@ -277,6 +277,11 @@ npm test -- --watch=false
 
 ## 10. UAT guidance
 
+> **Demoing the LTL workbench?** See the step-by-step
+> [`docs/LTL_DEMO_RUNBOOK.md`](docs/LTL_DEMO_RUNBOOK.md) for the exact
+> Search → Match → Assign → Bill flow, talking points, fallback path when no live
+> Alvys data is available, and do-not-demo items.
+
 Two ways to share a running build with testers:
 
 ### a) GitHub Codespaces (default)
