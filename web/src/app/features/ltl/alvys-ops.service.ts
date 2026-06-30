@@ -2,9 +2,11 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { RUNTIME_CONFIG } from '../../runtime-config';
+import { HttpHeaders } from '@angular/common/http';
 import {
-  AlvysOperationOutcome,
+  AlvysOperationRecordView,
   AlvysOperationRequest,
+  AlvysOperationResponse,
   AlvysReadinessStatus,
   AlvysWriteOperationDescriptor,
 } from './alvys-ops.models';
@@ -27,20 +29,41 @@ export class AlvysOpsService {
     return this.http.get<AlvysWriteOperationDescriptor[]>(`${this.base}/operations`);
   }
 
-  /** Builds and validates the payload for preview without ever sending it to Alvys. */
-  dryRun(operation: string, request: AlvysOperationRequest): Observable<AlvysOperationOutcome> {
-    return this.http.post<AlvysOperationOutcome>(
+  /**
+   * Previews and records the payload for an operation as an auditable dry-run, without ever sending
+   * it to Alvys. Returns the outcome plus the audit record that was written.
+   */
+  dryRun(operation: string, request: AlvysOperationRequest): Observable<AlvysOperationResponse> {
+    return this.http.post<AlvysOperationResponse>(
       `${this.base}/${encodeURIComponent(operation)}/dry-run`,
       request,
     );
   }
 
-  /** Attempts an operation. Honours the configured writeback mode; never mutates Alvys here. */
-  execute(operation: string, request: AlvysOperationRequest): Observable<AlvysOperationOutcome> {
-    return this.http.post<AlvysOperationOutcome>(
+  /**
+   * Attempts an operation. Honours the configured writeback mode; never mutates Alvys here. An
+   * idempotency key (sent via the `Idempotency-Key` header) de-duplicates equivalent retries and
+   * surfaces a 409 conflict when reused with a different payload.
+   */
+  execute(
+    operation: string,
+    request: AlvysOperationRequest,
+    idempotencyKey?: string,
+  ): Observable<AlvysOperationResponse> {
+    const headers = idempotencyKey
+      ? new HttpHeaders({ 'Idempotency-Key': idempotencyKey })
+      : undefined;
+    return this.http.post<AlvysOperationResponse>(
       `${this.base}/${encodeURIComponent(operation)}/execute`,
       request,
+      headers ? { headers } : {},
     );
+  }
+
+  /** The current owner's operation history (audit/outbox), newest first. */
+  history(limit?: number): Observable<AlvysOperationRecordView[]> {
+    const url = limit ? `${this.base}/history?limit=${limit}` : `${this.base}/history`;
+    return this.http.get<AlvysOperationRecordView[]>(url);
   }
 
   /** Opt-in bounded read probe that records a "last successful read" time. Never a mutation. */

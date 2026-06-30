@@ -122,6 +122,44 @@
   color: #374151;
 }
 
+.badge-block {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.badge-unsupported {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.ops-history {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ops-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ops-history-head .link {
+  background: none;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.ops-history-head .link:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .elig {
   display: inline-block;
   border-radius: 4px;
