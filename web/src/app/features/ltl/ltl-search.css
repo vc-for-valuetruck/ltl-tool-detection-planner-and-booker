@@ -274,3 +274,290 @@ button.primary {
   background: #fdecef;
   color: #b00020;
 }
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 2px solid #e3e3ea;
+  margin-bottom: 1rem;
+}
+.tab {
+  border: none;
+  background: none;
+  padding: 0.55rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #667;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+}
+.tab:hover {
+  color: #2b59c3;
+}
+.tab.active {
+  color: #2b59c3;
+  border-bottom-color: #2b59c3;
+}
+
+/* Date filter labels */
+.filters .date {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: #667;
+}
+.filters input[type='date'] {
+  padding: 0.35rem 0.4rem;
+  border: 1px solid #ccd;
+  border-radius: 4px;
+}
+
+/* Applied filters */
+.applied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.8rem;
+}
+.applied-label {
+  color: #888;
+}
+.applied-chip {
+  border: 1px solid #c3d0f0;
+  background: #eef2ff;
+  color: #2b59c3;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+.applied-chip:hover {
+  background: #dde6ff;
+}
+.applied-reset {
+  border: none;
+  background: none;
+  color: #b00020;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+/* Empty state */
+.state-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+.state-empty button {
+  padding: 0.35rem 0.85rem;
+  border: 1px solid #ccd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+/* Worklist / exceptions toolbar */
+.worklist-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+}
+.worklist-bar select,
+.worklist-bar button {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ccd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+/* Risks / exception lists */
+.risks {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: #8a5a00;
+}
+.risks li.blocking {
+  color: #b00020;
+}
+
+/* Match factor breakdown */
+.match-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.link {
+  border: none;
+  background: none;
+  color: #2b59c3;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 0;
+  text-decoration: underline;
+}
+.link.choose {
+  margin-left: auto;
+  font-weight: 600;
+}
+.factors {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.factor {
+  display: grid;
+  grid-template-columns: 9rem auto;
+  gap: 0.1rem 0.5rem;
+  font-size: 0.76rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  background: #f7f8fc;
+  border-left: 3px solid #ccd;
+}
+.factor-name {
+  font-weight: 600;
+}
+.factor-pts {
+  text-align: right;
+  color: #667;
+}
+.factor-detail {
+  grid-column: 1 / -1;
+  color: #777;
+}
+.factor-strong {
+  border-left-color: #1b6b32;
+}
+.factor-weak {
+  border-left-color: #b00020;
+}
+.factor-na {
+  border-left-color: #bbb;
+  opacity: 0.75;
+}
+.factor-neutral {
+  border-left-color: #8a5a00;
+}
+
+/* Assignment form */
+.assign .staged-note {
+  font-size: 0.78rem;
+  color: #8a5a00;
+  background: #fff6e0;
+  border: 1px solid #f0d48a;
+  border-radius: 4px;
+  padding: 0.4rem 0.55rem;
+  margin: 0 0 0.6rem;
+}
+.assign-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.assign-form label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.74rem;
+  color: #667;
+  gap: 0.2rem;
+}
+.assign-form label.wide {
+  grid-column: 1 / -1;
+}
+.assign-form input {
+  padding: 0.35rem 0.45rem;
+  border: 1px solid #ccd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.assign-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.assign-actions button {
+  padding: 0.4rem 0.85rem;
+  border: 1px solid #ccd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+.assign-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.assign-error {
+  color: #b00020;
+  font-size: 0.82rem;
+  margin-top: 0.5rem;
+}
+.validation-ok {
+  color: #1b6b32;
+  background: #e3f6e8;
+  border-radius: 4px;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.82rem;
+  margin-top: 0.5rem;
+}
+.issues {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.issue {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+}
+.issue-sev {
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  margin-right: 0.3rem;
+}
+.issue-block {
+  background: #fdecef;
+  color: #b00020;
+}
+.issue-warn {
+  background: #fff3d6;
+  color: #8a5a00;
+}
+
+/* History */
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.history li {
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+/* Wider drawer for the assignment workflow */
+.drawer {
+  width: min(480px, 100%);
+}

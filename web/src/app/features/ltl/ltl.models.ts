@@ -131,6 +131,48 @@ export interface MatchResult {
   disqualifiers: string[];
 }
 
+export type AssignmentIssueSeverity = 'Block' | 'Warn';
+
+export interface AssignmentIssue {
+  code: string;
+  message: string;
+  severity: AssignmentIssueSeverity;
+}
+
+export interface AssignmentValidationResult {
+  issues: AssignmentIssue[];
+  blockers: AssignmentIssue[];
+  warnings: AssignmentIssue[];
+  hasBlockers: boolean;
+}
+
+/** Body for recording an internal (non-Alvys) assignment decision. */
+export interface AssignmentRequest {
+  driverId?: string;
+  truckId?: string;
+  trailerId?: string;
+  matchScore?: number;
+  matchLabel?: string;
+  notes?: string;
+  overrideReason?: string;
+}
+
+export interface AssignmentAudit {
+  id: string;
+  loadId: string;
+  driverId: string | null;
+  truckId: string | null;
+  trailerId: string | null;
+  matchScore: number | null;
+  matchLabel: string | null;
+  notes: string | null;
+  overrideReason: string | null;
+  warnings: AssignmentIssue[];
+  recordedBy: string;
+  recordedAt: string;
+  alvysWriteback: string;
+}
+
 /** Filter/sort/paging inputs for the normalized LTL search (mapped to query string). */
 export interface LtlSearchQuery {
   keyword?: string;
@@ -143,11 +185,14 @@ export interface LtlSearchQuery {
   status?: string[];
   pickupFrom?: string;
   pickupTo?: string;
+  deliveryFrom?: string;
+  deliveryTo?: string;
   assignment?: AssignmentState;
   ltlOnly?: boolean;
   readyToBill?: boolean;
   missingBillingData?: boolean;
   exceptionsOnly?: boolean;
+  billingBadge?: BillingBadge;
   sort?: LtlSortField;
   sortDescending?: boolean;
   page?: number;

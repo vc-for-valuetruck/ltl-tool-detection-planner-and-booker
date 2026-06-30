@@ -335,7 +335,8 @@ flags billing readiness and exceptions.
 | `GET /api/ltl/loads/{idOrNumber}` | single normalized load detail (404 when not found) |
 | `GET /api/ltl/loads/{idOrNumber}/matches?top=` | ranked, explainable driver/equipment matches |
 | `GET /api/ltl/loads/{idOrNumber}/billing-readiness` | billing-readiness evaluation (POD-aware) |
-| `POST /api/ltl/loads/{idOrNumber}/assign` | records an **internal** assignment decision (see below) |
+| `POST /api/ltl/loads/{idOrNumber}/assign/validate` | pre-flight validation of a proposed assignment (blockers + warnings) |
+| `POST /api/ltl/loads/{idOrNumber}/assign` | records an **internal** assignment decision (422 when blocked — see below) |
 | `GET /api/ltl/loads/{idOrNumber}/assignments` | internal assignment audit trail for a load |
 | `GET /api/ltl/billing/worklist?badge=` | loads needing billing attention, readiness-first |
 | `GET /api/ltl/exceptions` | loads carrying operational/billing exceptions |
@@ -349,6 +350,20 @@ trip/driver assignment is pushed upstream. The future writeback boundary lives h
 Alvys writes are enabled, this endpoint is where the upstream call is added and the audit
 flag flips.
 
+Before recording, the request runs through `AssignmentValidationService`, which resolves the
+proposed driver/truck/trailer against Alvys and produces typed `AssignmentIssue`s split into
+**blockers** and **warnings**:
+
+- **Blockers** (e.g. no driver selected, terminated/inactive driver, expired license or medical,
+  over trailer capacity) make `POST /assign` return **422 Unprocessable Entity** with the
+  validation result — the decision is *not* recorded.
+- **Warnings** (e.g. equipment mismatch, expiring credentials, passed pickup window, missing
+  rate/weight/lane) do **not** block; they are recorded on the audit entry. A dispatcher can
+  supply an `overrideReason` to proceed past warnings, and that reason is persisted on the audit.
+
+`POST /assign/validate` runs the same checks without recording anything, so the SPA can
+surface issues live as a match is chosen.
+
 ### Configuration (`Ltl` section / `LTL_*` env)
 
 Safe defaults ship in `appsettings.json`: Alvys sweep bound (`MaxLoadsScanned`), page size,
@@ -357,8 +372,21 @@ stale-uninvoiced threshold, and the match scoring weights/thresholds (`Ltl:Match
 
 ### Frontend
 
-The Angular `/ltl` route (`web/src/app/features/ltl/`) is a search workspace with saved-view
-chips (Unassigned LTL, High Revenue / Low Complexity, Missing Billing Data, Ready to Bill,
-Exceptions), filters, sortable sticky-header columns, billing/missing/exception badges,
-loading/error/empty states, pagination, and a detail drawer that loads explainable match
-recommendations on demand.
+The Angular `/ltl` route (`web/src/app/features/ltl/`) is a tabbed enterprise console:
+
+- **Search** — saved-view chips (Unassigned LTL, High Revenue / Low Complexity, Today's Pickup,
+  This Week's Deliveries, Missing Billing Data, Ready to Bill, Exceptions), an expanded filter
+  form (keyword, customer, origin/destination city + state, equipment, assignment state,
+  pickup/delivery date ranges, billing badge, LTL-only/ready-to-bill/missing-billing/exceptions
+  toggles), removable applied-filter chips, sortable sticky-header columns
+  (including Miles, shown as `—` when Alvys omits mileage), billing/missing/exception badges,
+  loading/error/empty states, and pagination.
+- **Billing** — the `billing/worklist` endpoint with a badge filter, readiness-first ordering.
+- **Exceptions** — loads carrying operational/billing exceptions.
+
+Selecting a load opens a detail drawer that loads explainable match recommendations on demand
+(expandable per-factor breakdown), billing-readiness badges and risks, exceptions, and an
+**internal assignment panel**. Choosing a recommended match prefills the form and validates it
+live; blockers disable the Assign action while warnings can be overridden with a stated reason.
+The panel is explicitly labelled "Not pushed to Alvys", and the assignment history shows each
+entry's `AlvysWriteback` status.

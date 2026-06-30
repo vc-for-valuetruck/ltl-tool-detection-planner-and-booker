@@ -25,6 +25,7 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<MatchScoringService>();
         services.AddScoped<MatchService>();
         services.AddScoped<LtlLoadService>();
+        services.AddScoped<AssignmentValidationService>();
 
         // Internal, non-Alvys assignment audit. Singleton in-memory store for this slice;
         // swap for a persistent IAssignmentAuditStore in production.

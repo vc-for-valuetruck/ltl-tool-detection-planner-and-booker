@@ -166,6 +166,7 @@ public sealed class LtlLoadService(
         if (q.ReadyToBill && !s.Billing.IsReadyToBill) return false;
         if (q.MissingBillingData && s.Billing.MissingFields.Count == 0) return false;
         if (q.ExceptionsOnly && !s.HasExceptions) return false;
+        if (q.BillingBadge is not null && !s.Billing.Badges.Contains(q.BillingBadge.Value)) return false;
 
         if (!string.IsNullOrWhiteSpace(q.OriginState) && !EqualsCi(s.Origin?.State, q.OriginState)) return false;
         if (!string.IsNullOrWhiteSpace(q.DestinationState) && !EqualsCi(s.Destination?.State, q.DestinationState)) return false;
@@ -183,6 +184,10 @@ public sealed class LtlLoadService(
         // Pickup window when the upstream filter wasn't usable (open-ended re-check is harmless).
         if (q.PickupFrom is not null && s.ScheduledPickupAt is not null && s.ScheduledPickupAt < q.PickupFrom) return false;
         if (q.PickupTo is not null && s.ScheduledPickupAt is not null && s.ScheduledPickupAt > q.PickupTo) return false;
+
+        // Delivery window (derived field — always applied in-memory).
+        if (q.DeliveryFrom is not null && s.ScheduledDeliveryAt is not null && s.ScheduledDeliveryAt < q.DeliveryFrom) return false;
+        if (q.DeliveryTo is not null && s.ScheduledDeliveryAt is not null && s.ScheduledDeliveryAt > q.DeliveryTo) return false;
 
         return true;
     }

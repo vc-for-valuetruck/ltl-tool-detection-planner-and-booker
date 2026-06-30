@@ -24,7 +24,8 @@ namespace LtlTool.Api.Features.Ltl;
 [Authorize(Policy = AccessPolicies.AllowedEmailDomain)]
 [Produces("application/json")]
 public sealed class LtlController(
-    LtlLoadService loads, MatchService matches, IAssignmentAuditStore auditStore) : ControllerBase
+    LtlLoadService loads, MatchService matches, AssignmentValidationService validation,
+    IAssignmentAuditStore auditStore) : ControllerBase
 {
     /// <summary>Normalized, filtered, sorted, paged LTL search over the swept Alvys loads.</summary>
     [HttpGet("search")]
@@ -74,23 +75,59 @@ public sealed class LtlController(
     }
 
     /// <summary>
-    /// Records an internal assignment decision for a load in the local audit store. This does
-    /// <b>not</b> write back to Alvys — the response carries
-    /// <see cref="AssignmentAudit.AlvysWriteback"/> = <c>"NotPerformed"</c> to make that
+    /// Validates a proposed internal assignment without recording it — the UI calls this to show
+    /// blockers/warnings before the dispatcher commits. Returns 404 when the load is not found.
+    /// </summary>
+    [HttpPost("loads/{idOrNumber}/assign/validate")]
+    [ProducesResponseType(typeof(AssignmentValidationResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AssignmentValidationResult>> ValidateAssignment(
+        string idOrNumber, [FromBody] AssignmentRequest request, CancellationToken ct)
+    {
+        var (_, result) = await BuildValidationAsync(idOrNumber, request, ct);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    /// <summary>
+    /// Records an internal assignment decision for a load in the local audit store, after
+    /// validating it against the load and the resolved fleet candidate. Hard rule violations
+    /// (no/terminated driver, expired credentials, over-capacity) return
+    /// <c>422 Unprocessable Entity</c> and record nothing; non-blocking warnings are allowed
+    /// through and captured on the audit. This does <b>not</b> write back to Alvys — the response
+    /// carries <see cref="AssignmentAudit.AlvysWriteback"/> = <c>"NotPerformed"</c> to make that
     /// boundary explicit. Returns 404 when the load cannot be resolved upstream.
     /// </summary>
     [HttpPost("loads/{idOrNumber}/assign")]
     [ProducesResponseType(typeof(AssignmentAudit), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(AssignmentValidationResult), StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AssignmentAudit>> Assign(
         string idOrNumber, [FromBody] AssignmentRequest request, CancellationToken ct)
     {
-        var load = await loads.ResolveLoadAsync(idOrNumber, ct);
-        if (load is null) return NotFound();
+        var (load, result) = await BuildValidationAsync(idOrNumber, request, ct);
+        if (load is null || result is null) return NotFound();
+
+        if (result.HasBlockers)
+            return UnprocessableEntity(result);
 
         var loadId = load.Id is { Length: > 0 } ? load.Id : idOrNumber;
-        var audit = auditStore.Record(loadId, request, CurrentUser());
+        var audit = auditStore.Record(loadId, request, CurrentUser(), result.Warnings.ToList());
         return CreatedAtAction(nameof(GetAssignments), new { idOrNumber = loadId }, audit);
+    }
+
+    /// <summary>
+    /// Resolves and normalizes the load, resolves the fleet candidate by the request ids and runs
+    /// assignment validation. Returns <c>(null, null)</c> when the load is not found.
+    /// </summary>
+    private async Task<(LtlLoadSummary? Load, AssignmentValidationResult? Result)> BuildValidationAsync(
+        string idOrNumber, AssignmentRequest request, CancellationToken ct)
+    {
+        var load = await loads.GetDetailAsync(idOrNumber, ct);
+        if (load is null) return (null, null);
+
+        var candidate = await matches.ResolveCandidateAsync(
+            request.DriverId, request.TruckId, request.TrailerId, ct);
+        return (load, validation.Validate(load, request, candidate));
     }
 
     /// <summary>The recorded internal assignment-decision history for a load (audit trail).</summary>

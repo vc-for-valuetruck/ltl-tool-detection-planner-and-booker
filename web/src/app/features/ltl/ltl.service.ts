@@ -3,6 +3,9 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import {
+  AssignmentAudit,
+  AssignmentRequest,
+  AssignmentValidationResult,
   BillingBadge,
   BillingReadinessResult,
   LtlLoadSummary,
@@ -49,6 +52,30 @@ export class LtlService {
 
   exceptions(): Observable<LtlLoadSummary[]> {
     return this.http.get<LtlLoadSummary[]>(`${this.base}/exceptions`);
+  }
+
+  validateAssignment(
+    idOrNumber: string,
+    request: AssignmentRequest,
+  ): Observable<AssignmentValidationResult> {
+    return this.http.post<AssignmentValidationResult>(
+      `${this.base}/loads/${encodeURIComponent(idOrNumber)}/assign/validate`,
+      request,
+    );
+  }
+
+  /** Records an internal (non-Alvys) assignment decision. 422 carries the blocking validation. */
+  assign(idOrNumber: string, request: AssignmentRequest): Observable<AssignmentAudit> {
+    return this.http.post<AssignmentAudit>(
+      `${this.base}/loads/${encodeURIComponent(idOrNumber)}/assign`,
+      request,
+    );
+  }
+
+  assignments(idOrNumber: string): Observable<AssignmentAudit[]> {
+    return this.http.get<AssignmentAudit[]>(
+      `${this.base}/loads/${encodeURIComponent(idOrNumber)}/assignments`,
+    );
   }
 }
 
