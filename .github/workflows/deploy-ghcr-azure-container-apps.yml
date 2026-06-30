@@ -1,0 +1,281 @@
+name: Deploy GHCR Images to Azure Container Apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: 'GitHub environment to deploy'
+        required: true
+        default: 'uat'
+        type: choice
+        options:
+          - uat
+          - production
+      image_tag:
+        description: 'Container image tag to deploy. Leave blank to build/deploy current commit SHA.'
+        required: false
+        default: ''
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/ltl-tool-detection-planner-and-booker
+  DEFAULT_ENVIRONMENT: uat
+
+concurrency:
+  group: deploy-container-apps-${{ github.ref }}-${{ github.event.inputs.environment_name || 'uat' }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Build and publish GHCR images
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+      api_image: ${{ steps.vars.outputs.api_image }}
+      web_image: ${{ steps.vars.outputs.web_image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: vars
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          else
+            IMAGE_TAG="${GITHUB_SHA}"
+          fi
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "api_image=${IMAGE_PREFIX}-api:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "web_image=${IMAGE_PREFIX}-web:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/LtlTool.Api/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.api_image }}
+            ${{ env.IMAGE_PREFIX }}-api:latest
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: web/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.web_image }}
+            ${{ env.IMAGE_PREFIX }}-web:latest
+
+  deploy:
+    name: Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    needs: build-and-publish
+    environment: ${{ github.event.inputs.environment_name || 'uat' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure Container Apps extension
+        shell: bash
+        run: az extension add --name containerapp --upgrade
+
+      - name: Ensure resource group
+        shell: bash
+        run: |
+          az group create \
+            --name "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --location "${{ vars.AZURE_LOCATION }}"
+
+      - name: Ensure Container Apps environment
+        shell: bash
+        run: |
+          if ! az containerapp env show \
+            --name "${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" >/dev/null 2>&1; then
+            az containerapp env create \
+              --name "${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --location "${{ vars.AZURE_LOCATION }}"
+          fi
+
+      - name: Deploy API container app
+        shell: bash
+        run: |
+          if az containerapp show \
+            --name "${{ vars.AZURE_API_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" >/dev/null 2>&1; then
+            az containerapp update \
+              --name "${{ vars.AZURE_API_APP_NAME }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --image "${{ needs.build-and-publish.outputs.api_image }}" \
+              --set-env-vars \
+                ASPNETCORE_ENVIRONMENT="Production" \
+                ASPNETCORE_URLS="http://+:8080" \
+                AzureAd__TenantId="secretref:azure-ad-tenant-id" \
+                AzureAd__ClientId="secretref:azure-ad-api-client-id" \
+                AzureAd__ClientSecret="secretref:azure-ad-client-secret" \
+                AzureAd__Instance="https://login.microsoftonline.com/" \
+                AzureAd__Audience="api://${{ secrets.AZURE_AD_API_CLIENT_ID }}" \
+                ConnectionStrings__DefaultConnection="secretref:sql-connection-string" \
+                Cors__AllowedOrigins__0="${{ vars.PUBLIC_WEB_ORIGIN }}" \
+                AccessPolicy__AllowedEmailDomains__0="${{ vars.ALLOWED_EMAIL_DOMAIN }}" \
+                Alvys__Provider="${{ vars.ALVYS_PROVIDER || 'Fallback' }}" \
+                Alvys__ApiBaseUrl="${{ vars.ALVYS_API_BASE_URL }}" \
+                Alvys__ApiVersion="${{ vars.ALVYS_API_VERSION || 'v1' }}" \
+                Alvys__TenantId="secretref:alvys-tenant-id" \
+                Alvys__ClientId="secretref:alvys-client-id" \
+                Alvys__ClientSecret="secretref:alvys-client-secret" \
+                Alvys__Writeback__Mode="${{ vars.ALVYS_WRITEBACK_MODE || 'Disabled' }}" \
+                Ltl__DetectionEnabled="${{ vars.LTL_DETECTION_ENABLED || 'false' }}" \
+                Ltl__DefaultTimezone="${{ vars.LTL_DEFAULT_TIMEZONE || 'America/Chicago' }}"
+          else
+            az containerapp create \
+              --name "${{ vars.AZURE_API_APP_NAME }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --environment "${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}" \
+              --image "${{ needs.build-and-publish.outputs.api_image }}" \
+              --target-port 8080 \
+              --ingress external \
+              --registry-server ghcr.io \
+              --registry-username "${{ github.actor }}" \
+              --registry-password "${{ secrets.GITHUB_TOKEN }}" \
+              --secrets \
+                azure-ad-tenant-id="${{ secrets.AZURE_AD_TENANT_ID }}" \
+                azure-ad-api-client-id="${{ secrets.AZURE_AD_API_CLIENT_ID }}" \
+                azure-ad-client-secret="${{ secrets.AZURE_AD_CLIENT_SECRET }}" \
+                sql-connection-string="${{ secrets.SQL_CONNECTION_STRING }}" \
+                alvys-tenant-id="${{ secrets.ALVYS_TENANT_ID }}" \
+                alvys-client-id="${{ secrets.ALVYS_CLIENT_ID }}" \
+                alvys-client-secret="${{ secrets.ALVYS_CLIENT_SECRET }}" \
+              --env-vars \
+                ASPNETCORE_ENVIRONMENT="Production" \
+                ASPNETCORE_URLS="http://+:8080" \
+                AzureAd__TenantId="secretref:azure-ad-tenant-id" \
+                AzureAd__ClientId="secretref:azure-ad-api-client-id" \
+                AzureAd__ClientSecret="secretref:azure-ad-client-secret" \
+                AzureAd__Instance="https://login.microsoftonline.com/" \
+                AzureAd__Audience="api://${{ secrets.AZURE_AD_API_CLIENT_ID }}" \
+                ConnectionStrings__DefaultConnection="secretref:sql-connection-string" \
+                Cors__AllowedOrigins__0="${{ vars.PUBLIC_WEB_ORIGIN }}" \
+                AccessPolicy__AllowedEmailDomains__0="${{ vars.ALLOWED_EMAIL_DOMAIN }}" \
+                Alvys__Provider="${{ vars.ALVYS_PROVIDER || 'Fallback' }}" \
+                Alvys__ApiBaseUrl="${{ vars.ALVYS_API_BASE_URL }}" \
+                Alvys__ApiVersion="${{ vars.ALVYS_API_VERSION || 'v1' }}" \
+                Alvys__TenantId="secretref:alvys-tenant-id" \
+                Alvys__ClientId="secretref:alvys-client-id" \
+                Alvys__ClientSecret="secretref:alvys-client-secret" \
+                Alvys__Writeback__Mode="${{ vars.ALVYS_WRITEBACK_MODE || 'Disabled' }}" \
+                Ltl__DetectionEnabled="${{ vars.LTL_DETECTION_ENABLED || 'false' }}" \
+                Ltl__DefaultTimezone="${{ vars.LTL_DEFAULT_TIMEZONE || 'America/Chicago' }}"
+          fi
+
+      - name: Resolve API URL
+        id: api
+        shell: bash
+        run: |
+          FQDN=$(az containerapp show \
+            --name "${{ vars.AZURE_API_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
+          echo "url=https://${FQDN}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Web container app
+        shell: bash
+        run: |
+          if az containerapp show \
+            --name "${{ vars.AZURE_WEB_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" >/dev/null 2>&1; then
+            az containerapp update \
+              --name "${{ vars.AZURE_WEB_APP_NAME }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --image "${{ needs.build-and-publish.outputs.web_image }}" \
+              --set-env-vars \
+                API_UPSTREAM="${{ steps.api.outputs.url }}" \
+                RUNTIME_TENANT_ID="${{ secrets.AZURE_AD_TENANT_ID }}" \
+                RUNTIME_WEB_CLIENT_ID="${{ secrets.AZURE_AD_WEB_CLIENT_ID }}" \
+                RUNTIME_API_SCOPE="${{ secrets.AZURE_AD_API_SCOPE }}" \
+                RUNTIME_API_BASE_URL="/api"
+          else
+            az containerapp create \
+              --name "${{ vars.AZURE_WEB_APP_NAME }}" \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --environment "${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT }}" \
+              --image "${{ needs.build-and-publish.outputs.web_image }}" \
+              --target-port 80 \
+              --ingress external \
+              --registry-server ghcr.io \
+              --registry-username "${{ github.actor }}" \
+              --registry-password "${{ secrets.GITHUB_TOKEN }}" \
+              --env-vars \
+                API_UPSTREAM="${{ steps.api.outputs.url }}" \
+                RUNTIME_TENANT_ID="${{ secrets.AZURE_AD_TENANT_ID }}" \
+                RUNTIME_WEB_CLIENT_ID="${{ secrets.AZURE_AD_WEB_CLIENT_ID }}" \
+                RUNTIME_API_SCOPE="${{ secrets.AZURE_AD_API_SCOPE }}" \
+                RUNTIME_API_BASE_URL="/api"
+          fi
+
+      - name: Resolve Web URL
+        id: web
+        shell: bash
+        run: |
+          FQDN=$(az containerapp show \
+            --name "${{ vars.AZURE_WEB_APP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
+          echo "url=https://${FQDN}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test deployment
+        shell: bash
+        run: |
+          API_URL="${{ steps.api.outputs.url }}"
+          WEB_URL="${{ steps.web.outputs.url }}"
+          echo "API URL: ${API_URL}"
+          echo "WEB URL: ${WEB_URL}"
+          for i in $(seq 1 30); do
+            if curl -fsS "${API_URL}/api/health" >/dev/null; then
+              echo "API health check passed."
+              break
+            fi
+            echo "Waiting for API health... ($i)"
+            sleep 10
+          done
+          curl -fsS "${API_URL}/api/health" >/dev/null
+          curl -fsS "${WEB_URL}" >/dev/null
+
+      - name: Deployment summary
+        shell: bash
+        run: |
+          echo "## Azure Container Apps deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- API image: ${{ needs.build-and-publish.outputs.api_image }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Web image: ${{ needs.build-and-publish.outputs.web_image }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- API URL: ${{ steps.api.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Web URL: ${{ steps.web.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Add the Web URL as an Entra SPA redirect URI if Microsoft sign-in reports a redirect mismatch." >> "$GITHUB_STEP_SUMMARY"
