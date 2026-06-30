@@ -66,7 +66,33 @@ All under `src/LtlTool.Api/Features/Integrations/Alvys/`:
 | `AlvysDtos.cs` | Load + trip + trailer + truck search request/response DTOs + token response. |
 | `AlvysServiceCollectionExtensions.cs` | DI wiring + provider selection (live default). |
 
-## Search endpoints
+## Internal read-only API endpoints
+
+The dispatcher Angular SPA must not hold Alvys credentials, so it never calls Alvys
+directly. Instead the API exposes server-side **read-only** search endpoints
+(`AlvysSearchController`, `src/LtlTool.Api/Features/Alvys/AlvysSearchController.cs`) that
+proxy `IAlvysClient`. Each action passes the request body straight through to the
+matching client method and returns the paged Alvys read model — no field is added, and
+no token/config/secret is ever in the response (covered by
+`AlvysSearchControllerTests.Responses_carry_no_credential_or_secret_fields`).
+
+| Internal endpoint | Request DTO | Client method | Upstream Alvys call |
+| --- | --- | --- | --- |
+| `POST /api/alvys/loads/search` | `LoadSearchRequest` | `SearchLoadsAsync` | `POST /api/p/v{version}/loads/search` |
+| `POST /api/alvys/trips/search` | `TripSearchRequest` | `SearchTripsAsync` | `POST /api/p/v{version}/trips/search` |
+| `POST /api/alvys/trailers/search` | `TrailerSearchRequest` | `SearchTrailersAsync` | `POST /api/p/v{version}/trailers/search` |
+| `POST /api/alvys/trucks/search` | `TruckSearchRequest` | `SearchTrucksAsync` | `POST /api/p/v{version}/trucks/search` |
+
+- **Authorization.** All four require the `AllowedEmailDomain` policy, same as
+  `/api/me`. An unauthenticated request returns 401 (not 404) because the route is
+  matched before authorization runs — see `AlvysSearchEndpointTests`. Health stays
+  anonymous.
+- **HTTP verb.** `POST` is used because the search filter set is the request body, not
+  because anything is mutated. These endpoints are queries only.
+- **No internal mutation endpoints exist** — there is no `PUT`/`PATCH`/`DELETE` and no
+  Alvys writeback in this phase.
+
+## Upstream Alvys search paths
 
 Both endpoints are `POST` under the versioned path built from `Alvys:ApiVersion`.
 The `v` prefix is fixed in the route, so the configured version is normalized to avoid
@@ -181,15 +207,17 @@ of truth for the auth/client pattern. Exact files reviewed at `main`:
 
 ## Read-only stance
 
-This integration phase is **read-only**. All four search endpoints
-(`loads`/`trips`/`trailers`/`trucks`) issue queries only. Alvys models searches as
-`POST` (the filter set is the request body), but no data is created, updated or deleted
-and there is no writeback to Alvys. No `PUT`/`PATCH`/`DELETE` or POST-mutation calls are
-made. Live Alvys remains the default source of truth; the `Fallback` provider is opt-in
-for local/UAT and returns empty (shape-preserving) results.
+This integration phase is **read-only**. Both the internal API endpoints
+(`/api/alvys/{loads,trips,trailers,trucks}/search`) and the upstream Alvys client calls
+issue queries only. Alvys models searches as `POST` (the filter set is the request
+body), but no data is created, updated or deleted and there is no writeback to Alvys. No
+`PUT`/`PATCH`/`DELETE` or POST-mutation calls are made. Live Alvys remains the default
+source of truth; the `Fallback` provider is opt-in for local/UAT and returns empty
+(shape-preserving) results.
 
 ## Next slice
 
-Alvys-backed read endpoints (e.g. `GET /api/loads`, `GET /api/trips`,
-`GET /api/equipment`) that call `IAlvysClient`, plus richer DTO mapping for the
-planner/booker views and equipment compatibility/capacity logic.
+Dispatcher UI and domain logic on top of these endpoints: richer normalized read models
+for the planner/booker views, equipment compatibility/capacity logic, and the Angular
+services that consume `/api/alvys/*`. Writeback (booking/assignment) remains out of
+scope until the read-only phase is signed off.
