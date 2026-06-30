@@ -375,7 +375,7 @@
         <p class="muted">Scoring candidates…</p>
       } @else if (matches() && matches()!.length > 0) {
         <ul class="matches">
-          @for (m of matches(); track m.driverId) {
+          @for (m of matches(); track m.driverId ?? m.driverName ?? $index) {
             <li>
               <div class="match-head">
                 <span [class]="matchClass(m.label)">{{ m.labelText }} ({{ m.score }})</span>
