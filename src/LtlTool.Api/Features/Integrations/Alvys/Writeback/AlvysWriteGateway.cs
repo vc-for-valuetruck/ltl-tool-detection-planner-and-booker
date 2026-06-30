@@ -160,11 +160,24 @@ public sealed class AlvysWriteGateway(
                     "A load number is required.");
                 Require(!string.IsNullOrWhiteSpace(request.NoteText), "NOTE_TEXT_REQUIRED",
                     "Note text is required.");
+                // NoteType must be one of the four Alvys-accepted values.
+                if (!string.IsNullOrWhiteSpace(request.NoteType) &&
+                    !AlvysNoteTypes.IsValid(request.NoteType))
+                {
+                    issues.Add(new AlvysOperationIssue
+                    {
+                        Code = "NOTE_TYPE_INVALID",
+                        Message = $"NoteType '{request.NoteType}' is not valid. " +
+                                  $"Must be one of: {string.Join(", ", AlvysNoteTypes.All)}.",
+                    });
+                }
                 break;
 
             case AlvysWriteOperationKind.TenderAccept:
                 Require(!string.IsNullOrWhiteSpace(request.TenderId), "TENDER_ID_REQUIRED",
                     "A tender id is required.");
+                Require(request.StopCompanyLinks is { Count: > 0 }, "STOP_COMPANY_LINKS_REQUIRED",
+                    "At least one StopCompanyLink (StopId + CompanyId) is required to accept a tender.");
                 break;
 
             case AlvysWriteOperationKind.TripStopArrival:
@@ -212,33 +225,38 @@ public sealed class AlvysWriteGateway(
         switch (op.Kind)
         {
             case AlvysWriteOperationKind.CreateLoadNote:
+                // Alvys requires a client-supplied Id, Description, and a valid NoteType.
+                body["Id"] = Guid.NewGuid().ToString();
                 body["Description"] = request.NoteText;
-                body["NoteType"] = string.IsNullOrWhiteSpace(request.NoteType)
-                    ? "Dispatcher" : request.NoteType;
-                target = $"Create note on load {request.LoadNumber}";
+                body["NoteType"] = string.IsNullOrWhiteSpace(request.NoteType) || !AlvysNoteTypes.IsValid(request.NoteType)
+                    ? AlvysNoteTypes.General : request.NoteType.Trim();
+                target = $"POST /loads/{request.LoadNumber}/notes";
                 break;
 
             case AlvysWriteOperationKind.TenderAccept:
-                body["TenderId"] = request.TenderId;
-                target = $"Accept tender {request.TenderId}";
+                // TenderId goes in the path; body is StopCompanyLinks + optional FleetId.
+                body["StopCompanyLinks"] = (request.StopCompanyLinks ?? [])
+                    .Select(l => new Dictionary<string, object?> { ["StopId"] = l.StopId, ["CompanyId"] = l.CompanyId })
+                    .ToArray();
+                if (!string.IsNullOrWhiteSpace(request.FleetId))
+                    body["FleetId"] = request.FleetId;
+                target = $"POST /tenders/{request.TenderId}/accept";
                 break;
 
             case AlvysWriteOperationKind.TripStopArrival:
-                body["StopId"] = request.StopId;
                 body["ArrivedAt"] = request.ArrivedAt;
-                target = $"Record arrival on trip {request.TripId} stop {request.StopId}";
+                target = $"PUT /trips/{request.TripId}/stops/{request.StopId}/arrival";
                 break;
 
             case AlvysWriteOperationKind.TripStopDeparture:
-                body["StopId"] = request.StopId;
                 body["DepartedAt"] = request.DepartedAt;
-                target = $"Record departure on trip {request.TripId} stop {request.StopId}";
+                target = $"PUT /trips/{request.TripId}/stops/{request.StopId}/departure";
                 break;
 
             case AlvysWriteOperationKind.LoadUpdate:
                 foreach (var (key, value) in request.Fields ?? [])
                     body[key] = value;
-                target = $"Update load {request.LoadNumber}";
+                target = $"PATCH /loads/{request.LoadNumber}";
                 break;
 
             default:

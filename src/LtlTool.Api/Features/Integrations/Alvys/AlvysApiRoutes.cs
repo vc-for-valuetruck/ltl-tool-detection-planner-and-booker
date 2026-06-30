@@ -124,11 +124,18 @@ public static class AlvysApiRoutes
         => $"api/p/{NormalizeVersion(apiVersion)}/tenders/{Uri.EscapeDataString(tenderId)}/accept";
 
     /// <summary>
-    /// Relative path <c>api/p/v{version}/trips/{tripId}/stops/{stopId}</c> for recording a trip
-    /// stop arrival or departure (PATCH). Both id segments are URL-encoded.
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/stops/{stopId}/arrival</c> for recording
+    /// a trip stop arrival (PUT). Both id segments are URL-encoded.
     /// </summary>
-    public static string TripStopPatch(string? apiVersion, string tripId, string stopId)
-        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/stops/{Uri.EscapeDataString(stopId)}";
+    public static string TripStopArrival(string? apiVersion, string tripId, string stopId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/stops/{Uri.EscapeDataString(stopId)}/arrival";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/stops/{stopId}/departure</c> for recording
+    /// a trip stop departure (PUT). Both id segments are URL-encoded.
+    /// </summary>
+    public static string TripStopDeparture(string? apiVersion, string tripId, string stopId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/stops/{Uri.EscapeDataString(stopId)}/departure";
 
     /// <summary>
     /// Relative path <c>api/p/v{version}/loads?{query}</c> for the read-only load-detail

@@ -41,8 +41,20 @@ public sealed class AlvysOperationRequest
     /// <summary>Note body (create-load-note).</summary>
     public string? NoteText { get; set; }
 
-    /// <summary>Note classification (create-load-note); defaults to a generic dispatcher note.</summary>
+    /// <summary>
+    /// Note classification (create-load-note). Must be one of: <c>System</c>, <c>General</c>,
+    /// <c>Assignment</c>, <c>Safety</c>. Defaults to <c>General</c> when omitted.
+    /// </summary>
     public string? NoteType { get; set; }
+
+    /// <summary>
+    /// Stop-to-company links for tender-accept. Each entry maps a tender stop id to the Alvys
+    /// company id that should be linked to that stop.
+    /// </summary>
+    public List<TenderStopCompanyLink>? StopCompanyLinks { get; set; }
+
+    /// <summary>Optional fleet id to assign on tender-accept.</summary>
+    public string? FleetId { get; set; }
 
     /// <summary>Arrival timestamp (trip-stop-arrival).</summary>
     public DateTimeOffset? ArrivedAt { get; set; }
@@ -161,4 +173,14 @@ public sealed class AlvysOperationOutcome
 
     /// <summary>What is required to enable live sandbox execution, when unsupported.</summary>
     public string? RequiredToEnable { get; init; }
+}
+
+/// <summary>
+/// Maps a tender stop to the Alvys company that should be linked to it on acceptance.
+/// Required by the <c>tender-accept</c> operation (<c>POST /tenders/{tenderId}/accept</c>).
+/// </summary>
+public sealed class TenderStopCompanyLink
+{
+    public required string StopId { get; set; }
+    public required string CompanyId { get; set; }
 }

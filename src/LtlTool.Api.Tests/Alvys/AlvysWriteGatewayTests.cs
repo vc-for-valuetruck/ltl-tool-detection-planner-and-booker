@@ -44,7 +44,9 @@ public sealed class AlvysWriteGatewayTests
         Assert.Equal(AlvysOperationDisposition.Simulated, outcome.Disposition);
         Assert.NotNull(outcome.Payload);
         Assert.Equal("Assigned to driver D1 over a tight window.", outcome.Payload!.Body["Description"]);
-        Assert.Equal("Dispatcher", outcome.Payload.Body["NoteType"]);
+        // Default NoteType is General (Alvys accepted values: System/General/Assignment/Safety).
+        Assert.Equal("General", outcome.Payload.Body["NoteType"]);
+        Assert.True(outcome.Payload.Body.ContainsKey("Id")); // client-generated GUID required by Alvys
     }
 
     [Fact]
@@ -96,23 +98,31 @@ public sealed class AlvysWriteGatewayTests
     [Fact]
     public void Etag_required_operations_block_without_an_etag()
     {
+        // tender-accept blocks on missing ETag and missing StopCompanyLinks.
         var outcome = Gateway(AlvysWritebackMode.Simulation)
             .Execute("tender-accept", new AlvysOperationRequest { TenderId = "T1" });
 
         Assert.Equal(AlvysOperationDisposition.Blocked, outcome.Disposition);
         Assert.Contains(outcome.Validation, i => i.Code == "ETAG_REQUIRED");
+        Assert.Contains(outcome.Validation, i => i.Code == "STOP_COMPANY_LINKS_REQUIRED");
     }
 
     [Fact]
-    public void Etag_required_operation_builds_payload_when_etag_supplied()
+    public void Etag_required_operation_builds_payload_when_etag_and_links_supplied()
     {
         var outcome = Gateway(AlvysWritebackMode.Simulation)
-            .DryRun("tender-accept", new AlvysOperationRequest { TenderId = "T1", Etag = "v1" });
+            .DryRun("tender-accept", new AlvysOperationRequest
+            {
+                TenderId = "T1",
+                Etag = "v1",
+                StopCompanyLinks = [new TenderStopCompanyLink { StopId = "S1", CompanyId = "C1" }],
+            });
 
         Assert.Equal(AlvysOperationDisposition.Simulated, outcome.Disposition);
         Assert.NotNull(outcome.Payload);
         Assert.True(outcome.Payload!.RequiresEtag);
         Assert.True(outcome.Payload.EtagSupplied);
+        Assert.True(outcome.Payload.Body.ContainsKey("StopCompanyLinks"));
     }
 
     [Fact]

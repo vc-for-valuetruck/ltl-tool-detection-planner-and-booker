@@ -156,11 +156,12 @@ public sealed class AlvysHttpWriteClient(
             AlvysWriteOperationKind.TenderAccept =>
                 (HttpMethod.Post, AlvysApiRoutes.TenderAccept(apiVersion, request.TenderId!)),
 
+            // Arrival and departure are separate sub-resource endpoints; both use PUT.
             AlvysWriteOperationKind.TripStopArrival =>
-                (HttpMethod.Patch, AlvysApiRoutes.TripStopPatch(apiVersion, request.TripId!, request.StopId!)),
+                (HttpMethod.Put, AlvysApiRoutes.TripStopArrival(apiVersion, request.TripId!, request.StopId!)),
 
             AlvysWriteOperationKind.TripStopDeparture =>
-                (HttpMethod.Patch, AlvysApiRoutes.TripStopPatch(apiVersion, request.TripId!, request.StopId!)),
+                (HttpMethod.Put, AlvysApiRoutes.TripStopDeparture(apiVersion, request.TripId!, request.StopId!)),
 
             AlvysWriteOperationKind.LoadUpdate =>
                 (HttpMethod.Patch, AlvysApiRoutes.LoadPatch(apiVersion, request.LoadNumber!)),

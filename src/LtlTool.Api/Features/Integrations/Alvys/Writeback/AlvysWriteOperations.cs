@@ -1,6 +1,23 @@
 namespace LtlTool.Api.Features.Integrations.Alvys.Writeback;
 
 /// <summary>
+/// The Alvys-documented values for the <c>NoteType</c> field on create-note requests.
+/// Only these four values are accepted; any other value will be rejected by the API.
+/// </summary>
+public static class AlvysNoteTypes
+{
+    public const string System = "System";
+    public const string General = "General";
+    public const string Assignment = "Assignment";
+    public const string Safety = "Safety";
+
+    public static readonly IReadOnlyList<string> All = [System, General, Assignment, Safety];
+
+    public static bool IsValid(string? value) =>
+        All.Contains(value, StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
 /// The write-oriented Alvys operations relevant to the Search → Match → Assign → Bill workflow.
 /// Each is modelled here as a definition only — payload construction and dry-run preview are
 /// always available, but <b>live execution</b> is gated separately (see
