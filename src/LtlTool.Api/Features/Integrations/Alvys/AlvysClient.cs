@@ -86,6 +86,50 @@ public sealed class AlvysClient(
             ?? new AlvysTrucksResponse();
     }
 
+    public async Task<IReadOnlyList<AlvysDispatchPreference>> SearchDispatchPreferencesAsync(
+        DispatchPreferenceSearchRequest request, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.DispatchPreferencesSearch(_options.ApiVersion);
+        return await PostSearchAsync<DispatchPreferenceSearchRequest, List<AlvysDispatchPreference>>(path, request, ct)
+            ?? [];
+    }
+
+    public async Task<AlvysLocationsResponse> SearchLocationsAsync(
+        LocationSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.LocationsSearch(_options.ApiVersion);
+        return await PostSearchAsync<LocationSearchRequest, AlvysLocationsResponse>(path, request, ct)
+            ?? new AlvysLocationsResponse();
+    }
+
+    public async Task<AlvysDriversResponse> SearchDriversAsync(
+        DriverSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.DriversSearch(_options.ApiVersion);
+        return await PostSearchAsync<DriverSearchRequest, AlvysDriversResponse>(path, request, ct)
+            ?? new AlvysDriversResponse();
+    }
+
+    public async Task<AlvysCustomersResponse> SearchCustomersAsync(
+        CustomerSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.CustomersSearch(_options.ApiVersion);
+        return await PostSearchAsync<CustomerSearchRequest, AlvysCustomersResponse>(path, request, ct)
+            ?? new AlvysCustomersResponse();
+    }
+
+    public async Task<AlvysUsersResponse> SearchUsersAsync(
+        UserSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.UsersSearch(_options.ApiVersion);
+        return await PostSearchAsync<UserSearchRequest, AlvysUsersResponse>(path, request, ct)
+            ?? new AlvysUsersResponse();
+    }
+
     private async Task<TResponse?> PostSearchAsync<TRequest, TResponse>(
         string path, TRequest body, CancellationToken ct)
         where TResponse : class, new()

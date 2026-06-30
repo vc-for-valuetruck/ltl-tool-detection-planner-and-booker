@@ -58,4 +58,22 @@ public sealed class AlvysProviderSelectionTests
         Assert.Empty(trailers.Items);
         Assert.Empty(trucks.Items);
     }
+
+    [Fact]
+    public async Task Fallback_client_returns_empty_shapes_for_context_resources()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        var prefs = await client.SearchDispatchPreferencesAsync(new DispatchPreferenceSearchRequest { DispatcherIds = ["D1"] });
+        var locations = await client.SearchLocationsAsync(new LocationSearchRequest { Status = ["Active"] });
+        var drivers = await client.SearchDriversAsync(new DriverSearchRequest { IsActive = true });
+        var customers = await client.SearchCustomersAsync(new CustomerSearchRequest { Statuses = ["Active"] });
+        var users = await client.SearchUsersAsync(new UserSearchRequest { Keyword = "x" });
+
+        Assert.Empty(prefs);
+        Assert.Empty(locations.Items);
+        Assert.Empty(drivers.Items);
+        Assert.Empty(customers.Items);
+        Assert.Empty(users.Items);
+    }
 }

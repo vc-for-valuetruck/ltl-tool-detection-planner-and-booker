@@ -48,4 +48,38 @@ public interface IAlvysClient
     /// <see cref="TruckSearchRequest.Page"/> is the 0-based Alvys page.
     /// </summary>
     Task<AlvysTrucksResponse> SearchTrucksAsync(TruckSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches dispatch preferences via <c>POST /api/p/v{version}/dispatchpreferences/search</c>
+    /// for dispatcher/driver/truck/trailer assignment context. The Alvys response is a bare
+    /// array, so this returns a list rather than a paged envelope.
+    /// </summary>
+    Task<IReadOnlyList<AlvysDispatchPreference>> SearchDispatchPreferencesAsync(
+        DispatchPreferenceSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches locations via <c>POST /api/p/v{version}/locations/search</c> for
+    /// pickup/delivery/hub/yard geography and shipper/consignee/warehouse context.
+    /// <see cref="LocationSearchRequest.Page"/> is the 0-based Alvys page.
+    /// </summary>
+    Task<AlvysLocationsResponse> SearchLocationsAsync(LocationSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches drivers via <c>POST /api/p/v{version}/drivers/search</c> for driver
+    /// assignment/readiness context. <see cref="DriverSearchRequest.Page"/> is the 0-based Alvys page.
+    /// </summary>
+    Task<AlvysDriversResponse> SearchDriversAsync(DriverSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches customers via <c>POST /api/p/v{version}/customers/search</c> for billing
+    /// separation, customer policy/approval and customer-specific matching context.
+    /// <see cref="CustomerSearchRequest.Page"/> is the 0-based Alvys page.
+    /// </summary>
+    Task<AlvysCustomersResponse> SearchCustomersAsync(CustomerSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches users via <c>POST /api/p/v{version}/users/search</c> for dispatcher display
+    /// names/roles/filters. <see cref="UserSearchRequest.Page"/> is the 0-based Alvys page.
+    /// </summary>
+    Task<AlvysUsersResponse> SearchUsersAsync(UserSearchRequest request, CancellationToken ct = default);
 }

@@ -879,6 +879,537 @@ public sealed class AlvysFuelCard
     public string? Type { get; set; }
 }
 
+/// <summary>
+/// Postal address as returned on Alvys context resources (locations/drivers/customers).
+/// Distinct from <see cref="AlvysAddress"/>: the public search API returns
+/// <c>ZipCode</c> (not <c>Zip</c>) and no country on these resources.
+/// </summary>
+public sealed class AlvysContextAddress
+{
+    [JsonPropertyName("Street")]
+    public string? Street { get; set; }
+
+    [JsonPropertyName("City")]
+    public string? City { get; set; }
+
+    [JsonPropertyName("State")]
+    public string? State { get; set; }
+
+    [JsonPropertyName("ZipCode")]
+    public string? ZipCode { get; set; }
+}
+
+/// <summary>
+/// A note on an Alvys context resource (location/driver/customer). The public search
+/// API uses a richer note shape than load <see cref="AlvysNote"/>: a lowercase
+/// <c>id</c>, plus <c>Description</c>/<c>NoteType</c>/<c>Time</c>/<c>User</c>/<c>UserId</c>.
+/// </summary>
+public sealed class AlvysContextNote
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("Description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("NoteType")]
+    public string? NoteType { get; set; }
+
+    [JsonPropertyName("Time")]
+    public DateTimeOffset? Time { get; set; }
+
+    [JsonPropertyName("User")]
+    public string? User { get; set; }
+
+    [JsonPropertyName("UserId")]
+    public string? UserId { get; set; }
+}
+
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/dispatchpreferences/search</c>. All filters
+/// are optional; the response is a bare array (not a paged envelope). Provides the
+/// dispatcher/driver/truck/trailer assignment context used by the LTL planner/booker.
+/// </summary>
+public sealed class DispatchPreferenceSearchRequest
+{
+    [JsonPropertyName("DispatcherIds")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? DispatcherIds { get; set; }
+
+    [JsonPropertyName("DriverIds")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? DriverIds { get; set; }
+
+    [JsonPropertyName("TruckIds")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? TruckIds { get; set; }
+
+    [JsonPropertyName("TrailerIds")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? TrailerIds { get; set; }
+
+    [JsonPropertyName("UpdatedAtStart")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? UpdatedAtStart { get; set; }
+
+    [JsonPropertyName("UpdatedAtEnd")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? UpdatedAtEnd { get; set; }
+}
+
+/// <summary>
+/// A dispatch preference: the dispatcher/driver/truck/trailer assignment pairing as of
+/// <see cref="UpdatedAt"/>. Unknown JSON properties are tolerated.
+/// </summary>
+public sealed class AlvysDispatchPreference
+{
+    [JsonPropertyName("UpdatedAt")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [JsonPropertyName("DispatcherId")]
+    public string? DispatcherId { get; set; }
+
+    [JsonPropertyName("Driver1Id")]
+    public string? Driver1Id { get; set; }
+
+    [JsonPropertyName("Driver2Id")]
+    public string? Driver2Id { get; set; }
+
+    [JsonPropertyName("TruckId")]
+    public string? TruckId { get; set; }
+
+    [JsonPropertyName("TrailerId")]
+    public string? TrailerId { get; set; }
+}
+
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/locations/search</c>. Page is 0-based.
+/// Provides pickup/delivery/hub/yard geography and shipper/consignee/warehouse context.
+/// </summary>
+public sealed class LocationSearchRequest
+{
+    [JsonPropertyName("Page")]
+    public int Page { get; set; }
+
+    [JsonPropertyName("PageSize")]
+    public int PageSize { get; set; } = 100;
+
+    [JsonPropertyName("Status")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Status { get; set; }
+
+    [JsonPropertyName("LocationIds")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? LocationIds { get; set; }
+
+    [JsonPropertyName("CreatedDateRange")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AlvysDateRange? CreatedDateRange { get; set; }
+
+    /// <summary>Light client-side guard: only <c>PageSize &gt; 0</c> is locally enforceable.</summary>
+    public void Validate()
+    {
+        if (PageSize <= 0)
+            throw new ArgumentException("PageSize must be greater than zero.", nameof(PageSize));
+    }
+}
+
+/// <summary>Locations search response: paged envelope of <see cref="AlvysLocation"/>.</summary>
+public sealed class AlvysLocationsResponse : AlvysPagedResponse<AlvysLocation>;
+
+/// <summary>
+/// Pragmatic location projection covering the geography/contact fields used by the LTL
+/// planner/booker. Unknown JSON properties (including <c>Facets</c>/<c>Aggregations</c>
+/// on the envelope) are tolerated.
+/// </summary>
+public sealed class AlvysLocation
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("CompanyNumber")]
+    public string? CompanyNumber { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("PhysicalAddress")]
+    public AlvysContextAddress? PhysicalAddress { get; set; }
+
+    [JsonPropertyName("Email")]
+    public List<string>? Email { get; set; }
+
+    [JsonPropertyName("Phone")]
+    public List<string>? Phone { get; set; }
+
+    [JsonPropertyName("Fax")]
+    public string? Fax { get; set; }
+
+    [JsonPropertyName("DateCreated")]
+    public DateTimeOffset? DateCreated { get; set; }
+
+    [JsonPropertyName("ExternalId")]
+    public string? ExternalId { get; set; }
+
+    [JsonPropertyName("Notes")]
+    public List<AlvysContextNote>? Notes { get; set; }
+}
+
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/drivers/search</c>. Page is 0-based.
+/// Provides driver assignment/readiness context. Alvys requires at least one conditional
+/// filter (Status/Name/EmployeeId/FleetName/IsActive) server-side when others are empty.
+/// </summary>
+public sealed class DriverSearchRequest
+{
+    [JsonPropertyName("Page")]
+    public int Page { get; set; }
+
+    [JsonPropertyName("PageSize")]
+    public int PageSize { get; set; } = 100;
+
+    [JsonPropertyName("Status")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Status { get; set; }
+
+    [JsonPropertyName("Name")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("EmployeeId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EmployeeId { get; set; }
+
+    [JsonPropertyName("FleetName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FleetName { get; set; }
+
+    [JsonPropertyName("IsActive")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsActive { get; set; }
+
+    /// <summary>Light client-side guard: only <c>PageSize &gt; 0</c> is locally enforceable.</summary>
+    public void Validate()
+    {
+        if (PageSize <= 0)
+            throw new ArgumentException("PageSize must be greater than zero.", nameof(PageSize));
+    }
+}
+
+/// <summary>Drivers search response: paged envelope of <see cref="AlvysDriver"/>.</summary>
+public sealed class AlvysDriversResponse : AlvysPagedResponse<AlvysDriver>;
+
+/// <summary>
+/// Pragmatic driver projection covering identity/contact/assignment-readiness fields used
+/// by the LTL planner/booker (license/medical expiries, hire/terminate, fleet). Unknown
+/// JSON properties are tolerated.
+/// </summary>
+public sealed class AlvysDriver
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("EmployeeId")]
+    public string? EmployeeId { get; set; }
+
+    [JsonPropertyName("PhoneNumber")]
+    public string? PhoneNumber { get; set; }
+
+    [JsonPropertyName("UserId")]
+    public string? UserId { get; set; }
+
+    [JsonPropertyName("Email")]
+    public string? Email { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("SubsidiaryId")]
+    public string? SubsidiaryId { get; set; }
+
+    [JsonPropertyName("Address")]
+    public AlvysContextAddress? Address { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("IsActive")]
+    public bool? IsActive { get; set; }
+
+    [JsonPropertyName("LicenseNum")]
+    public string? LicenseNum { get; set; }
+
+    [JsonPropertyName("LicenseState")]
+    public string? LicenseState { get; set; }
+
+    [JsonPropertyName("LicenseCountry")]
+    public string? LicenseCountry { get; set; }
+
+    [JsonPropertyName("LicenseExpiresAt")]
+    public DateTimeOffset? LicenseExpiresAt { get; set; }
+
+    [JsonPropertyName("MedicalExpiresAt")]
+    public DateTimeOffset? MedicalExpiresAt { get; set; }
+
+    [JsonPropertyName("HiredAt")]
+    public DateTimeOffset? HiredAt { get; set; }
+
+    [JsonPropertyName("TerminatedAt")]
+    public DateTimeOffset? TerminatedAt { get; set; }
+
+    [JsonPropertyName("Notes")]
+    public List<AlvysContextNote>? Notes { get; set; }
+
+    [JsonPropertyName("Fleet")]
+    public AlvysFleet? Fleet { get; set; }
+
+    [JsonPropertyName("References")]
+    public List<AlvysDriverReference>? References { get; set; }
+
+    [JsonPropertyName("CreatedAt")]
+    public DateTimeOffset? CreatedAt { get; set; }
+}
+
+/// <summary>A typed reference on a driver record. Kept tolerant of unknown fields.</summary>
+public sealed class AlvysDriverReference
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("ReferenceId")]
+    public string? ReferenceId { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("Value")]
+    public string? Value { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Access")]
+    public string? Access { get; set; }
+
+    [JsonPropertyName("Origin")]
+    public string? Origin { get; set; }
+}
+
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/customers/search</c>. Page is 0-based.
+/// <see cref="Statuses"/> is required by Alvys. Provides billing separation, customer
+/// policy/approval and customer-specific matching context.
+/// </summary>
+public sealed class CustomerSearchRequest
+{
+    [JsonPropertyName("Page")]
+    public int Page { get; set; }
+
+    [JsonPropertyName("PageSize")]
+    public int PageSize { get; set; } = 100;
+
+    [JsonPropertyName("Statuses")]
+    public List<string> Statuses { get; set; } = [];
+
+    [JsonPropertyName("CreatedDateRange")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AlvysDateRange? CreatedDateRange { get; set; }
+
+    /// <summary>Light client-side guard: only <c>PageSize &gt; 0</c> is locally enforceable.</summary>
+    public void Validate()
+    {
+        if (PageSize <= 0)
+            throw new ArgumentException("PageSize must be greater than zero.", nameof(PageSize));
+    }
+}
+
+/// <summary>Customers search response: paged envelope of <see cref="AlvysCustomer"/>.</summary>
+public sealed class AlvysCustomersResponse : AlvysPagedResponse<AlvysCustomer>;
+
+/// <summary>
+/// Pragmatic customer projection covering billing/invoicing/contact/policy fields used by
+/// the LTL planner/booker for billing separation and customer-specific matching. Unknown
+/// JSON properties are tolerated.
+/// </summary>
+public sealed class AlvysCustomer
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("CompanyNumber")]
+    public string? CompanyNumber { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("BillingAddress")]
+    public AlvysContextAddress? BillingAddress { get; set; }
+
+    [JsonPropertyName("Email")]
+    public List<string>? Email { get; set; }
+
+    [JsonPropertyName("Phone")]
+    public List<string>? Phone { get; set; }
+
+    [JsonPropertyName("Fax")]
+    public string? Fax { get; set; }
+
+    [JsonPropertyName("DateCreated")]
+    public DateTimeOffset? DateCreated { get; set; }
+
+    [JsonPropertyName("InvoicingInformation")]
+    public AlvysInvoicingInformation? InvoicingInformation { get; set; }
+
+    [JsonPropertyName("ExternalId")]
+    public string? ExternalId { get; set; }
+
+    [JsonPropertyName("Contacts")]
+    public List<AlvysCustomerContact>? Contacts { get; set; }
+
+    [JsonPropertyName("SalesAgentId")]
+    public string? SalesAgentId { get; set; }
+
+    [JsonPropertyName("Notes")]
+    public List<AlvysContextNote>? Notes { get; set; }
+}
+
+/// <summary>Customer invoicing/billing terms used for billing separation decisions.</summary>
+public sealed class AlvysInvoicingInformation
+{
+    [JsonPropertyName("Address")]
+    public AlvysContextAddress? Address { get; set; }
+
+    [JsonPropertyName("EmailAddresses")]
+    public List<string>? EmailAddresses { get; set; }
+
+    [JsonPropertyName("PhoneNumber")]
+    public string? PhoneNumber { get; set; }
+
+    [JsonPropertyName("InvoicingName")]
+    public string? InvoicingName { get; set; }
+
+    [JsonPropertyName("InvoicingNameAlias")]
+    public string? InvoicingNameAlias { get; set; }
+
+    [JsonPropertyName("PaymentType")]
+    public string? PaymentType { get; set; }
+
+    [JsonPropertyName("PaymentTermsInDays")]
+    public int? PaymentTermsInDays { get; set; }
+}
+
+/// <summary>A contact person on a customer record.</summary>
+public sealed class AlvysCustomerContact
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("Email")]
+    public string? Email { get; set; }
+
+    [JsonPropertyName("Phone")]
+    public string? Phone { get; set; }
+
+    [JsonPropertyName("Mobile")]
+    public string? Mobile { get; set; }
+
+    [JsonPropertyName("Extension")]
+    public string? Extension { get; set; }
+
+    [JsonPropertyName("Title")]
+    public string? Title { get; set; }
+}
+
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/users/search</c>. Page is 0-based.
+/// Provides dispatcher display names/roles/filters.
+/// </summary>
+public sealed class UserSearchRequest
+{
+    [JsonPropertyName("Page")]
+    public int Page { get; set; }
+
+    [JsonPropertyName("PageSize")]
+    public int PageSize { get; set; } = 100;
+
+    [JsonPropertyName("Keyword")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Keyword { get; set; }
+
+    /// <summary>Light client-side guard: only <c>PageSize &gt; 0</c> is locally enforceable.</summary>
+    public void Validate()
+    {
+        if (PageSize <= 0)
+            throw new ArgumentException("PageSize must be greater than zero.", nameof(PageSize));
+    }
+}
+
+/// <summary>Users search response: paged envelope of <see cref="AlvysUser"/>.</summary>
+public sealed class AlvysUsersResponse : AlvysPagedResponse<AlvysUser>;
+
+/// <summary>
+/// Pragmatic user projection covering dispatcher display name/role/permissions used by the
+/// LTL planner/booker. <c>Role</c>/<c>Status</c>/<c>UserType</c> are kept as strings (not
+/// enums) for tolerance, consistent with the other Alvys read models. Unknown JSON
+/// properties are tolerated.
+/// </summary>
+public sealed class AlvysUser
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("UserName")]
+    public string? UserName { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("Email")]
+    public string? Email { get; set; }
+
+    [JsonPropertyName("UserType")]
+    public string? UserType { get; set; }
+
+    [JsonPropertyName("Role")]
+    public string? Role { get; set; }
+
+    [JsonPropertyName("Phone")]
+    public string? Phone { get; set; }
+
+    [JsonPropertyName("CompanyCode")]
+    public string? CompanyCode { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("Permissions")]
+    public List<string>? Permissions { get; set; }
+
+    [JsonPropertyName("CreatedAt")]
+    public DateTimeOffset? CreatedAt { get; set; }
+
+    [JsonPropertyName("ModifiedAt")]
+    public DateTimeOffset? ModifiedAt { get; set; }
+}
+
 /// <summary>OAuth2 token response from the Alvys token endpoint.</summary>
 internal sealed record AlvysTokenResponse(
     [property: JsonPropertyName("access_token")] string AccessToken,
