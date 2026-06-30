@@ -12,6 +12,9 @@ import {
   LtlSearchQuery,
   LtlSearchResponse,
   MatchResult,
+  SavedView,
+  SavedViewCollection,
+  SavedViewRequest,
 } from './ltl.models';
 
 /**
@@ -76,6 +79,26 @@ export class LtlService {
     return this.http.get<AssignmentAudit[]>(
       `${this.base}/loads/${encodeURIComponent(idOrNumber)}/assignments`,
     );
+  }
+
+  /** Built-in presets + the dispatcher's own saved views. Tool-local; never touches Alvys. */
+  listSavedViews(): Observable<SavedViewCollection> {
+    return this.http.get<SavedViewCollection>(`${this.base}/saved-views`);
+  }
+
+  createSavedView(request: SavedViewRequest): Observable<SavedView> {
+    return this.http.post<SavedView>(`${this.base}/saved-views`, request);
+  }
+
+  updateSavedView(id: string, request: SavedViewRequest): Observable<SavedView> {
+    return this.http.put<SavedView>(
+      `${this.base}/saved-views/${encodeURIComponent(id)}`,
+      request,
+    );
+  }
+
+  deleteSavedView(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/saved-views/${encodeURIComponent(id)}`);
   }
 }
 

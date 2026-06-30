@@ -204,6 +204,61 @@ export interface AssignmentAudit {
   alvysWriteback: string;
 }
 
+/**
+ * Serializable snapshot of the workbench filter/sort state behind a saved view. Mirrors the
+ * server `SavedViewFilters` (see src/LtlTool.Api/Features/Ltl/SavedViews/SavedViewModels.cs);
+ * dates are the raw yyyy-MM-dd strings the date inputs produce. Nullable enums use `null` for
+ * "any". Tool-local only — applying or saving a view never touches Alvys.
+ */
+export interface SavedViewFilters {
+  keyword?: string | null;
+  customer?: string | null;
+  originState?: string | null;
+  originCity?: string | null;
+  destinationState?: string | null;
+  destinationCity?: string | null;
+  equipmentType?: string | null;
+  assignment?: AssignmentState | null;
+  pickupFrom?: string | null;
+  pickupTo?: string | null;
+  deliveryFrom?: string | null;
+  deliveryTo?: string | null;
+  billingBadge?: BillingBadge | null;
+  stage?: WorkflowStage | null;
+  ltlOnly: boolean;
+  readyToBill: boolean;
+  missingBillingData: boolean;
+  exceptionsOnly: boolean;
+  blockedOnly: boolean;
+  sort: LtlSortField;
+  sortDescending: boolean;
+}
+
+/** A named, persisted workbench view (shared built-in preset or dispatcher-owned). */
+export interface SavedView {
+  id: string;
+  name: string;
+  description: string | null;
+  filters: SavedViewFilters;
+  isBuiltIn: boolean;
+  ownerId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/** Create/update payload for a dispatcher saved view. */
+export interface SavedViewRequest {
+  name: string;
+  description?: string | null;
+  filters: SavedViewFilters;
+}
+
+/** The saved-view collection: shared presets and the dispatcher's own views. */
+export interface SavedViewCollection {
+  presets: SavedView[];
+  views: SavedView[];
+}
+
 /** Filter/sort/paging inputs for the normalized LTL search (mapped to query string). */
 export interface LtlSearchQuery {
   keyword?: string;

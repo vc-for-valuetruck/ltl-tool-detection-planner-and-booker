@@ -195,7 +195,7 @@ button.primary {
   position: fixed;
   top: 0;
   right: 0;
-  width: min(420px, 100%);
+  width: min(480px, 100%);
   height: 100vh;
   background: #fff;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
@@ -581,11 +581,6 @@ button.primary {
   border-radius: 4px;
   padding: 0.45rem 0.55rem;
   font-size: 0.82rem;
-}
-
-/* Wider drawer for the assignment workflow */
-.drawer {
-  width: min(480px, 100%);
 }
 
 /* Workflow stage badge + drawer stepper */

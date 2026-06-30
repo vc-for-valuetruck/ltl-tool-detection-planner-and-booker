@@ -1,4 +1,5 @@
 using LtlTool.Api.Features.Ltl.Assignment;
+using LtlTool.Api.Features.Ltl.SavedViews;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace LtlTool.Api.Features.Ltl;
@@ -33,6 +34,10 @@ public static class LtlServiceCollectionExtensions
         // Internal, non-Alvys assignment audit. Singleton in-memory store for this slice;
         // swap for a persistent IAssignmentAuditStore in production.
         services.AddSingleton<IAssignmentAuditStore, InMemoryAssignmentAuditStore>();
+
+        // Tool-local dispatcher saved views. Singleton in-memory store for this slice (server-side,
+        // not browser storage); swap for a persistent ISavedViewStore in production. No Alvys writeback.
+        services.AddSingleton<ISavedViewStore, InMemorySavedViewStore>();
 
         return services;
     }

@@ -5,7 +5,6 @@ import { LtlService } from './ltl.service';
 import {
   AssignmentAudit,
   AssignmentIssue,
-  AssignmentState,
   AssignmentValidationResult,
   BillingBadge,
   LtlLoadSummary,
@@ -13,149 +12,18 @@ import {
   LtlSearchResponse,
   LtlSortField,
   MatchResult,
+  SavedView,
   VisibilityEventView,
   WorkflowStage,
 } from './ltl.models';
+import {
+  EMPTY_FILTERS,
+  FilterState,
+  filtersToSnapshot,
+  snapshotToFilterState,
+} from './saved-views';
 
 type ConsoleTab = 'search' | 'billing' | 'exceptions';
-
-interface SavedView {
-  id: string;
-  label: string;
-  description: string;
-  filters: Partial<FilterState>;
-  sort?: LtlSortField;
-  sortDescending?: boolean;
-  /** Computes a date window at apply time (e.g. today / this week). */
-  dateWindow?: () => Partial<FilterState>;
-}
-
-/** Filter shape held in the component (a subset of LtlSearchQuery the UI edits directly). */
-interface FilterState {
-  keyword: string;
-  customer: string;
-  originState: string;
-  originCity: string;
-  destinationState: string;
-  destinationCity: string;
-  equipmentType: string;
-  assignment: AssignmentState | '';
-  pickupFrom: string;
-  pickupTo: string;
-  deliveryFrom: string;
-  deliveryTo: string;
-  billingBadge: BillingBadge | '';
-  stage: WorkflowStage | '';
-  ltlOnly: boolean;
-  readyToBill: boolean;
-  missingBillingData: boolean;
-  exceptionsOnly: boolean;
-  blockedOnly: boolean;
-}
-
-const EMPTY_FILTERS: FilterState = {
-  keyword: '',
-  customer: '',
-  originState: '',
-  originCity: '',
-  destinationState: '',
-  destinationCity: '',
-  equipmentType: '',
-  assignment: '',
-  pickupFrom: '',
-  pickupTo: '',
-  deliveryFrom: '',
-  deliveryTo: '',
-  billingBadge: '',
-  stage: '',
-  ltlOnly: false,
-  readyToBill: false,
-  missingBillingData: false,
-  exceptionsOnly: false,
-  blockedOnly: false,
-};
-
-/** Local midnight ISO date (yyyy-MM-dd) offset by a number of days from today. */
-function isoDay(offsetDays = 0): string {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  return d.toISOString().slice(0, 10);
-}
-
-const SAVED_VIEWS: SavedView[] = [
-  {
-    id: 'needs-match',
-    label: 'Needs Match',
-    description: 'Unassigned loads awaiting capacity',
-    filters: { stage: 'Match' },
-  },
-  {
-    id: 'in-flight',
-    label: 'In Flight',
-    description: 'Assigned loads moving toward delivery',
-    filters: { stage: 'Assign' },
-  },
-  {
-    id: 'needs-billing',
-    label: 'Needs Billing',
-    description: 'Delivered loads not yet invoiced',
-    filters: { stage: 'Bill' },
-  },
-  {
-    id: 'blocked',
-    label: 'Blocked',
-    description: 'Loads that cannot advance until a gap is resolved',
-    filters: { blockedOnly: true },
-  },
-  {
-    id: 'unassigned',
-    label: 'Unassigned LTL',
-    description: 'Open LTL opportunities not yet covered',
-    filters: { ltlOnly: true, assignment: 'Unassigned' },
-  },
-  {
-    id: 'high-rev',
-    label: 'High Revenue / Low Complexity',
-    description: 'Sorted by revenue per mile, highest first',
-    filters: {},
-    sort: 'RevenuePerMile',
-    sortDescending: true,
-  },
-  {
-    id: 'todays-pickup',
-    label: "Today's Pickup",
-    description: 'Loads scheduled to pick up today',
-    filters: {},
-    sort: 'PickupDate',
-    dateWindow: () => ({ pickupFrom: isoDay(0), pickupTo: isoDay(1) }),
-  },
-  {
-    id: 'week-delivery',
-    label: "This Week's Deliveries",
-    description: 'Deliveries scheduled within the next 7 days',
-    filters: {},
-    sort: 'DeliveryDate',
-    dateWindow: () => ({ deliveryFrom: isoDay(0), deliveryTo: isoDay(7) }),
-  },
-  {
-    id: 'missing-billing',
-    label: 'Missing Billing Data',
-    description: 'Loads with billing data gaps',
-    filters: { missingBillingData: true },
-  },
-  {
-    id: 'ready-to-bill',
-    label: 'Ready to Bill',
-    description: 'Delivered loads cleared for invoicing',
-    filters: { readyToBill: true },
-  },
-  {
-    id: 'exceptions',
-    label: 'Exceptions',
-    description: 'Loads carrying operational/billing exceptions',
-    filters: { exceptionsOnly: true },
-  },
-];
 
 interface SortableColumn {
   field: LtlSortField;
@@ -205,12 +73,26 @@ interface AppliedFilter {
   standalone: true,
   imports: [FormsModule, DatePipe, DecimalPipe],
   templateUrl: './ltl-search.html',
-  styleUrl: './ltl-search.css',
+  styleUrls: ['./ltl-search.css', './ltl-saved-views.css'],
 })
 export class LtlSearch {
   private readonly ltl = inject(LtlService);
 
-  protected readonly savedViews = SAVED_VIEWS;
+  // Saved views: shared built-in presets and the dispatcher's own views, loaded server-side.
+  protected readonly presets = signal<SavedView[]>([]);
+  protected readonly userViews = signal<SavedView[]>([]);
+  protected readonly savedViewsLoading = signal(false);
+  protected readonly savedViewsError = signal<string | null>(null);
+
+  // Save / rename dialog state. When `editingViewId` is set the form updates that view in place;
+  // otherwise it creates a new one from the current filters.
+  protected readonly viewFormOpen = signal(false);
+  protected readonly editingViewId = signal<string | null>(null);
+  protected readonly viewName = signal('');
+  protected readonly viewDescription = signal('');
+  protected readonly viewFormError = signal<string | null>(null);
+  protected readonly viewSaving = signal(false);
+
   protected readonly columns = COLUMNS;
   protected readonly billingBadges = BILLING_BADGES;
   protected readonly workflowStages = WORKFLOW_STAGES;
@@ -296,6 +178,111 @@ export class LtlSearch {
 
   constructor() {
     this.runSearch();
+    this.loadSavedViews();
+  }
+
+  protected loadSavedViews(): void {
+    this.savedViewsLoading.set(true);
+    this.savedViewsError.set(null);
+    this.ltl.listSavedViews().subscribe({
+      next: (collection) => {
+        this.presets.set(collection.presets);
+        this.userViews.set(collection.views);
+        this.savedViewsLoading.set(false);
+      },
+      error: (err) => {
+        this.savedViewsError.set(this.describe('Saved views', err));
+        this.savedViewsLoading.set(false);
+      },
+    });
+  }
+
+  protected applyView(view: SavedView): void {
+    if (this.activeView() === view.id) {
+      this.clearFilters();
+      return;
+    }
+    this.filters.set(snapshotToFilterState(view.filters));
+    this.sort.set(view.filters.sort);
+    this.sortDescending.set(view.filters.sortDescending);
+    this.activeView.set(view.id);
+    this.page.set(1);
+    this.runSearch();
+  }
+
+  /** Opens the dialog to save the current filters as a new view. */
+  protected startSaveView(): void {
+    this.editingViewId.set(null);
+    this.viewName.set('');
+    this.viewDescription.set('');
+    this.viewFormError.set(null);
+    this.viewFormOpen.set(true);
+  }
+
+  /** Opens the dialog pre-filled to rename/update an existing user view. */
+  protected startEditView(view: SavedView): void {
+    this.editingViewId.set(view.id);
+    this.viewName.set(view.name);
+    this.viewDescription.set(view.description ?? '');
+    this.viewFormError.set(null);
+    this.viewFormOpen.set(true);
+  }
+
+  protected cancelViewForm(): void {
+    this.viewFormOpen.set(false);
+    this.viewFormError.set(null);
+  }
+
+  /**
+   * Persists the current filters as a new view, or updates the one being edited. On success the
+   * saved view becomes the active view so the dispatcher sees it selected.
+   */
+  protected saveView(): void {
+    const name = this.viewName().trim();
+    if (!name) {
+      this.viewFormError.set('Enter a name for this view.');
+      return;
+    }
+
+    const request = {
+      name,
+      description: this.viewDescription().trim() || null,
+      filters: filtersToSnapshot(this.filters(), this.sort(), this.sortDescending()),
+    };
+    const editingId = this.editingViewId();
+    const save$ = editingId
+      ? this.ltl.updateSavedView(editingId, request)
+      : this.ltl.createSavedView(request);
+
+    this.viewSaving.set(true);
+    this.viewFormError.set(null);
+    save$.subscribe({
+      next: (saved) => {
+        this.userViews.update((views) =>
+          editingId
+            ? views.map((v) => (v.id === saved.id ? saved : v))
+            : [...views, saved],
+        );
+        this.viewSaving.set(false);
+        this.viewFormOpen.set(false);
+        this.activeView.set(saved.id);
+      },
+      error: (err) => {
+        this.viewFormError.set(this.describe('Save view', err));
+        this.viewSaving.set(false);
+      },
+    });
+  }
+
+  protected deleteView(view: SavedView): void {
+    this.ltl.deleteSavedView(view.id).subscribe({
+      next: () => {
+        this.userViews.update((views) => views.filter((v) => v.id !== view.id));
+        if (this.activeView() === view.id) this.activeView.set(null);
+        if (this.editingViewId() === view.id) this.viewFormOpen.set(false);
+      },
+      error: (err) => this.savedViewsError.set(this.describe('Delete view', err)),
+    });
   }
 
   protected setTab(tab: ConsoleTab): void {
@@ -304,23 +291,6 @@ export class LtlSearch {
     this.closeDrawer();
     if (tab === 'billing' && this.worklist() === null) this.loadWorklist();
     if (tab === 'exceptions' && this.exceptions() === null) this.loadExceptions();
-  }
-
-  protected applyView(view: SavedView): void {
-    if (this.activeView() === view.id) {
-      this.clearFilters();
-      return;
-    }
-    this.filters.set({
-      ...EMPTY_FILTERS,
-      ...view.filters,
-      ...(view.dateWindow ? view.dateWindow() : {}),
-    });
-    this.sort.set(view.sort ?? 'PickupDate');
-    this.sortDescending.set(view.sortDescending ?? false);
-    this.activeView.set(view.id);
-    this.page.set(1);
-    this.runSearch();
   }
 
   protected clearFilters(): void {
