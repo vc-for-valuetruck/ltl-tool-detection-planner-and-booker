@@ -131,9 +131,16 @@ public sealed class AlvysHttpWriteClient(
     {
         var (method, path) = ResolveEndpoint(op, request, apiVersion);
 
+        // Build the wire body from the deterministic payload. For create-note, Alvys requires a
+        // client-supplied Id; it is generated here (not in the gateway payload) so it never enters
+        // the idempotency hash — two equivalent note requests must still de-duplicate.
+        var wireBody = new Dictionary<string, object?>(payload.Body);
+        if (op.Kind == AlvysWriteOperationKind.CreateLoadNote && !wireBody.ContainsKey("Id"))
+            wireBody["Id"] = Guid.NewGuid().ToString();
+
         var httpRequest = new HttpRequestMessage(method, path)
         {
-            Content = JsonContent.Create(payload.Body),
+            Content = JsonContent.Create(wireBody),
         };
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));

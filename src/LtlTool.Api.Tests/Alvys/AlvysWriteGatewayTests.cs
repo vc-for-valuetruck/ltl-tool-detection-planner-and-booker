@@ -46,7 +46,9 @@ public sealed class AlvysWriteGatewayTests
         Assert.Equal("Assigned to driver D1 over a tight window.", outcome.Payload!.Body["Description"]);
         // Default NoteType is General (Alvys accepted values: System/General/Assignment/Safety).
         Assert.Equal("General", outcome.Payload.Body["NoteType"]);
-        Assert.True(outcome.Payload.Body.ContainsKey("Id")); // client-generated GUID required by Alvys
+        // The note Id is generated at dispatch time (write client), not in the deterministic
+        // payload, so equivalent note requests still de-duplicate by idempotency key.
+        Assert.False(outcome.Payload.Body.ContainsKey("Id"));
     }
 
     [Fact]
