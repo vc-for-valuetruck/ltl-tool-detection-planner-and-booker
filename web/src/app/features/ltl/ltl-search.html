@@ -319,6 +319,45 @@
       </div>
     }
 
+    <!-- Tracking visibility (detail-path only) -->
+    @if (detailLoading()) {
+      <div class="drawer-section"><h4>Tracking visibility</h4><p class="muted">Loading visibility history…</p></div>
+    } @else if (load.visibility.evaluated) {
+      <div class="drawer-section">
+        <h4>Tracking visibility</h4>
+        @if (visibilityFailures(load).length > 0) {
+          <ul class="risks">
+            @for (ev of visibilityFailures(load); track $index) {
+              <li class="blocking">
+                <strong>{{ ev.direction }} {{ ev.eventType || 'share' }} failed</strong>
+                @if (ev.status) { <span class="muted"> · {{ ev.status }}</span> }
+                @if (ev.sharedAt) { <span class="muted"> · {{ ev.sharedAt | date: 'short' }}</span> }
+                @if (ev.destination) { <span class="muted"> → {{ ev.destination }}</span> }
+                @if (ev.error) { <div class="missing">{{ ev.error }}</div> }
+                @else if (ev.reason) { <div class="missing">{{ ev.reason }}</div> }
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="muted">No failed tracking shares.</p>
+        }
+        @if (visibilityMilestones(load).length > 0) {
+          <details class="vis-timeline">
+            <summary>{{ visibilityMilestones(load).length }} tracking milestone(s)</summary>
+            <ul class="timeline">
+              @for (ev of visibilityMilestones(load); track $index) {
+                <li>
+                  <span class="factor-name">{{ ev.direction }} {{ ev.eventType || 'event' }}</span>
+                  @if (ev.sharedAt) { <span class="muted">{{ ev.sharedAt | date: 'short' }}</span> }
+                  @if (ev.destination) { <span class="muted">→ {{ ev.destination }}</span> }
+                </li>
+              }
+            </ul>
+          </details>
+        }
+      </div>
+    }
+
     <!-- Missing data -->
     @if (load.missingData.length > 0) {
       <div class="drawer-section">

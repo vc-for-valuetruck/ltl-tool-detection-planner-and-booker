@@ -26,7 +26,8 @@ public sealed class AssignmentValidationService(IOptions<LtlOptions> options, Ti
     /// may be null when the id was not supplied or did not resolve).
     /// </summary>
     public AssignmentValidationResult Validate(
-        LtlLoadSummary load, AssignmentRequest request, MatchCandidate candidate)
+        LtlLoadSummary load, AssignmentRequest request, MatchCandidate candidate,
+        EquipmentEventAssessment? equipmentEvents = null)
     {
         var issues = new List<AssignmentIssue>();
         var now = clock.GetUtcNow();
@@ -34,10 +35,21 @@ public sealed class AssignmentValidationService(IOptions<LtlOptions> options, Ti
         ValidateDriver(request, candidate.Driver, now, issues);
         ValidateCapacity(load, candidate.Trailer, issues);
         ValidateEquipment(load, candidate.Trailer, issues);
+        ValidateEquipmentEvents(equipmentEvents, issues);
         ValidateWindows(load, now, issues);
         ValidateLoadData(load, issues);
 
         return new AssignmentValidationResult { Issues = issues };
+    }
+
+    private static void ValidateEquipmentEvents(
+        EquipmentEventAssessment? events, List<AssignmentIssue> issues)
+    {
+        // Only warns when events were actually fetched and a conflict was found; absent/unfetched
+        // event data never blocks or warns (we do not assert availability from missing data).
+        if (events is { Evaluated: true, HasConflict: true })
+            issues.Add(Warn("EQUIPMENT_EVENT_CONFLICT",
+                $"Equipment has events overlapping the load window: {string.Join(" ", events.Conflicts)}"));
     }
 
     private void ValidateDriver(

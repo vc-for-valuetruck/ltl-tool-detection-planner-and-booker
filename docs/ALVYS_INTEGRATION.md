@@ -473,6 +473,43 @@ status alone would not say so; any invoice with a positive `RemainingBalance` su
 unpaid-balance risk. Omitting invoices leaves the existing load-only inference unchanged, so
 the bulk worklist/sweep paths are not affected.
 
+#### LTL decision-support signals (how the context reaches the user)
+
+The read-only resources above feed three LTL-layer analyzers that turn raw Alvys data into
+actionable, explicit signals in the `/ltl` console. All three honour the same rule: an
+**absent** upstream signal is reported as `Unavailable`/`NotEvaluated`/`Missing`, never as a
+favourable default.
+
+- **Visibility → exceptions & detail timeline.** `VisibilityAnalyzer` reads inbound/outbound
+  visibility history and projects a `VisibilityContext` (`Evaluated` + newest-first
+  `events[]`). A share whose `Status` is a failure, or that carries a non-empty `Error`, is an
+  `IsFailure` event. The load detail drawer renders failures as blocking risks and noteworthy
+  milestones in an expandable timeline; failed shares also raise a non-blocking
+  `VISIBILITY_FAILED` exception on `/api/ltl/exceptions`.
+- **Equipment events → match risk & assignment warning.** `EquipmentEventAnalyzer.Assess`
+  checks truck/trailer maintenance/out-of-service events that overlap the load window. When
+  events were not fetched (or there is no window) the result is
+  `EquipmentEventAssessment.NotEvaluated` and the matcher emits an **"Equipment availability"**
+  factor with `Status = Unavailable` and `MaxPoints = 0` — i.e. excluded from the score
+  denominator so an unknown never silently lowers a score. When evaluated with a conflict the
+  factor scores `Weak` (Points 0, MaxPoints > 0) and assignment validation adds a non-blocking
+  `EQUIPMENT_EVENT_CONFLICT` warning. Availability is **never** asserted from absent data.
+- **Invoices → billing readiness.** As above, the detail/worklist billing readiness treats an
+  already-posted invoice as not-ready-to-bill and surfaces a positive `RemainingBalance` as an
+  unpaid-balance risk, keeping the existing badge set intact.
+
+##### Known limitations
+
+- **Bounded visibility enrichment on the list path.** `/api/ltl/exceptions` enriches only the
+  first `LtlOptions.MaxVisibilityEnriched` scanned loads (default **25**) with visibility
+  history to bound upstream calls. Visibility-only failures on loads beyond that cap are **not**
+  reflected in the exceptions list — they still surface on the load **detail** path, which
+  always fetches visibility for the single selected load.
+- **Detail-path-only context.** Invoice billing refinement and per-load visibility are fetched
+  on the load **detail** path, so search/worklist list rows carry `NotEvaluated` visibility and
+  load-only billing inference until a load is opened.
+- **Read-only.** None of these signals write back to Alvys; they are decision support only.
+
 ## Safety
 
 - **No secret logging.** Token failures log the HTTP status code only — never the

@@ -127,7 +127,13 @@ public sealed class LtlController(
 
         var candidate = await matches.ResolveCandidateAsync(
             request.DriverId, request.TruckId, request.TrailerId, ct);
-        return (load, validation.Validate(load, request, candidate));
+
+        // Fold equipment events (repair/maintenance overlapping the load window) into validation as
+        // a non-blocking warning, batch-fetched for just this candidate.
+        var events = await matches.FetchEquipmentEventsAsync(load, [candidate], ct);
+        var assessment = matches.AssessCandidate(load, candidate, events);
+
+        return (load, validation.Validate(load, request, candidate, assessment));
     }
 
     /// <summary>The recorded internal assignment-decision history for a load (audit trail).</summary>

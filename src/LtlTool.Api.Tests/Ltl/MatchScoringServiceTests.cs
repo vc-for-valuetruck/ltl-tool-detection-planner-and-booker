@@ -111,4 +111,44 @@ public sealed class MatchScoringServiceTests
         Assert.True(result.Score < 85, $"expected non-excellent score, got {result.Score}");
         Assert.Contains(result.Factors, f => f.Name == "Equipment match" && f.Status == MatchFactorStatus.Weak);
     }
+
+    [Fact]
+    public void Equipment_availability_is_unavailable_when_not_evaluated()
+    {
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = GoodTrailer() };
+
+        // No assessment / NotEvaluated → factor reported unavailable and excluded from denominator.
+        var result = LtlTestFactory.Scorer().Score(Load(), candidate, EquipmentEventAssessment.NotEvaluated);
+
+        var factor = Assert.Single(result.Factors, f => f.Name == "Equipment availability");
+        Assert.Equal(MatchFactorStatus.Unavailable, factor.Status);
+        Assert.Equal(0, factor.MaxPoints);
+    }
+
+    [Fact]
+    public void Equipment_event_conflict_scores_the_availability_factor_weak()
+    {
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = GoodTrailer() };
+        var events = new EquipmentEventAssessment { Evaluated = true, Conflicts = ["Truck Repair overlaps the load window."] };
+
+        var result = LtlTestFactory.Scorer().Score(Load(), candidate, events);
+
+        var factor = Assert.Single(result.Factors, f => f.Name == "Equipment availability");
+        Assert.Equal(MatchFactorStatus.Weak, factor.Status);
+        Assert.True(factor.MaxPoints > 0); // counted in the denominator now that it was evaluated
+        Assert.Equal(0, factor.Points);
+    }
+
+    [Fact]
+    public void Equipment_available_when_evaluated_with_no_conflicts_scores_strong()
+    {
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = GoodTrailer() };
+        var events = new EquipmentEventAssessment { Evaluated = true, Conflicts = [] };
+
+        var result = LtlTestFactory.Scorer().Score(Load(), candidate, events);
+
+        var factor = Assert.Single(result.Factors, f => f.Name == "Equipment availability");
+        Assert.Equal(MatchFactorStatus.Strong, factor.Status);
+        Assert.Equal(factor.MaxPoints, factor.Points);
+    }
 }

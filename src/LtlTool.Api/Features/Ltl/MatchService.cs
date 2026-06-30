@@ -15,27 +15,91 @@ namespace LtlTool.Api.Features.Ltl;
 /// pure read/score path: nothing is written back to Alvys.
 /// </summary>
 public sealed class MatchService(
-    IAlvysClient alvys, MatchScoringService scorer, IOptions<LtlOptions> options)
+    IAlvysClient alvys, MatchScoringService scorer, EquipmentEventAnalyzer equipmentEvents,
+    IOptions<LtlOptions> options)
 {
     private readonly LtlOptions _options = options.Value;
 
     /// <summary>
     /// Ranks fleet candidates for <paramref name="load"/>, best first. <paramref name="top"/>
-    /// defaults to <see cref="LtlOptions.DefaultMatchResults"/> when not positive.
+    /// defaults to <see cref="LtlOptions.DefaultMatchResults"/> when not positive. When the load
+    /// carries a usable pickup/delivery window, truck/trailer events are batch-fetched once and
+    /// folded into each candidate's equipment-availability factor.
     /// </summary>
     public async Task<IReadOnlyList<MatchResult>> RecommendAsync(
         LtlLoadSummary load, int top, CancellationToken ct)
     {
         var take = top > 0 ? top : _options.DefaultMatchResults;
         var candidates = await AssembleCandidatesAsync(ct);
+        var events = await FetchEquipmentEventsAsync(load, candidates, ct);
 
         return candidates
-            .Select(c => scorer.Score(load, c))
+            .Select(c => scorer.Score(load, c, AssessCandidate(load, c, events)))
             // No hard disqualifier first, then by score; both descending so the best is on top.
             .OrderByDescending(r => r.Disqualifiers.Count == 0)
             .ThenByDescending(r => r.Score)
             .Take(take)
             .ToList();
+    }
+
+    /// <summary>
+    /// Builds the equipment-availability assessment for a single candidate against the load window
+    /// from a pre-fetched event batch. Returns <see cref="EquipmentEventAssessment.NotEvaluated"/>
+    /// when no window/fetch was performed (so absent data never reads as "available").
+    /// </summary>
+    public EquipmentEventAssessment AssessCandidate(
+        LtlLoadSummary load, MatchCandidate candidate, EquipmentEventBatch events)
+    {
+        if (!events.Evaluated) return EquipmentEventAssessment.NotEvaluated;
+
+        var truckId = candidate.Truck?.Id;
+        var trailerId = candidate.Trailer?.Id;
+        var truckEvents = truckId is { Length: > 0 }
+            ? events.TruckEvents.Where(e => IdEquals(e.TruckId, truckId)) : [];
+        var trailerEvents = trailerId is { Length: > 0 }
+            ? events.TrailerEvents.Where(e => IdEquals(e.TrailerId, trailerId)) : [];
+
+        return equipmentEvents.Assess(
+            load.ScheduledPickupAt, load.ScheduledDeliveryAt, truckEvents, trailerEvents, evaluated: true);
+    }
+
+    /// <summary>
+    /// Batch-fetches truck + trailer events across all candidate equipment over the load's
+    /// pickup/delivery window in two calls. Returns a not-evaluated batch when the load has no usable
+    /// window or there is no equipment to query.
+    /// </summary>
+    public async Task<EquipmentEventBatch> FetchEquipmentEventsAsync(
+        LtlLoadSummary load, IReadOnlyList<MatchCandidate> candidates, CancellationToken ct)
+    {
+        var start = load.ScheduledPickupAt ?? load.ScheduledDeliveryAt;
+        var end = load.ScheduledDeliveryAt ?? load.ScheduledPickupAt;
+        if (start is null) return EquipmentEventBatch.NotEvaluated;
+
+        var truckIds = candidates
+            .Select(c => c.Truck?.Id).Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var trailerIds = candidates
+            .Select(c => c.Trailer?.Id).Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id!)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        if (truckIds.Count == 0 && trailerIds.Count == 0) return EquipmentEventBatch.NotEvaluated;
+
+        var truckTask = truckIds.Count > 0
+            ? alvys.SearchTruckEventsAsync(
+                new TruckEventSearchRequest { StartDate = start, EndDate = end, TruckIds = truckIds }, ct)
+            : Task.FromResult<IReadOnlyList<AlvysTruckEvent>>([]);
+        var trailerTask = trailerIds.Count > 0
+            ? alvys.SearchTrailerEventsAsync(
+                new TrailerEventSearchRequest { StartDate = start, EndDate = end, TrailerIds = trailerIds }, ct)
+            : Task.FromResult<IReadOnlyList<AlvysTrailerEvent>>([]);
+
+        await Task.WhenAll(truckTask, trailerTask);
+        return new EquipmentEventBatch
+        {
+            Evaluated = true,
+            TruckEvents = await truckTask,
+            TrailerEvents = await trailerTask,
+        };
     }
 
     /// <summary>

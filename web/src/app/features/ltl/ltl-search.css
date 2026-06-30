@@ -390,6 +390,32 @@ button.primary {
   color: #b00020;
 }
 
+/* Visibility timeline */
+.vis-timeline {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+.vis-timeline summary {
+  cursor: pointer;
+  color: #2b59c3;
+}
+.timeline {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.timeline li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  background: #f7f8fc;
+}
+
 /* Match factor breakdown */
 .match-head {
   display: flex;

@@ -145,6 +145,13 @@ public sealed class LtlLoadSummary
     public BillingReadinessResult Billing { get; init; } = new();
     public IReadOnlyList<LtlExceptionFlag> Exceptions { get; init; } = [];
 
+    /// <summary>
+    /// Inbound/outbound visibility-history context for the load. Only populated on the detail path
+    /// (a per-load fetch); on bulk lists it stays <see cref="VisibilityContext.NotEvaluated"/> so
+    /// the UI never mistakes "not fetched" for "no problems".
+    /// </summary>
+    public VisibilityContext Visibility { get; init; } = VisibilityContext.NotEvaluated;
+
     [JsonIgnore]
     public bool HasExceptions => Exceptions.Count > 0;
 }
@@ -157,6 +164,40 @@ public sealed class LtlExceptionFlag
 
     /// <summary>True when this exception blocks clean billing.</summary>
     public bool BlocksBilling { get; init; }
+}
+
+/// <summary>
+/// Visibility-history context folded onto a load. <see cref="Evaluated"/> records whether the
+/// inbound/outbound history was actually fetched — when false, an empty <see cref="Events"/> means
+/// "not looked at", never "no events". <see cref="Events"/> carries the noteworthy
+/// (failure/appointment/arrival/departure/delivery) events for the detail timeline.
+/// </summary>
+public sealed class VisibilityContext
+{
+    /// <summary>Shared singleton for the bulk/list path where visibility was not fetched.</summary>
+    public static readonly VisibilityContext NotEvaluated = new();
+
+    public bool Evaluated { get; init; }
+    public IReadOnlyList<VisibilityEventView> Events { get; init; } = [];
+
+    [JsonIgnore]
+    public bool HasFailures => Events.Any(e => e.IsFailure);
+}
+
+/// <summary>A single visibility-history event projected for the detail timeline.</summary>
+public sealed class VisibilityEventView
+{
+    /// <summary>"Inbound" or "Outbound" — which history feed shared the event.</summary>
+    public required string Direction { get; init; }
+    public string? EventType { get; init; }
+    public string? Status { get; init; }
+    public DateTimeOffset? SharedAt { get; init; }
+    public string? Destination { get; init; }
+    public string? Reason { get; init; }
+    public string? Error { get; init; }
+
+    /// <summary>True when the event status is Failed/Error or carries non-empty error text.</summary>
+    public bool IsFailure { get; init; }
 }
 
 /// <summary>Result of inspecting a load for billing readiness (no silent defaulting).</summary>
