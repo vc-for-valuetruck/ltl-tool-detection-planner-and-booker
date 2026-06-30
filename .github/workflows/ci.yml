@@ -19,6 +19,47 @@ jobs:
       - run: dotnet build --no-restore -c Release
       - run: dotnet test --no-build -c Release --verbosity normal
 
+  migration-sqlserver:
+    name: Verify EF Migrations on SQL Server
+    runs-on: ubuntu-latest
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          # Ephemeral, throwaway credential scoped to this CI run only — never used outside the job
+          # and not a production secret. SQL Server requires a "strong" SA password to start.
+          MSSQL_SA_PASSWORD: 'Ltl_CI_p@ssw0rd!'
+        ports:
+          - 1433:1433
+    env:
+      # Master-scoped connection string; the migration test swaps in a unique per-run database.
+      LTLTOOL_SQLSERVER_TEST_CONNECTION: 'Server=127.0.0.1,1433;Database=master;User Id=sa;Password=Ltl_CI_p@ssw0rd!;TrustServerCertificate=True;Encrypt=False'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Wait for SQL Server
+        run: |
+          for i in $(seq 1 60); do
+            if (echo > /dev/tcp/127.0.0.1/1433) >/dev/null 2>&1; then
+              echo "SQL Server is accepting connections."
+              # Give the engine a moment to finish login-readiness after the port opens;
+              # the test also enables EF connection retry to cover the remaining window.
+              sleep 5
+              exit 0
+            fi
+            echo "Waiting for SQL Server... ($i)"
+            sleep 2
+          done
+          echo "SQL Server did not become available in time." >&2
+          exit 1
+      - run: dotnet restore
+      - run: dotnet build --no-restore -c Release
+      - name: Run SQL Server migration verification tests
+        run: dotnet test --no-build -c Release --verbosity normal --filter "Category=SqlServerMigration"
+
   web:
     name: Build Web
     runs-on: ubuntu-latest
