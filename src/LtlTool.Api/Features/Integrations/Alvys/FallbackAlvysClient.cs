@@ -78,4 +78,27 @@ public sealed class FallbackAlvysClient : IAlvysClient
 
     public Task<AlvysTender?> GetTenderByIdAsync(string tenderId, CancellationToken ct = default)
         => Task.FromResult<AlvysTender?>(null);
+
+    public Task<AlvysInvoicesResponse> SearchInvoicesAsync(
+        InvoiceSearchRequest request, CancellationToken ct = default)
+        => Task.FromResult(new AlvysInvoicesResponse());
+
+    public Task<AlvysInvoice?> GetInvoiceAsync(InvoiceLookup lookup, CancellationToken ct = default)
+        => Task.FromResult<AlvysInvoice?>(null);
+
+    public Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListInboundVisibilityHistoryAsync(
+        string loadNumber, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AlvysVisibilityHistoryEvent>>([]);
+
+    public Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListOutboundVisibilityHistoryAsync(
+        string loadNumber, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AlvysVisibilityHistoryEvent>>([]);
+
+    public Task<IReadOnlyList<AlvysTruckEvent>> SearchTruckEventsAsync(
+        TruckEventSearchRequest request, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AlvysTruckEvent>>([]);
+
+    public Task<IReadOnlyList<AlvysTrailerEvent>> SearchTrailerEventsAsync(
+        TrailerEventSearchRequest request, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AlvysTrailerEvent>>([]);
 }

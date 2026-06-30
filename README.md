@@ -153,7 +153,7 @@ src/LtlTool.Api/
 └── Features/                # vertical-slice features
     ├── Health/              # GET /api/health (anonymous liveness)
     ├── Me/                  # GET /api/me (protected sample endpoint)
-    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search + GET /api/alvys/tenders/{id} + GET /api/alvys/{loads,trips}?… + GET /api/alvys/loads/{loadNumber}/{documents,notes} + GET /api/alvys/trips/{tripId}/stops (protected, read-only)
+    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders,invoices}/search + /api/alvys/{trucks,trailers}/events/search + GET /api/alvys/tenders/{id} + GET /api/alvys/{loads,trips,invoices}?… + GET /api/alvys/loads/{loadNumber}/{documents,notes} + GET /api/alvys/trips/{tripId}/stops + GET /api/alvys/visibility/{inbound,outbound}/{loadNumber}/history (protected, read-only)
     ├── Ltl/                 # LTL decision-support layer (normalization, billing readiness, match scoring, search) — see section 11
     └── Integrations/Alvys/  # server-side Alvys client (IAlvysClient) — credentials never leave the API
 ```
@@ -186,11 +186,19 @@ Alvys remains the default source of truth.
 | `GET /api/alvys/trips/{tripId}/stops` | _(path param)_ | polymorphic trip stops — route assembly (bare array) |
 | `GET /api/alvys/loads/{loadNumber}/documents` | _(path param)_ | load documents — rate con / POD / customer backup (bare array) |
 | `GET /api/alvys/loads/{loadNumber}/notes` | _(path param)_ | load notes — operational comments / audit context (bare array) |
+| `POST /api/alvys/invoices/search` | `InvoiceSearchRequest` | paged invoices (billing confirmation / unpaid balance) |
+| `GET /api/alvys/invoices?id=…\|invoiceNumber=…` | _(query)_ | single invoice detail (400 if no criterion, 404 when not found) |
+| `GET /api/alvys/visibility/inbound/{loadNumber}/history` | _(path param)_ | inbound visibility/tracking events — exception context (bare array) |
+| `GET /api/alvys/visibility/outbound/{loadNumber}/history` | _(path param)_ | outbound visibility/tracking events — exception context (bare array) |
+| `POST /api/alvys/trucks/events/search` | `TruckEventSearchRequest` | truck events (maintenance/OOS) — match risk (bare array) |
+| `POST /api/alvys/trailers/events/search` | `TrailerEventSearchRequest` | trailer events (maintenance/OOS) — match risk (bare array) |
 
-The tender by-id, load/trip detail lookups, trip-stops and load document/note listings are
-`GET` (load/trip detail take query parameters and return 400 with no criterion / 404 when
-not found); the rest are `POST` searches. All are read-only (no tender accept/reject, no
-note/document creation, no `PUT`/`PATCH`/`DELETE`).
+The tender/invoice by-id, load/trip detail lookups, trip-stops, load document/note and
+visibility-history listings are `GET` (load/trip/invoice detail take query parameters and
+return 400 with no criterion / 404 when not found); the rest are `POST` searches. All are
+read-only (no tender accept/reject, no note/document creation, no `PUT`/`PATCH`/`DELETE`).
+Invoices feed billing readiness on the load detail path; visibility-history and equipment
+events are exposed for the next slice (exception detection / match risk).
 
 Add new functionality as a folder under `Features/` (controller + service + DTOs).
 

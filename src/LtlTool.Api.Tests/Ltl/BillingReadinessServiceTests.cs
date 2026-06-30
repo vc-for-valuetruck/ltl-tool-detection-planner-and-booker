@@ -108,4 +108,47 @@ public sealed class BillingReadinessServiceTests
 
         Assert.Contains(exceptions, e => e.Code == "STALE_UNINVOICED");
     }
+
+    [Fact]
+    public void Submitted_invoice_record_confirms_already_invoiced_even_when_load_status_is_open()
+    {
+        var load = DeliveredBillable();
+        load.Status = "Open";   // load alone would not look invoiced
+        var invoices = new List<AlvysInvoice>
+        {
+            new() { Id = "I1", Number = "INV-100", IsSubmitted = true },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices);
+
+        Assert.True(result.IsAlreadyInvoiced);
+        Assert.Contains(BillingBadge.AlreadyInvoiced, result.Badges);
+        Assert.False(result.IsReadyToBill);   // already invoiced is never ready-to-bill
+    }
+
+    [Fact]
+    public void Unpaid_invoice_balance_surfaces_as_a_risk()
+    {
+        var load = DeliveredBillable();
+        var invoices = new List<AlvysInvoice>
+        {
+            new() { Id = "I1", Number = "INV-100", Status = "Invoiced", RemainingBalance = 850.50m },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices);
+
+        Assert.Contains(result.Risks, r => r.Contains("INV-100") && r.Contains("unpaid balance"));
+    }
+
+    [Fact]
+    public void Invoices_omitted_leaves_already_invoiced_inference_unchanged()
+    {
+        var load = DeliveredBillable();   // Open-ish billable, no invoice signals on the load
+
+        var withoutInvoices = LtlTestFactory.Billing().Evaluate(load, []);
+        var withEmptyInvoices = LtlTestFactory.Billing().Evaluate(load, [], []);
+
+        Assert.False(withoutInvoices.IsAlreadyInvoiced);
+        Assert.False(withEmptyInvoices.IsAlreadyInvoiced);
+    }
 }

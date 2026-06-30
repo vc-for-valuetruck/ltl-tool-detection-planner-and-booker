@@ -43,6 +43,7 @@ internal sealed class FakeAlvysClient : IAlvysClient
     public List<AlvysTruck> Trucks { get; set; } = [];
     public List<AlvysTrailerEquipment> Trailers { get; set; } = [];
     public List<AlvysDispatchPreference> DispatchPreferences { get; set; } = [];
+    public List<AlvysInvoice> Invoices { get; set; } = [];
 
     public Task<AlvysLoadsResponse> SearchLoadsAsync(
         int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
@@ -101,5 +102,18 @@ internal sealed class FakeAlvysClient : IAlvysClient
     public Task<AlvysTendersResponse> SearchTendersAsync(TenderSearchRequest request, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<AlvysTender?> GetTenderByIdAsync(string tenderId, CancellationToken ct = default)
+        => throw new NotSupportedException();
+
+    public Task<AlvysInvoicesResponse> SearchInvoicesAsync(InvoiceSearchRequest request, CancellationToken ct = default)
+        => Task.FromResult(new AlvysInvoicesResponse { Total = Invoices.Count, Items = Invoices });
+    public Task<AlvysInvoice?> GetInvoiceAsync(InvoiceLookup lookup, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    public Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListInboundVisibilityHistoryAsync(string loadNumber, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    public Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListOutboundVisibilityHistoryAsync(string loadNumber, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    public Task<IReadOnlyList<AlvysTruckEvent>> SearchTruckEventsAsync(TruckEventSearchRequest request, CancellationToken ct = default)
+        => throw new NotSupportedException();
+    public Task<IReadOnlyList<AlvysTrailerEvent>> SearchTrailerEventsAsync(TrailerEventSearchRequest request, CancellationToken ct = default)
         => throw new NotSupportedException();
 }

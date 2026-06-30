@@ -35,10 +35,18 @@ public sealed class AlvysSearchControllerTests
         public LoadLookup? LoadLookup { get; private set; }
         public TripLookup? TripLookup { get; private set; }
         public string? StopsTripId { get; private set; }
+        public InvoiceSearchRequest? Invoices { get; private set; }
+        public InvoiceLookup? InvoiceLookup { get; private set; }
+        public string? InboundVisibilityLoadNumber { get; private set; }
+        public string? OutboundVisibilityLoadNumber { get; private set; }
+        public TruckEventSearchRequest? TruckEvents { get; private set; }
+        public TrailerEventSearchRequest? TrailerEvents { get; private set; }
         public AlvysLoad? LoadToReturn { get; set; } =
             new() { Id = "L1", LoadNumber = "100", OrderNumber = "O-9", Status = "Delivered" };
         public AlvysTrip? TripToReturn { get; set; } =
             new() { Id = "T1", TripNumber = "500", Status = "Delivered" };
+        public AlvysInvoice? InvoiceToReturn { get; set; } =
+            new() { Id = "I1", Number = "INV-100", Status = "Invoiced" };
 
         public Task<AlvysLoadsResponse> SearchLoadsAsync(
             int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
@@ -182,6 +190,54 @@ public sealed class AlvysSearchControllerTests
         {
             RequestedTenderId = tenderId;
             return Task.FromResult(TenderToReturn);
+        }
+
+        public Task<AlvysInvoicesResponse> SearchInvoicesAsync(InvoiceSearchRequest request, CancellationToken ct = default)
+        {
+            Invoices = request;
+            return Task.FromResult(new AlvysInvoicesResponse
+            {
+                Total = 1,
+                Items = [new AlvysInvoice { Id = "I1", Number = "INV-100", Status = "Invoiced" }],
+            });
+        }
+
+        public Task<AlvysInvoice?> GetInvoiceAsync(InvoiceLookup lookup, CancellationToken ct = default)
+        {
+            InvoiceLookup = lookup;
+            return Task.FromResult(InvoiceToReturn);
+        }
+
+        public Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListInboundVisibilityHistoryAsync(
+            string loadNumber, CancellationToken ct = default)
+        {
+            InboundVisibilityLoadNumber = loadNumber;
+            return Task.FromResult<IReadOnlyList<AlvysVisibilityHistoryEvent>>(
+                [new AlvysVisibilityHistoryEvent { Id = "V1", LoadNumber = loadNumber, EventType = "LocationUpdate" }]);
+        }
+
+        public Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListOutboundVisibilityHistoryAsync(
+            string loadNumber, CancellationToken ct = default)
+        {
+            OutboundVisibilityLoadNumber = loadNumber;
+            return Task.FromResult<IReadOnlyList<AlvysVisibilityHistoryEvent>>(
+                [new AlvysVisibilityHistoryEvent { Id = "V2", LoadNumber = loadNumber, EventType = "StatusUpdate" }]);
+        }
+
+        public Task<IReadOnlyList<AlvysTruckEvent>> SearchTruckEventsAsync(
+            TruckEventSearchRequest request, CancellationToken ct = default)
+        {
+            TruckEvents = request;
+            return Task.FromResult<IReadOnlyList<AlvysTruckEvent>>(
+                [new AlvysTruckEvent { Id = "EV1", TruckId = "TK1", EventType = "Repair" }]);
+        }
+
+        public Task<IReadOnlyList<AlvysTrailerEvent>> SearchTrailerEventsAsync(
+            TrailerEventSearchRequest request, CancellationToken ct = default)
+        {
+            TrailerEvents = request;
+            return Task.FromResult<IReadOnlyList<AlvysTrailerEvent>>(
+                [new AlvysTrailerEvent { Id = "EV9", TrailerId = "TR1", EventType = "Maintenance" }]);
         }
     }
 
@@ -462,6 +518,122 @@ public sealed class AlvysSearchControllerTests
     }
 
     [Fact]
+    public async Task SearchInvoices_passes_request_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var request = new InvoiceSearchRequest { LoadNumbers = ["100"] };
+
+        var body = Body(await controller.SearchInvoices(request, default));
+
+        Assert.Same(request, client.Invoices);
+        Assert.Equal("INV-100", Assert.Single(body.Items).Number);
+    }
+
+    [Fact]
+    public async Task GetInvoice_passes_lookup_through_and_returns_invoice_when_found()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var lookup = new InvoiceLookup { InvoiceNumber = "INV-100" };
+
+        var result = await controller.GetInvoice(lookup, default);
+        var body = Assert.IsType<AlvysInvoice>(Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Same(lookup, client.InvoiceLookup);
+        Assert.Equal("INV-100", body.Number);
+    }
+
+    [Fact]
+    public async Task GetInvoice_returns_400_when_no_criteria_supplied()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.GetInvoice(new InvoiceLookup(), default);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Null(client.InvoiceLookup);   // never reaches the client
+    }
+
+    [Fact]
+    public async Task GetInvoice_returns_404_when_not_found()
+    {
+        var client = new RecordingAlvysClient { InvoiceToReturn = null };
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.GetInvoice(new InvoiceLookup { Id = "missing" }, default);
+
+        Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task ListInboundVisibilityHistory_passes_load_number_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.ListInboundVisibilityHistory("100", default);
+        var body = Assert.IsAssignableFrom<IReadOnlyList<AlvysVisibilityHistoryEvent>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Equal("100", client.InboundVisibilityLoadNumber);
+        Assert.Equal("V1", Assert.Single(body).Id);
+    }
+
+    [Fact]
+    public async Task ListOutboundVisibilityHistory_passes_load_number_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.ListOutboundVisibilityHistory("100", default);
+        var body = Assert.IsAssignableFrom<IReadOnlyList<AlvysVisibilityHistoryEvent>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Equal("100", client.OutboundVisibilityLoadNumber);
+        Assert.Equal("V2", Assert.Single(body).Id);
+    }
+
+    [Fact]
+    public async Task SearchTruckEvents_passes_request_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var request = new TruckEventSearchRequest
+        {
+            StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            TruckIds = ["TK1"],
+        };
+
+        var result = await controller.SearchTruckEvents(request, default);
+        var body = Assert.IsAssignableFrom<IReadOnlyList<AlvysTruckEvent>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Same(request, client.TruckEvents);
+        Assert.Equal("EV1", Assert.Single(body).Id);
+    }
+
+    [Fact]
+    public async Task SearchTrailerEvents_passes_request_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var request = new TrailerEventSearchRequest
+        {
+            StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            TrailerIds = ["TR1"],
+        };
+
+        var result = await controller.SearchTrailerEvents(request, default);
+        var body = Assert.IsAssignableFrom<IReadOnlyList<AlvysTrailerEvent>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Same(request, client.TrailerEvents);
+        Assert.Equal("EV9", Assert.Single(body).Id);
+    }
+
+    [Fact]
     public async Task Responses_carry_no_credential_or_secret_fields()
     {
         var client = new RecordingAlvysClient();
@@ -485,6 +657,12 @@ public sealed class AlvysSearchControllerTests
             JsonSerializer.Serialize(Assert.IsType<AlvysLoad>(((OkObjectResult)(await controller.GetLoad(new LoadLookup { Id = "L1" }, default)).Result!).Value)),
             JsonSerializer.Serialize(Assert.IsType<AlvysTrip>(((OkObjectResult)(await controller.GetTrip(new TripLookup { Id = "T1" }, default)).Result!).Value)),
             JsonSerializer.Serialize(((OkObjectResult)(await controller.ListTripStops("T1", default)).Result!).Value),
+            JsonSerializer.Serialize(Body(await controller.SearchInvoices(new InvoiceSearchRequest { LoadNumbers = ["100"] }, default))),
+            JsonSerializer.Serialize(Assert.IsType<AlvysInvoice>(((OkObjectResult)(await controller.GetInvoice(new InvoiceLookup { Id = "I1" }, default)).Result!).Value)),
+            JsonSerializer.Serialize(((OkObjectResult)(await controller.ListInboundVisibilityHistory("100", default)).Result!).Value),
+            JsonSerializer.Serialize(((OkObjectResult)(await controller.ListOutboundVisibilityHistory("100", default)).Result!).Value),
+            JsonSerializer.Serialize(((OkObjectResult)(await controller.SearchTruckEvents(new TruckEventSearchRequest { StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"), TruckIds = ["TK1"] }, default)).Result!).Value),
+            JsonSerializer.Serialize(((OkObjectResult)(await controller.SearchTrailerEvents(new TrailerEventSearchRequest { StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"), TrailerIds = ["TR1"] }, default)).Result!).Value),
         };
 
         string[] forbidden =

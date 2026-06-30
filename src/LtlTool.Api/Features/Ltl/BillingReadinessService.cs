@@ -37,20 +37,47 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
     };
 
     /// <summary>
+    /// Statuses on an Alvys <see cref="AlvysInvoice"/> that confirm the load has been invoiced.
+    /// </summary>
+    private static readonly HashSet<string> InvoicePostedStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Invoiced", "Sent", "Submitted", "Financed", "Completed", "Paid", "PartiallyPaid", "Partially Paid",
+    };
+
+    /// <summary>
     /// Evaluate billing readiness for <paramref name="load"/>. <paramref name="documents"/> is
     /// optional; when supplied it enables POD detection (otherwise POD is not evaluated).
+    /// <paramref name="invoices"/> is optional; when supplied (e.g. on the detail path) it
+    /// confirms already-invoiced state and surfaces remaining-balance/invoice-status risks
+    /// from the authoritative invoice records rather than inferring from the load alone.
     /// </summary>
     public BillingReadinessResult Evaluate(
-        AlvysLoad load, IReadOnlyList<AlvysLoadDocument>? documents = null)
+        AlvysLoad load,
+        IReadOnlyList<AlvysLoadDocument>? documents = null,
+        IReadOnlyList<AlvysInvoice>? invoices = null)
     {
         var badges = new List<BillingBadge>();
         var missing = new List<MissingDataFlag>();
         var risks = new List<string>();
 
+        var invoiceConfirmsInvoiced = invoices is { Count: > 0 } && invoices.Any(IsPostedInvoice);
+
         var alreadyInvoiced =
             load.InvoicedAt is not null
             || (load.InvoicedAmount is > 0)
-            || InvoicedStatuses.Contains(load.Status);
+            || InvoicedStatuses.Contains(load.Status)
+            || invoiceConfirmsInvoiced;
+
+        // Invoice-derived revenue-protection signals (only when invoices were supplied).
+        if (invoices is { Count: > 0 })
+        {
+            foreach (var invoice in invoices)
+            {
+                if (invoice.RemainingBalance is > 0)
+                    risks.Add(
+                        $"Invoice {InvoiceLabel(invoice)} has an unpaid balance of {invoice.RemainingBalance.Value:0.##}.");
+            }
+        }
 
         var delivered =
             load.ActualDeliveryAt is not null
@@ -141,6 +168,15 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
             PodEvaluated = podEvaluated,
         };
     }
+
+    /// <summary>True when an invoice record confirms the load was invoiced (submitted/posted status).</summary>
+    private static bool IsPostedInvoice(AlvysInvoice invoice) =>
+        invoice.IsSubmitted == true
+        || invoice.InvoicedDate is not null
+        || (invoice.Status is not null && InvoicePostedStatuses.Contains(invoice.Status));
+
+    private static string InvoiceLabel(AlvysInvoice invoice) =>
+        !string.IsNullOrWhiteSpace(invoice.Number) ? invoice.Number! : invoice.Id;
 
     /// <summary>True when any supplied document looks like a proof-of-delivery / signed BOL.</summary>
     private static bool HasProofOfDelivery(IReadOnlyList<AlvysLoadDocument> documents) =>

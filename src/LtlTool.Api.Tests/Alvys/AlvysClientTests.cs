@@ -1074,4 +1074,358 @@ public sealed class AlvysClientTests
         Assert.Contains("500", logger.AllText);
         Assert.DoesNotContain("test-token", logger.AllText);   // token never logged
     }
+
+    // ----- Invoices ---------------------------------------------------------
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/invoices/search")]
+    [InlineData("2.0", "/api/p/v2.0/invoices/search")]   // normalized — no double "v"
+    public async Task SearchInvoices_maps_response_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Page":0,"PageSize":100,"Total":1,"Items":[{"Id":"I1","Number":"INV-100","Status":"Invoiced","Total":{"Amount":1850.50,"Currency":"USD"},"AmountPaid":1000.00,"RemainingBalance":850.50,"IsSubmitted":true,"Customer":{"Id":"C1","Name":"Acme"},"LineItems":[{"Id":"LI1","Description":"Linehaul","Type":"Linehaul","Amount":1500.00}],"Loads":[{"Id":"L1","LoadNumber":"100"}]}]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.SearchInvoicesAsync(new InvoiceSearchRequest { LoadNumbers = ["100"] });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("I1", item.Id);
+        Assert.Equal("INV-100", item.Number);
+        Assert.Equal(1850.50m, item.Total?.Amount);
+        Assert.Equal("USD", item.Total?.Currency);
+        Assert.Equal(850.50m, item.RemainingBalance);
+        Assert.True(item.IsSubmitted);
+        Assert.Equal("Acme", item.Customer?.Name);
+        Assert.Equal("Linehaul", Assert.Single(item.LineItems!).Type);
+        Assert.Equal("100", Assert.Single(item.Loads!).LoadNumber);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Post, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchInvoices_serializes_only_supplied_filters_in_pascal_case()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Items":[]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchInvoicesAsync(new InvoiceSearchRequest { Page = 2, LoadNumbers = ["100"] });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"Page\":2", body);
+        Assert.Contains("\"LoadNumbers\":[\"100\"]", body);
+        Assert.DoesNotContain("Status", body);             // null filters are omitted
+        Assert.DoesNotContain("InvoicedDateRange", body);
+        Assert.DoesNotContain("CustomerId", body);
+    }
+
+    [Fact]
+    public async Task SearchInvoices_rejects_non_positive_page_size_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchInvoicesAsync(new InvoiceSearchRequest { PageSize = 0 }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task SearchInvoices_returns_empty_on_server_error_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        var result = await client.SearchInvoicesAsync(new InvoiceSearchRequest { LoadNumbers = ["100"] });
+
+        Assert.Empty(result.Items);
+        Assert.Contains("500", logger.AllText);
+        Assert.DoesNotContain("test-token", logger.AllText);   // token never logged
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/invoices")]
+    [InlineData("2.0", "/api/p/v2.0/invoices")]   // normalized — no double "v"
+    public async Task GetInvoice_maps_detail_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Id":"I1","Number":"INV-100","Status":"Paid","PaidDate":"2026-01-10T00:00:00Z","Total":{"Amount":1850.50,"Currency":"USD"}}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var invoice = await client.GetInvoiceAsync(new InvoiceLookup { Id = "I1" });
+
+        Assert.NotNull(invoice);
+        Assert.Equal("I1", invoice!.Id);
+        Assert.Equal("INV-100", invoice.Number);
+        Assert.Equal("Paid", invoice.Status);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Get, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task GetInvoice_sends_lookup_as_url_encoded_query()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Id":"I1"}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.GetInvoiceAsync(new InvoiceLookup { InvoiceNumber = "INV 100/A" });
+
+        Assert.Contains(
+            "/api/p/v1/invoices?invoiceNumber=INV%20100%2FA", handler.Calls[0].Request.RequestUri?.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task GetInvoice_rejects_empty_lookup_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.GetInvoiceAsync(new InvoiceLookup()));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task GetInvoice_returns_null_on_not_found()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Null(await client.GetInvoiceAsync(new InvoiceLookup { Id = "missing" }));
+        Assert.DoesNotContain("failed with HTTP", logger.AllText);   // 404 is not an error
+    }
+
+    // ----- Visibility history ----------------------------------------------
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/visibility/inbound/100/history")]
+    [InlineData("2.0", "/api/p/v2.0/visibility/inbound/100/history")]   // normalized — no double "v"
+    public async Task ListInboundVisibilityHistory_maps_bare_array_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """[{"Id":"V1","ExternalId":"E1","TripNumber":"500","LoadNumber":"100","EventType":"LocationUpdate","SharedAt":"2026-01-02T03:04:05Z","Status":"Failed","Error":"Carrier not connected","Address":{"Street":"1 Main","City":"Dallas","State":"TX","ZipCode":"75201"},"Coordinates":{"Latitude":32.7,"Longitude":-96.8}}]"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var events = await client.ListInboundVisibilityHistoryAsync("100");
+
+        var item = Assert.Single(events);
+        Assert.Equal("V1", item.Id);
+        Assert.Equal("100", item.LoadNumber);
+        Assert.Equal("Failed", item.Status);
+        Assert.Equal("Carrier not connected", item.Error);
+        Assert.Equal("75201", item.Address?.ZipCode);
+        Assert.Equal(32.7, item.Coordinates?.Latitude);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Get, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task ListOutboundVisibilityHistory_targets_versioned_path()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""[{"Id":"V2","LoadNumber":"100","EventType":"StatusUpdate"}]"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        var events = await client.ListOutboundVisibilityHistoryAsync("100");
+
+        Assert.Equal("V2", Assert.Single(events).Id);
+        Assert.Equal("/api/p/v1/visibility/outbound/100/history", handler.Calls[0].Request.RequestUri?.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task ListInboundVisibilityHistory_url_encodes_load_number_in_path()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("[]"),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.ListInboundVisibilityHistoryAsync("VT 100/A");
+
+        Assert.Contains(
+            "/api/p/v1/visibility/inbound/VT%20100%2FA/history", handler.Calls[0].Request.RequestUri?.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task ListInboundVisibilityHistory_returns_empty_on_not_found_without_logging_error()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Empty(await client.ListInboundVisibilityHistoryAsync("999"));
+        Assert.Empty(logger.Messages);
+    }
+
+    [Fact]
+    public async Task ListOutboundVisibilityHistory_returns_empty_on_server_error_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Empty(await client.ListOutboundVisibilityHistoryAsync("100"));
+        Assert.Contains("500", logger.AllText);
+        Assert.DoesNotContain("test-token", logger.AllText);   // token never logged
+    }
+
+    // ----- Truck / trailer events ------------------------------------------
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/trucks/events/search")]
+    [InlineData("2.0", "/api/p/v2.0/trucks/events/search")]   // normalized — no double "v"
+    public async Task SearchTruckEvents_maps_bare_array_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """[{"Id":"EV1","TruckId":"TK1","Title":"Brake repair","EventType":"Repair","Description":"In shop","StartDate":"2026-01-02T00:00:00Z","EndDate":"2026-01-03T00:00:00Z","CreatedBy":"jane","CreatedAt":"2026-01-01T00:00:00Z"}]"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var events = await client.SearchTruckEventsAsync(new TruckEventSearchRequest
+        {
+            StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            TruckIds = ["TK1"],
+        });
+
+        var item = Assert.Single(events);
+        Assert.Equal("EV1", item.Id);
+        Assert.Equal("TK1", item.TruckId);
+        Assert.Equal("Repair", item.EventType);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Post, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchTruckEvents_serializes_required_fields_and_omits_null_end_date()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("[]"),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchTruckEventsAsync(new TruckEventSearchRequest
+        {
+            StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            TruckIds = ["TK1", "TK2"],
+        });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"StartDate\":", body);
+        Assert.Contains("\"TruckIds\":[\"TK1\",\"TK2\"]", body);
+        Assert.DoesNotContain("EndDate", body);   // null end is omitted
+    }
+
+    [Fact]
+    public async Task SearchTruckEvents_rejects_missing_start_date_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchTruckEventsAsync(new TruckEventSearchRequest { TruckIds = ["TK1"] }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task SearchTruckEvents_rejects_empty_truck_ids_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchTruckEventsAsync(new TruckEventSearchRequest
+            {
+                StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/trailers/events/search")]
+    [InlineData("2.0", "/api/p/v2.0/trailers/events/search")]   // normalized — no double "v"
+    public async Task SearchTrailerEvents_maps_bare_array_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """[{"Id":"EV9","TrailerId":"TR1","Title":"Reefer service","EventType":"Maintenance","StartDate":"2026-01-02T00:00:00Z"}]"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var events = await client.SearchTrailerEventsAsync(new TrailerEventSearchRequest
+        {
+            StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            TrailerIds = ["TR1"],
+        });
+
+        var item = Assert.Single(events);
+        Assert.Equal("EV9", item.Id);
+        Assert.Equal("TR1", item.TrailerId);
+        Assert.Equal("Maintenance", item.EventType);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Post, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchTrailerEvents_rejects_empty_trailer_ids_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchTrailerEventsAsync(new TrailerEventSearchRequest
+            {
+                StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task SearchTrailerEvents_returns_empty_on_rate_limit_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        var result = await client.SearchTrailerEventsAsync(new TrailerEventSearchRequest
+        {
+            StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            TrailerIds = ["TR1"],
+        });
+
+        Assert.Empty(result);
+        Assert.Contains("429", logger.AllText);
+        Assert.DoesNotContain("test-token", logger.AllText);   // token never logged
+    }
 }

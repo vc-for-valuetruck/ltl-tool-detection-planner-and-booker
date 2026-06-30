@@ -58,9 +58,9 @@ All under `src/LtlTool.Api/Features/Integrations/Alvys/`:
 | File | Purpose |
 | --- | --- |
 | `AlvysOptions.cs` | Strongly-typed config (`ApiBaseUrl` host + `ApiVersion`) + `AlvysProvider` enum (`Live`/`Fallback`). |
-| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `GetLoadAsync`, `ListLoadDocumentsAsync`, `ListLoadNotesAsync`, `SearchTripsAsync`, `GetTripAsync`, `ListTripStopsAsync`, `SearchTrailersAsync`, `SearchTrucksAsync`, `SearchDispatchPreferencesAsync`, `SearchLocationsAsync`, `SearchDriversAsync`, `SearchCustomersAsync`, `SearchUsersAsync`, `SearchTendersAsync`, `GetTenderByIdAsync`). |
+| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `GetLoadAsync`, `ListLoadDocumentsAsync`, `ListLoadNotesAsync`, `SearchTripsAsync`, `GetTripAsync`, `ListTripStopsAsync`, `SearchTrailersAsync`, `SearchTrucksAsync`, `SearchDispatchPreferencesAsync`, `SearchLocationsAsync`, `SearchDriversAsync`, `SearchCustomersAsync`, `SearchUsersAsync`, `SearchTendersAsync`, `GetTenderByIdAsync`, `SearchInvoicesAsync`, `GetInvoiceAsync`, `ListInboundVisibilityHistoryAsync`, `ListOutboundVisibilityHistoryAsync`, `SearchTruckEventsAsync`, `SearchTrailerEventsAsync`). |
 | `AlvysClient.cs` | Live client; default source of truth. Named `HttpClient` + bearer token per request. |
-| `AlvysApiRoutes.cs` | Builds versioned `/api/p/v{version}/...` paths (search paths, the `tenders/{tenderId}` GET path, the load/trip detail GET paths with URL-encoded query parameters, and the `trips/{tripId}/stops` GET path) and normalizes the version (no double `v`). |
+| `AlvysApiRoutes.cs` | Builds versioned `/api/p/v{version}/...` paths (search paths incl. invoices and truck/trailer events, the `tenders/{tenderId}` GET path, the load/trip/invoice detail GET paths with URL-encoded query parameters, the `trips/{tripId}/stops` and the `visibility/{direction}/{loadNumber}/history` GET paths) and normalizes the version (no double `v`). |
 | `AlvysTokenProvider.cs` | OAuth2 token acquisition + caching (`IAlvysTokenProvider`). |
 | `FallbackAlvysClient.cs` | Non-default empty-result stub for local/UAT only. |
 | `AlvysDtos.cs` | Load + trip + trailer + truck + dispatch-preference + location + driver + customer + user + tender search request/response DTOs (+ tender/load/trip detail), `LoadLookup`/`TripLookup` query DTOs, polymorphic `AlvysTripStopDetail`, load-document/load-note list item DTOs, + token response. |
@@ -94,6 +94,12 @@ no token/config/secret is ever in the response (covered by
 | `GET /api/alvys/trips/{tripId}/stops` | _(path param)_ | `ListTripStopsAsync` | `GET /api/p/v{version}/trips/{tripId}/stops` |
 | `GET /api/alvys/loads/{loadNumber}/documents` | _(path param)_ | `ListLoadDocumentsAsync` | `GET /api/p/v{version}/loads/{loadNumber}/documents` |
 | `GET /api/alvys/loads/{loadNumber}/notes` | _(path param)_ | `ListLoadNotesAsync` | `GET /api/p/v{version}/loads/{loadNumber}/notes` |
+| `POST /api/alvys/invoices/search` | `InvoiceSearchRequest` | `SearchInvoicesAsync` | `POST /api/p/v{version}/invoices/search` |
+| `GET /api/alvys/invoices?id=…\|invoiceNumber=…` | `InvoiceLookup` _(query)_ | `GetInvoiceAsync` | `GET /api/p/v{version}/invoices?…` |
+| `GET /api/alvys/visibility/inbound/{loadNumber}/history` | _(path param)_ | `ListInboundVisibilityHistoryAsync` | `GET /api/p/v{version}/visibility/inbound/{loadNumber}/history` |
+| `GET /api/alvys/visibility/outbound/{loadNumber}/history` | _(path param)_ | `ListOutboundVisibilityHistoryAsync` | `GET /api/p/v{version}/visibility/outbound/{loadNumber}/history` |
+| `POST /api/alvys/trucks/events/search` | `TruckEventSearchRequest` | `SearchTruckEventsAsync` | `POST /api/p/v{version}/trucks/events/search` |
+| `POST /api/alvys/trailers/events/search` | `TrailerEventSearchRequest` | `SearchTrailerEventsAsync` | `POST /api/p/v{version}/trailers/events/search` |
 
 - **Authorization.** All require the `AllowedEmailDomain` policy, same as
   `/api/me`. An unauthenticated request returns 401 (not 404) because the route is
@@ -105,9 +111,9 @@ no token/config/secret is ever in the response (covered by
   All are queries only.
 - **Lookup query parameters.** The load lookup requires one of `id`/`loadNumber`/
   `orderNumber`; the trip lookup requires one of `id`/`tripNumber` (with optional
-  `includeDeleted`). The controller returns **400** when no criterion is supplied (before
-  any upstream call) and **404** when the record is not found or upstream degrades to
-  `null`.
+  `includeDeleted`); the invoice lookup requires one of `id`/`invoiceNumber`. The
+  controller returns **400** when no criterion is supplied (before any upstream call) and
+  **404** when the record is not found or upstream degrades to `null`.
 - **No internal mutation endpoints exist** — there is no `PUT`/`PATCH`/`DELETE`, no POST
   note/document creation, and no Alvys writeback in this phase. The tender slice is
   read-only: no accept/reject/cancel/update/create.
@@ -398,6 +404,75 @@ Load documents and notes were modelled from the same reference (docs index
 
 Registered in `Program.cs` via `builder.Services.AddAlvysIntegration(builder.Configuration)`.
 
+### Billing, visibility and equipment-event context
+
+This slice adds three read-only resources that strengthen billing confidence, exception
+detection and match reliability. All are queries only — no writeback, and missing/
+unavailable fields are surfaced explicitly rather than defaulted.
+
+#### `invoices/search` → `POST /api/p/v{version}/invoices/search` and `invoices?…` → `GET …`
+
+Invoices are the authoritative billing record — they confirm whether a delivered load is
+already invoiced, the invoice status, the remaining (unpaid) balance and the per-load
+line items. The LTL billing-readiness service consumes invoices on the load **detail**
+path to refine already-invoiced state and surface unpaid-balance risks.
+
+- **Search request** (`InvoiceSearchRequest`): `Page` (0-based), `PageSize` (> 0,
+  default 100), optional `InvoicedDateRange`/`InvoiceSentRange`/`PaidDateRange`
+  (`{Start, End}`), `Status[]`, `LoadNumbers[]`, `PONumbers[]`, `OrderNumbers[]`,
+  `CustomerId`. Conditional ranges are omitted from the body when null.
+- **Local validation** (`InvoiceSearchRequest.Validate`): only `PageSize > 0`.
+- **Search response** (`AlvysInvoicesResponse` = paged `{ Page, PageSize, Total, Items[] }`):
+  `AlvysInvoice` projection — `Id`, `Number`, `Type`, `Status`, `CreatedDate`,
+  `InvoicedDate`, `DueDate`, `PaidDate`, `Total` (`AlvysMoney` `{Amount, Currency}`),
+  `AmountPaid`, `RemainingBalance`, `OverPaymentAmount`, `IsSubmitted`, `LastSendDate`,
+  `SupplementalInvoiceType`, `Vendor`/`Customer` (`AlvysInvoiceParty`), `LineItems[]`,
+  `Loads[]` (`AlvysInvoiceLoadRef`), `Payments[]`. Monetary/`bool` fields are nullable so a
+  missing value is never silently a zero. Unknown JSON is tolerated.
+- **Get-by-id/number** (`GET /api/p/v{version}/invoices?id=…|invoiceNumber=…` →
+  `GetInvoiceAsync`): one of `id`/`invoiceNumber` is required (`InvoiceLookup.Validate`).
+  The internal endpoint returns **400** when no criterion is supplied and **404** when the
+  invoice is not found or upstream degrades to `null`.
+
+#### `visibility/{inbound,outbound}/{loadNumber}/history` → `GET …`
+
+Visibility history is the macropoint-style tracking event log for a load. The error/event
+records are exception context (e.g. a failed visibility share is a signal worth surfacing).
+
+- **Request:** `loadNumber` path parameter only (URL-encoded). No body.
+- **Response** (`AlvysVisibilityHistoryEvent[]`): `Id`, `ExternalId`, `TripNumber`,
+  `LoadNumber`, `EventType`, `SharedAt`, `Destination`, `TruckNumber`, `DriverName`,
+  `TrailerNumber`, `StopId`, `LocationId`, `SharedBy`, `Reason`, `Address`
+  (`AlvysContextAddress`), `Coordinates` (`{Latitude, Longitude}`), `Status`, `Error`. A
+  404 (or any non-success/transport error) degrades to `[]`. Inbound and outbound are
+  separate directions.
+
+#### `trucks/events/search` / `trailers/events/search` → `POST …`
+
+Equipment events (maintenance, out-of-service, inspections) inform match risk and
+explanation. **Availability is never fabricated** — when event data is unavailable the
+event list is simply empty and the matcher must not assume the equipment is free.
+
+- **Truck request** (`TruckEventSearchRequest`): `StartDate` (**required**), optional
+  `EndDate` (omitted when null), `TruckIds[]` (**required**, non-empty). **Trailer
+  request** (`TrailerEventSearchRequest`): same with `TrailerIds[]`.
+- **Local validation** (`Validate`): throws when `StartDate` is null or the id list is
+  empty — enforced before any upstream call.
+- **Response** (`AlvysTruckEvent[]` / `AlvysTrailerEvent[]`, bare array upstream so the
+  client returns `IReadOnlyList<…>`): `Id`, `TruckId`/`TrailerId`, `Title`, `EventType`,
+  `Description`, `StartDate`, `EndDate`, `Address` (`AlvysContextAddress`), `CreatedBy`,
+  `CreatedAt`. A 404 degrades to `[]`.
+
+#### Invoice-driven billing readiness
+
+`BillingReadinessService.Evaluate(load, documents?, invoices?)` now optionally consumes the
+load's invoices (fetched on the detail path via `SearchInvoicesAsync` by load number). When
+a matching invoice looks posted (`IsSubmitted == true`, an `InvoicedDate`, or a posted
+`Status`), the load is treated as already-invoiced (never ready-to-bill) even when the load
+status alone would not say so; any invoice with a positive `RemainingBalance` surfaces as an
+unpaid-balance risk. Omitting invoices leaves the existing load-only inference unchanged, so
+the bulk worklist/sweep paths are not affected.
+
 ## Safety
 
 - **No secret logging.** Token failures log the HTTP status code only — never the
@@ -432,12 +507,14 @@ of truth for the auth/client pattern. Exact files reviewed at `main`:
 ## Read-only stance
 
 This integration phase is **read-only**. The internal API endpoints — the
-`/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search`
-searches plus the `GET /api/alvys/tenders/{tenderId}` lookup, the
-`GET /api/alvys/{loads,trips}?…` load/trip detail lookups, and the
-`GET /api/alvys/loads/{loadNumber}/{documents,notes}` and
-`GET /api/alvys/trips/{tripId}/stops` listings — and the upstream Alvys
-client calls issue queries only. Alvys models searches as `POST` (the filter set is the
+`/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders,invoices}/search`
+and the `/api/alvys/{trucks,trailers}/events/search` searches plus the
+`GET /api/alvys/tenders/{tenderId}` lookup, the
+`GET /api/alvys/{loads,trips,invoices}?…` detail lookups, the
+`GET /api/alvys/loads/{loadNumber}/{documents,notes}`, the
+`GET /api/alvys/trips/{tripId}/stops` and the
+`GET /api/alvys/visibility/{inbound,outbound}/{loadNumber}/history` listings — and the
+upstream Alvys client calls issue queries only. Alvys models searches as `POST` (the filter set is the
 request body) and exposes single-record reads and the sub-resource listings as `GET`,
 but no data is created, updated or deleted and there is no writeback to Alvys. For tenders
 specifically there is no accept/reject/cancel/update/create. No `PUT`/`PATCH`/`DELETE`, no
@@ -448,11 +525,15 @@ provider is opt-in for local/UAT and returns empty (shape-preserving) results.
 ## Next slice
 
 The read-only endpoints now cover loads (search + detail), trips (search + detail + stops),
-equipment (trucks/trailers), the LTL matching context (locations, drivers, dispatch
-preferences, customers, users) and inbound tenders (search + by-id) — enough to assemble a
-trip's route and read the stop-1-to-billed lifecycle, and to start the LTL candidate
-matcher. Next: the matcher domain logic (consolidation candidate
-detection using load geography + customer billing separation + equipment/driver readiness),
-richer normalized read models for the planner/booker views, and the Angular services that
-consume `/api/alvys/*`. Writeback (booking/assignment) remains out of scope until the
-read-only phase is signed off.
+equipment (trucks/trailers + events), the LTL matching context (locations, drivers, dispatch
+preferences, customers, users), inbound tenders (search + by-id), invoices (search + detail)
+and load visibility history (inbound/outbound) — enough to assemble a trip's route, read the
+stop-1-to-billed lifecycle with billing confirmation, and start the LTL candidate matcher.
+Invoices are already wired into billing readiness on the detail path. The recommended next
+slice wires the remaining context into the domain logic: visibility-history errors into
+exception detection, and equipment events into match risk/explanation (without fabricating
+availability). Beyond that: the matcher domain logic (consolidation candidate detection
+using load geography + customer billing separation + equipment/driver readiness), richer
+normalized read models for the planner/booker views, and the Angular services that consume
+`/api/alvys/*`. Writeback (booking/assignment) remains out of scope until the read-only
+phase is signed off.

@@ -110,4 +110,44 @@ public sealed class AlvysProviderSelectionTests
         Assert.Null(await client.GetTripAsync(new TripLookup { Id = "T1" }));
         Assert.Empty(await client.ListTripStopsAsync("T1"));
     }
+
+    [Fact]
+    public async Task Fallback_client_returns_empty_paged_shape_and_null_for_invoices()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        var invoices = await client.SearchInvoicesAsync(new InvoiceSearchRequest { LoadNumbers = ["100"] });
+
+        Assert.Empty(invoices.Items);
+        Assert.Null(await client.GetInvoiceAsync(new InvoiceLookup { Id = "I1" }));
+    }
+
+    [Fact]
+    public async Task Fallback_client_returns_empty_arrays_for_visibility_history()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        Assert.Empty(await client.ListInboundVisibilityHistoryAsync("100"));
+        Assert.Empty(await client.ListOutboundVisibilityHistoryAsync("100"));
+    }
+
+    [Fact]
+    public async Task Fallback_client_returns_empty_arrays_for_truck_and_trailer_events()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        var truckEvents = await client.SearchTruckEventsAsync(new TruckEventSearchRequest
+        {
+            StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            TruckIds = ["TK1"],
+        });
+        var trailerEvents = await client.SearchTrailerEventsAsync(new TrailerEventSearchRequest
+        {
+            StartDate = DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            TrailerIds = ["TR1"],
+        });
+
+        Assert.Empty(truckEvents);
+        Assert.Empty(trailerEvents);
+    }
 }

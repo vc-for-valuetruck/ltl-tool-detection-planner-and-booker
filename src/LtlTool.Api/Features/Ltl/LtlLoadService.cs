@@ -44,14 +44,34 @@ public sealed class LtlLoadService(
         };
     }
 
-    /// <summary>Single-load detail, normalized with POD-aware billing (documents fetched).</summary>
+    /// <summary>
+    /// Single-load detail, normalized with POD-aware billing (documents fetched) and invoice-aware
+    /// billing (invoices fetched by load number). Invoice/document reads degrade to empty on the
+    /// read-only client, so detail still renders when those sub-resources are unavailable.
+    /// </summary>
     public async Task<LtlLoadSummary?> GetDetailAsync(string idOrNumber, CancellationToken ct)
     {
         var load = await ResolveLoadAsync(idOrNumber, ct);
         if (load is null) return null;
 
-        var documents = await alvys.ListLoadDocumentsAsync(load.LoadNumber ?? idOrNumber, ct);
-        return normalizer.Normalize(load, documents);
+        var loadNumber = load.LoadNumber ?? idOrNumber;
+        var documents = await alvys.ListLoadDocumentsAsync(loadNumber, ct);
+        var invoices = await FetchInvoicesForLoadAsync(loadNumber, ct);
+        return normalizer.Normalize(load, documents, invoices);
+    }
+
+    /// <summary>
+    /// Fetches invoices linked to a single load number (read-only). Returns an empty list when
+    /// none exist or the upstream degrades — never fabricates billing state.
+    /// </summary>
+    private async Task<IReadOnlyList<AlvysInvoice>> FetchInvoicesForLoadAsync(
+        string loadNumber, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(loadNumber)) return [];
+
+        var response = await alvys.SearchInvoicesAsync(
+            new InvoiceSearchRequest { Page = 0, PageSize = 50, LoadNumbers = [loadNumber] }, ct);
+        return response.Items;
     }
 
     /// <summary>Raw + documents resolution used by detail and matching.</summary>
