@@ -18,6 +18,10 @@ public static class AlvysApiRoutes
 
     public static string TripsSearch(string? apiVersion) => BuildSearchPath(apiVersion, "trips");
 
+    public static string TrailersSearch(string? apiVersion) => BuildSearchPath(apiVersion, "trailers");
+
+    public static string TrucksSearch(string? apiVersion) => BuildSearchPath(apiVersion, "trucks");
+
     /// <summary>Relative path <c>api/p/v{version}/{resource}/search</c>.</summary>
     public static string BuildSearchPath(string? apiVersion, string resource)
         => $"api/p/{NormalizeVersion(apiVersion)}/{resource}/search";

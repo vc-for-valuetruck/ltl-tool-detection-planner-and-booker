@@ -25,4 +25,12 @@ public sealed class FallbackAlvysClient : IAlvysClient
     public Task<AlvysTripsResponse> SearchTripsAsync(
         TripSearchRequest request, CancellationToken ct = default)
         => Task.FromResult(new AlvysTripsResponse());
+
+    public Task<AlvysTrailersResponse> SearchTrailersAsync(
+        TrailerSearchRequest request, CancellationToken ct = default)
+        => Task.FromResult(new AlvysTrailersResponse());
+
+    public Task<AlvysTrucksResponse> SearchTrucksAsync(
+        TruckSearchRequest request, CancellationToken ct = default)
+        => Task.FromResult(new AlvysTrucksResponse());
 }
