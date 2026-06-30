@@ -1,0 +1,121 @@
+<div class="alvys-ops">
+  <h4>Alvys writeback readiness</h4>
+
+  @if (loading()) {
+    <p class="muted">Loading Alvys readiness…</p>
+  } @else if (error(); as err) {
+    <div class="assign-error">{{ err }}</div>
+  } @else if (status(); as s) {
+    <!-- Headline posture banner. -->
+    @switch (posture()) {
+      @case ('sandbox') {
+        <div class="posture posture-sandbox">
+          Ready for sandbox note/writeback &mdash; sandbox execution is configured.
+        </div>
+      }
+      @case ('simulation') {
+        <div class="posture posture-sim">
+          Simulation only &mdash; payloads are previewed but never sent to Alvys.
+        </div>
+      }
+      @default {
+        <div class="posture posture-audit">
+          Audit only &mdash; sandbox writeback is disabled. Nothing is sent to Alvys.
+        </div>
+      }
+    }
+
+    <dl class="ops-meta">
+      <dt>Mode</dt><dd>{{ s.writebackMode }}</dd>
+      <dt>Source of truth</dt><dd>{{ s.provider }} ({{ s.apiBaseUrl }})</dd>
+      <dt>Credentials</dt><dd>{{ s.hasCredentials ? 'configured' : 'not configured' }}</dd>
+      @if (s.sandboxBaseUrl) { <dt>Sandbox host</dt><dd>{{ s.sandboxBaseUrl }}</dd> }
+      <dt>Last read sync</dt>
+      <dd>
+        {{ s.lastReadSyncOutcome }}
+        @if (s.lastReadSyncAt) { · {{ s.lastReadSyncAt | date: 'short' }} }
+        @if (s.lastReadSyncDetail) { <span class="muted">· {{ s.lastReadSyncDetail }}</span> }
+      </dd>
+    </dl>
+
+    <div class="ops-actions">
+      <button type="button" (click)="runProbe()" [disabled]="probing()">
+        {{ probing() ? 'Probing…' : 'Probe read sync' }}
+      </button>
+    </div>
+
+    @if (s.blockers.length > 0) {
+      <div class="blockers">
+        <strong>Sandbox writeback blocked by:</strong>
+        <ul>
+          @for (b of s.blockers; track b) { <li>{{ b }}</li> }
+        </ul>
+      </div>
+    }
+
+    <!-- Per-operation eligibility. -->
+    <table class="ops-table">
+      <thead>
+        <tr><th>Operation</th><th>Stage</th><th>Eligibility</th></tr>
+      </thead>
+      <tbody>
+        @for (op of s.operations; track op.code) {
+          <tr>
+            <td>
+              {{ op.title }}
+              @if (op.requiresEtag) { <span class="badge badge-muted">ETag</span> }
+              @if (op.requiredToEnable) {
+                <div class="muted required">Needs: {{ op.requiredToEnable }}</div>
+              }
+            </td>
+            <td>{{ op.workflowStage }}</td>
+            <td><span [class]="eligibilityClass(op.eligibility)">{{ eligibilityText(op.eligibility) }}</span></td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    <!-- Dry-run payload preview for the load note. -->
+    <div class="dry-run">
+      <h5>Dry-run load note</h5>
+      @if (loadNumber(); as load) {
+        <p class="muted">Previews the payload for load {{ load }} &mdash; never sent to Alvys.</p>
+        <label class="wide">Note text
+          <input type="text" [ngModel]="noteText()" (ngModelChange)="noteText.set($event)"
+                 name="opsNote" placeholder="Assignment / billing audit note" />
+        </label>
+        <button type="button" (click)="dryRunNote()" [disabled]="!noteText().trim() || dryRunning()">
+          {{ dryRunning() ? 'Building…' : 'Preview payload' }}
+        </button>
+
+        @if (outcomeError(); as err) { <div class="assign-error">{{ err }}</div> }
+
+        @if (outcome(); as o) {
+          <div class="outcome">
+            <div class="outcome-line">
+              <span class="badge badge-muted">{{ o.disposition }}</span>
+              <span class="muted">executed: {{ o.executed }}</span>
+            </div>
+            <p>{{ o.message }}</p>
+            @if (o.payload; as p) {
+              <p class="muted">Target: {{ p.targetDescription }}</p>
+              <pre class="payload">{{ p.body | json }}</pre>
+            }
+            @if (o.validation.length > 0) {
+              <ul class="issues">
+                @for (v of o.validation; track v.code) {
+                  <li class="issue issue-block"><span class="issue-sev">{{ v.code }}</span> {{ v.message }}</li>
+                }
+              </ul>
+            }
+            @if (o.requiredToEnable) {
+              <p class="muted required">To enable live: {{ o.requiredToEnable }}</p>
+            }
+          </div>
+        }
+      } @else {
+        <p class="muted">Select a load to preview a note payload.</p>
+      }
+    </div>
+  }
+</div>

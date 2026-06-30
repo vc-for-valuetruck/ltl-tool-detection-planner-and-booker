@@ -559,6 +559,103 @@ POST note/document creation, and no POST-mutation (other than the Alvys-defined 
 `POST`) calls are made. Live Alvys remains the default source of truth; the `Fallback`
 provider is opt-in for local/UAT and returns empty (shape-preserving) results.
 
+## Sandbox-gated writeback boundary
+
+The read-only stance above still holds for live Alvys: **no operation in this phase performs a
+live Alvys mutation.** On top of the read integration there is now a deliberately-gated
+*writeback boundary* that lets dispatchers build, validate and preview the write-oriented
+operations of the Search → Match → Assign → Bill workflow without ever sending them upstream. It
+exists so the operational UI can state, explicitly and per-operation, whether an action is
+audit-only, simulation-only, eligible for sandbox execution, or unsupported — and exactly what is
+required to enable it.
+
+All under `src/LtlTool.Api/Features/Integrations/Alvys/Writeback/` (+ the
+`AlvysOperationsController` in `src/LtlTool.Api/Features/Alvys/`):
+
+| File | Purpose |
+| --- | --- |
+| `AlvysWriteOptions.cs` | `AlvysWritebackMode` (`Disabled`/`Simulation`/`Sandbox`) + config (`Environment`, `SandboxBaseUrl`) and the sandbox-recognition guards. Bound from `Alvys:Writeback`. |
+| `AlvysWriteOperations.cs` | The operation catalogue (`AlvysWriteOperationRegistry`). Each descriptor records its workflow stage, whether it needs an ETag, its live-execution support, and what is required to enable it. |
+| `AlvysOperationModels.cs` | Request/disposition/issue/payload/outcome contracts shared by dry-run and execute. |
+| `AlvysWriteGateway.cs` | The single boundary every operation passes through: validates inputs, builds the preview payload, and decides the disposition from mode + live support. **Never calls Alvys.** |
+| `AlvysSyncTracker.cs` | In-memory "last read sync" outcome/time/detail for the readiness snapshot. |
+| `AlvysReadinessService.cs` | Computes the readiness snapshot: provider/credential/config readiness, active mode, per-operation eligibility, blockers. Surfaces no secrets. |
+| `AlvysOperationsController.cs` | `/api/alvys/ops/*` endpoints (below), same `AllowedEmailDomain` policy as the rest of the API. |
+
+### Modes
+
+| Mode | Disposition | Meaning |
+| --- | --- | --- |
+| `Disabled` (default) | `AuditOnly` | Payload is built/recorded for audit only; never sent. Safe default for a fresh clone, CI and production. |
+| `Simulation` | `Simulated` | Dry-run: payload built and validated for preview; never sent. |
+| `Sandbox` | `Unsupported` (this phase) | Eligible for non-production sandbox execution **only** when fully configured (recognised sandbox environment + non-production sandbox base URL + credentials). Even fully configured, every operation stays `Unsupported` until a documented Alvys mutating endpoint is wired. |
+
+`Sandbox` is refused unless `Environment` is one of `sandbox`/`uat`/`staging`/`test` and
+`SandboxBaseUrl` is set to a non-production host (it explicitly rejects `integrations.alvys.com`),
+so flipping the mode alone can never reach a production tenant.
+
+### Operations (catalogue)
+
+Every operation is currently `Unsupported` for live execution: **the Alvys docs captured in this
+repo cover read endpoints only, so we deliberately do not invent mutating routes.** Each records
+exactly what is required to turn live sandbox execution on.
+
+| Code | Stage | ETag | Live support | Required to enable |
+| --- | --- | --- | --- | --- |
+| `create-load-note` | Assign/Bill | no | Unsupported | A documented `POST loads/{loadNumber}/notes` (verb + path + body). Repo documents the read-only GET notes listing only. |
+| `tender-accept` | Match/Assign | yes | Unsupported | A documented tender-accept endpoint + ETag/concurrency contract. Repo documents tender search + get-by-id only. |
+| `trip-stop-arrival` | Assign | no | Unsupported | A documented trip-stop arrival endpoint. Repo documents the read-only GET trip stops listing only. |
+| `trip-stop-departure` | Assign | no | Unsupported | A documented trip-stop departure endpoint. Repo documents the read-only GET trip stops listing only. |
+| `load-update` | Assign/Bill | yes | Unsupported | A documented load-update endpoint, the safely-editable field set, and the ETag/concurrency contract. Repo documents read-only load search/detail only. |
+
+ETag-gated operations (`tender-accept`, `load-update`) are **blocked** at validation time without an
+ETag, so a concurrent change could never be silently clobbered once live execution is enabled.
+
+### Internal endpoints
+
+`AlvysOperationsController`, route prefix `/api/alvys/ops`, `AllowedEmailDomain` policy
+(unauthenticated → 401, not 404).
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/alvys/ops/status` | The readiness snapshot (mode, per-operation eligibility, blockers, last read sync). No secrets. |
+| `GET /api/alvys/ops/operations` | The operation catalogue + live-support + required-to-enable docs. |
+| `POST /api/alvys/ops/{operation}/dry-run` | Builds + validates the payload and returns the preview. 404 for an unknown operation. Never sent. |
+| `POST /api/alvys/ops/{operation}/execute` | Honours the configured mode; resolves to audit-only/simulated/unsupported in this phase. 404 unknown, 422 when validation blocks. Never sent. |
+| `POST /api/alvys/ops/sync/probe` | Opt-in bounded **read** (`users/search`, page size 1) that records a "last successful read" time. A read, never a mutation. |
+
+### Configuration
+
+| Key | Env var | Default | Notes |
+| --- | --- | --- | --- |
+| `Alvys:Writeback:Mode` | `ALVYS_WRITEBACK_MODE` | `Disabled` | `Disabled`/`Simulation`/`Sandbox`. |
+| `Alvys:Writeback:Environment` | `ALVYS_WRITEBACK_ENVIRONMENT` | _(empty)_ | Must be `sandbox`/`uat`/`staging`/`test` for sandbox mode. |
+| `Alvys:Writeback:SandboxBaseUrl` | `ALVYS_WRITEBACK_SANDBOX_BASE_URL` | _(empty)_ | Non-production sandbox host. Rejects the production host. |
+
+Writeback reuses the same server-side OAuth credentials as the read client (never surfaced to the
+SPA) but a distinct sandbox base URL so sandbox traffic is physically separated from the read
+source-of-truth host.
+
+### Operational UI
+
+The Assign/Bill drawer in the `/ltl` console renders an Alvys writeback-readiness panel
+(`web/src/app/features/ltl/alvys-ops-panel.*`, served by `AlvysOpsService`) that shows the headline
+posture ("Audit only" / "Simulation only" / "Ready for sandbox note/writeback"), the explicit
+blockers, per-operation eligibility, and a dry-run payload preview for the load note. It consumes
+`/api/alvys/ops/*` only — it never holds Alvys credentials and never writes to browser storage.
+
+### What is required to enable live sandbox execution
+
+1. A documented Alvys mutating endpoint (verb + path + request body) for the operation, plus its
+   ETag/concurrency contract where applicable. Flip the operation's `LiveSupport` to `Supported` in
+   `AlvysWriteOperationRegistry` and wire the upstream call in the single guarded branch of
+   `AlvysWriteGateway` (the only place a live call would ever be issued).
+2. Non-production sandbox credentials and a sandbox base URL, with `ALVYS_WRITEBACK_MODE=Sandbox`
+   and `ALVYS_WRITEBACK_ENVIRONMENT` set to a recognised sandbox label.
+
+Until both are in place the boundary stays audit/simulation-only and reports `Unsupported` for live
+execution — by design.
+
 ## Next slice
 
 The read-only endpoints now cover loads (search + detail), trips (search + detail + stops),

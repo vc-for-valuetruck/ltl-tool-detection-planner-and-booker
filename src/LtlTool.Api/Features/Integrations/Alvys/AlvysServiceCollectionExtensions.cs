@@ -1,10 +1,14 @@
+using LtlTool.Api.Features.Integrations.Alvys.Writeback;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Features.Integrations.Alvys;
 
 /// <summary>
 /// DI wiring for the Alvys integration. Live Alvys is the default source of
-/// truth; the fallback provider is opt-in for local/UAT only.
+/// truth; the fallback provider is opt-in for local/UAT only. The writeback
+/// boundary is disabled by default and never performs a live Alvys mutation
+/// in this phase.
 /// </summary>
 public static class AlvysServiceCollectionExtensions
 {
@@ -14,6 +18,16 @@ public static class AlvysServiceCollectionExtensions
         services
             .AddOptions<AlvysOptions>()
             .Bind(configuration.GetSection(AlvysOptions.SectionName));
+
+        // Sandbox-gated writeback boundary. Bound from "Alvys:Writeback"; defaults to Disabled so
+        // a fresh clone / CI / production never writes back to Alvys.
+        services
+            .AddOptions<AlvysWriteOptions>()
+            .Bind(configuration.GetSection(AlvysWriteOptions.SectionName));
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IAlvysSyncTracker, InMemoryAlvysSyncTracker>();
+        services.AddScoped<IAlvysWriteGateway, AlvysWriteGateway>();
+        services.AddScoped<IAlvysReadinessService, AlvysReadinessService>();
 
         var options = configuration.GetSection(AlvysOptions.SectionName).Get<AlvysOptions>()
             ?? new AlvysOptions();
