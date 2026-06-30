@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace MyApp.Api.Data;
+namespace LtlTool.Api.Data;
 
 /// <summary>
 /// Application database context. Add your DbSet&lt;T&gt; entities here as your

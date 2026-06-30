@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 API_PORT="${API_PORT:-5072}"
 WEB_PORT="${WEB_PORT:-4200}"
-API_PROJECT="${API_PROJECT:-src/MyApp.Api/MyApp.Api.csproj}"
+API_PROJECT="${API_PROJECT:-src/LtlTool.Api/LtlTool.Api.csproj}"
 
 cd "$ROOT"
 

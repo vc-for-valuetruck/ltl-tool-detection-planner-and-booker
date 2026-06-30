@@ -1,9 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using MyApp.Api.Security;
+using LtlTool.Api.Security;
 
-namespace MyApp.Api.Features.Me;
+namespace LtlTool.Api.Features.Me;
 
 /// <summary>
 /// Sample protected endpoint. Requires a valid Entra token whose email domain

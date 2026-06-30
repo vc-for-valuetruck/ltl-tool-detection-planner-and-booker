@@ -1,13 +1,13 @@
 -- Template Seed Data
 -- Replace with your app-specific demo data.
 
-IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'MyApp')
+IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'LtlTool')
 BEGIN
-  CREATE DATABASE MyApp;
+  CREATE DATABASE LtlTool;
 END
 GO
 
-USE MyApp;
+USE LtlTool;
 GO
 
 -- Add your tables and seed data here

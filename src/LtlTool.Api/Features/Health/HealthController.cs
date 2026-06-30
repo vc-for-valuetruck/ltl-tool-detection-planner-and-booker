@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace MyApp.Api.Features.Health;
+namespace LtlTool.Api.Features.Health;
 
 [ApiController]
 [Route("api/health")]

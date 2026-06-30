@@ -1,8 +1,8 @@
-# UAT Template
+# LTL Tool Detection, Planner, and Booker
 
-This repository is a reusable internal application template. It is not an application
-itself. Application-specific product goals and workflows belong in repositories created
-from this template.
+Internal app for Value Truck dispatchers, built from the Value Truck UAT template.
+This Phase 1 slice contains the renamed template plumbing only — LTL domain
+features (detection, planning, booking) are not implemented yet.
 
 It ships a pre-wired full-stack starter:
 
@@ -32,10 +32,10 @@ It ships a pre-wired full-stack starter:
 ├── docs/                       # codespaces-demo.md, demo-ngrok.md runbooks
 ├── scripts/                    # start-codespaces-demo.sh
 ├── .github/workflows/ci.yml    # build + test API and build web
-├── MyApp.sln                   # .NET solution
+├── LtlTool.sln                   # .NET solution
 ├── src/
-│   ├── MyApp.Api/              # .NET 10 Web API
-│   └── MyApp.Api.Tests/        # xUnit tests
+│   ├── LtlTool.Api/              # .NET 10 Web API
+│   └── LtlTool.Api.Tests/        # xUnit tests
 └── web/                        # Angular 20 SPA
 ```
 
@@ -83,7 +83,7 @@ so you can verify the stack end-to-end first, then wire up authentication.
 You can also run the pieces directly without Docker:
 
 ```bash
-dotnet run --project src/MyApp.Api      # API on http://localhost:5072
+dotnet run --project src/LtlTool.Api      # API on http://localhost:5072
 cd web && npm install && npm start      # SPA on http://localhost:4200
 ```
 
@@ -104,6 +104,8 @@ Copy `.env.example` to `.env` and fill in:
 | `MSSQL_SA_PASSWORD` | SQL Server `sa` password |
 | `EXTERNAL_API_BASE_URL` | Optional outbound API base URL |
 | `EXTERNAL_API_KEY` | Optional outbound API key |
+| `ALVYS_*` | Alvys TMS integration (API only; blank until Phase 2). Never exposed to the SPA |
+| `LTL_*` | LTL tool app settings (API only; safe defaults) |
 
 These map to .NET configuration (`AzureAd__*`, `AccessPolicy__*`, `ExternalApi__*`,
 `ConnectionStrings__DefaultConnection`) and Angular runtime config (`RUNTIME_*`) in
@@ -114,40 +116,32 @@ These map to .NET configuration (`AzureAd__*`, `AccessPolicy__*`, `ExternalApi__
 
 ---
 
-## 5. Rename checklist
+## 5. Naming
 
-The template uses the placeholders `MyApp` (Pascal case) and `myapp` (lower case).
-Replace them with your application name in:
+This repo has already been renamed from the template placeholders to the app
+identity:
 
-```text
-src/MyApp.Api/                  # rename the folder
-src/MyApp.Api/MyApp.Api.csproj  # rename the file + RootNamespace/AssemblyName
-src/MyApp.Api.Tests/            # rename the folder + csproj
-MyApp.sln                       # solution name + project paths
-docker-compose.yml              # name:, image:, container_name:, Database=, Dockerfile paths
-web/package.json                # "name": "myapp-web"
-web/src/index.html              # <title>MyApp</title>
-web/angular.json                # project name + outputPath / buildTarget
-init/01-seed.sql                # database name
-.devcontainer/devcontainer.json # "name"
-docker-compose.demo.yml         # ngrok container_name
-scripts/start-codespaces-demo.sh# API_PROJECT default path
-```
+- PascalCase project / namespace: `LtlTool` (`src/LtlTool.Api`, `LtlTool.sln`)
+- Database name: `LtlTool`
+- Web package / Angular project: `ltl-tool-detection-planner-and-booker-web`
+- Docker Compose project / image / container prefix: `ltl-tool-detection-planner-and-booker`
+- Browser title / app heading: `LTL Tool Detection, Planner, and Booker`
 
-A quick find (review before replacing):
+The original template placeholders (`MyApp` / `myapp`) should no longer appear.
+A quick check:
 
 ```bash
 grep -rIl --exclude-dir=node_modules --exclude-dir=bin --exclude-dir=obj --exclude-dir=dist 'MyApp\|myapp' .
 ```
 
-After renaming, run the commands in section 9 to confirm everything still builds.
+After any further renames, run the commands in section 9 to confirm everything still builds.
 
 ---
 
 ## 6. Backend structure
 
 ```text
-src/MyApp.Api/
+src/LtlTool.Api/
 ├── Program.cs               # auth, CORS, EF, options wiring
 ├── appsettings.json         # default config (overridden by env in Docker)
 ├── Dockerfile
@@ -200,7 +194,7 @@ in alphabetical order (mounted to `/docker-entrypoint-initdb.d`). Edit
 make reset   # tears down volumes and re-seeds from init/
 ```
 
-For schema managed in code, add EF Core migrations in `src/MyApp.Api` and apply them
+For schema managed in code, add EF Core migrations in `src/LtlTool.Api` and apply them
 on startup or via `dotnet ef database update`.
 
 ---
