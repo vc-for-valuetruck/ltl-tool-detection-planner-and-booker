@@ -65,4 +65,59 @@ public sealed class AlvysSearchController(IAlvysClient alvys) : ControllerBase
     public async Task<ActionResult<AlvysTrucksResponse>> SearchTrucks(
         [FromBody] TruckSearchRequest request, CancellationToken ct)
         => Ok(await alvys.SearchTrucksAsync(request, ct));
+
+    /// <summary>
+    /// Read-only dispatch-preference search (dispatcher/driver/truck/trailer assignment
+    /// context). Passes <paramref name="request"/> through to
+    /// <see cref="IAlvysClient.SearchDispatchPreferencesAsync(DispatchPreferenceSearchRequest, CancellationToken)"/>.
+    /// Returns a bare array, matching the upstream Alvys shape.
+    /// </summary>
+    [HttpPost("dispatch-preferences/search")]
+    [ProducesResponseType(typeof(IReadOnlyList<AlvysDispatchPreference>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AlvysDispatchPreference>>> SearchDispatchPreferences(
+        [FromBody] DispatchPreferenceSearchRequest request, CancellationToken ct)
+        => Ok(await alvys.SearchDispatchPreferencesAsync(request, ct));
+
+    /// <summary>
+    /// Read-only location search (pickup/delivery/hub/yard geography, shipper/consignee/
+    /// warehouse context). Passes <paramref name="request"/> through to
+    /// <see cref="IAlvysClient.SearchLocationsAsync(LocationSearchRequest, CancellationToken)"/>.
+    /// </summary>
+    [HttpPost("locations/search")]
+    [ProducesResponseType(typeof(AlvysLocationsResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AlvysLocationsResponse>> SearchLocations(
+        [FromBody] LocationSearchRequest request, CancellationToken ct)
+        => Ok(await alvys.SearchLocationsAsync(request, ct));
+
+    /// <summary>
+    /// Read-only driver search (assignment/readiness context). Passes <paramref name="request"/>
+    /// through to <see cref="IAlvysClient.SearchDriversAsync(DriverSearchRequest, CancellationToken)"/>.
+    /// </summary>
+    [HttpPost("drivers/search")]
+    [ProducesResponseType(typeof(AlvysDriversResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AlvysDriversResponse>> SearchDrivers(
+        [FromBody] DriverSearchRequest request, CancellationToken ct)
+        => Ok(await alvys.SearchDriversAsync(request, ct));
+
+    /// <summary>
+    /// Read-only customer search (billing separation, customer policy/approval, customer-
+    /// specific matching context). Passes <paramref name="request"/> through to
+    /// <see cref="IAlvysClient.SearchCustomersAsync(CustomerSearchRequest, CancellationToken)"/>.
+    /// </summary>
+    [HttpPost("customers/search")]
+    [ProducesResponseType(typeof(AlvysCustomersResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AlvysCustomersResponse>> SearchCustomers(
+        [FromBody] CustomerSearchRequest request, CancellationToken ct)
+        => Ok(await alvys.SearchCustomersAsync(request, ct));
+
+    /// <summary>
+    /// Read-only user search (dispatcher display names/roles/filters). Passes
+    /// <paramref name="request"/> through to
+    /// <see cref="IAlvysClient.SearchUsersAsync(UserSearchRequest, CancellationToken)"/>.
+    /// </summary>
+    [HttpPost("users/search")]
+    [ProducesResponseType(typeof(AlvysUsersResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AlvysUsersResponse>> SearchUsers(
+        [FromBody] UserSearchRequest request, CancellationToken ct)
+        => Ok(await alvys.SearchUsersAsync(request, ct));
 }

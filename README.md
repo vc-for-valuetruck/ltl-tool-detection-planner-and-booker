@@ -151,7 +151,7 @@ src/LtlTool.Api/
 └── Features/                # vertical-slice features
     ├── Health/              # GET /api/health (anonymous liveness)
     ├── Me/                  # GET /api/me (protected sample endpoint)
-    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks}/search (protected, read-only)
+    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users}/search (protected, read-only)
     └── Integrations/Alvys/  # server-side Alvys client (IAlvysClient) — credentials never leave the API
 ```
 
@@ -170,6 +170,11 @@ unauthenticated). Live Alvys remains the default source of truth.
 | `POST /api/alvys/trips/search` | `TripSearchRequest` | paged trips |
 | `POST /api/alvys/trailers/search` | `TrailerSearchRequest` | paged trailer equipment |
 | `POST /api/alvys/trucks/search` | `TruckSearchRequest` | paged truck equipment |
+| `POST /api/alvys/dispatch-preferences/search` | `DispatchPreferenceSearchRequest` | dispatcher/driver/truck/trailer assignment pairings (bare array) |
+| `POST /api/alvys/locations/search` | `LocationSearchRequest` | paged locations (geography / shipper-consignee-warehouse) |
+| `POST /api/alvys/drivers/search` | `DriverSearchRequest` | paged drivers (assignment/readiness) |
+| `POST /api/alvys/customers/search` | `CustomerSearchRequest` | paged customers (billing/matching context) |
+| `POST /api/alvys/users/search` | `UserSearchRequest` | paged users (dispatcher names/roles) |
 
 Add new functionality as a folder under `Features/` (controller + service + DTOs).
 

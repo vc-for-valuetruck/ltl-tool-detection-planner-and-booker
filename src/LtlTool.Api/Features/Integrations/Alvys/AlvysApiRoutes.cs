@@ -22,6 +22,17 @@ public static class AlvysApiRoutes
 
     public static string TrucksSearch(string? apiVersion) => BuildSearchPath(apiVersion, "trucks");
 
+    public static string DispatchPreferencesSearch(string? apiVersion)
+        => BuildSearchPath(apiVersion, "dispatchpreferences");
+
+    public static string LocationsSearch(string? apiVersion) => BuildSearchPath(apiVersion, "locations");
+
+    public static string DriversSearch(string? apiVersion) => BuildSearchPath(apiVersion, "drivers");
+
+    public static string CustomersSearch(string? apiVersion) => BuildSearchPath(apiVersion, "customers");
+
+    public static string UsersSearch(string? apiVersion) => BuildSearchPath(apiVersion, "users");
+
     /// <summary>Relative path <c>api/p/v{version}/{resource}/search</c>.</summary>
     public static string BuildSearchPath(string? apiVersion, string resource)
         => $"api/p/{NormalizeVersion(apiVersion)}/{resource}/search";

@@ -58,12 +58,12 @@ All under `src/LtlTool.Api/Features/Integrations/Alvys/`:
 | File | Purpose |
 | --- | --- |
 | `AlvysOptions.cs` | Strongly-typed config (`ApiBaseUrl` host + `ApiVersion`) + `AlvysProvider` enum (`Live`/`Fallback`). |
-| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `SearchTripsAsync`, `SearchTrailersAsync`, `SearchTrucksAsync`). |
+| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `SearchTripsAsync`, `SearchTrailersAsync`, `SearchTrucksAsync`, `SearchDispatchPreferencesAsync`, `SearchLocationsAsync`, `SearchDriversAsync`, `SearchCustomersAsync`, `SearchUsersAsync`). |
 | `AlvysClient.cs` | Live client; default source of truth. Named `HttpClient` + bearer token per request. |
 | `AlvysApiRoutes.cs` | Builds versioned `/api/p/v{version}/...` paths and normalizes the version (no double `v`). |
 | `AlvysTokenProvider.cs` | OAuth2 token acquisition + caching (`IAlvysTokenProvider`). |
 | `FallbackAlvysClient.cs` | Non-default empty-result stub for local/UAT only. |
-| `AlvysDtos.cs` | Load + trip + trailer + truck search request/response DTOs + token response. |
+| `AlvysDtos.cs` | Load + trip + trailer + truck + dispatch-preference + location + driver + customer + user search request/response DTOs + token response. |
 | `AlvysServiceCollectionExtensions.cs` | DI wiring + provider selection (live default). |
 
 ## Internal read-only API endpoints
@@ -82,8 +82,13 @@ no token/config/secret is ever in the response (covered by
 | `POST /api/alvys/trips/search` | `TripSearchRequest` | `SearchTripsAsync` | `POST /api/p/v{version}/trips/search` |
 | `POST /api/alvys/trailers/search` | `TrailerSearchRequest` | `SearchTrailersAsync` | `POST /api/p/v{version}/trailers/search` |
 | `POST /api/alvys/trucks/search` | `TruckSearchRequest` | `SearchTrucksAsync` | `POST /api/p/v{version}/trucks/search` |
+| `POST /api/alvys/dispatch-preferences/search` | `DispatchPreferenceSearchRequest` | `SearchDispatchPreferencesAsync` | `POST /api/p/v{version}/dispatchpreferences/search` |
+| `POST /api/alvys/locations/search` | `LocationSearchRequest` | `SearchLocationsAsync` | `POST /api/p/v{version}/locations/search` |
+| `POST /api/alvys/drivers/search` | `DriverSearchRequest` | `SearchDriversAsync` | `POST /api/p/v{version}/drivers/search` |
+| `POST /api/alvys/customers/search` | `CustomerSearchRequest` | `SearchCustomersAsync` | `POST /api/p/v{version}/customers/search` |
+| `POST /api/alvys/users/search` | `UserSearchRequest` | `SearchUsersAsync` | `POST /api/p/v{version}/users/search` |
 
-- **Authorization.** All four require the `AllowedEmailDomain` policy, same as
+- **Authorization.** All require the `AllowedEmailDomain` policy, same as
   `/api/me`. An unauthenticated request returns 401 (not 404) because the route is
   matched before authorization runs — see `AlvysSearchEndpointTests`. Health stays
   anonymous.
@@ -172,6 +177,93 @@ readiness decisions. **Read-only** — queries only.
   `FuelType`, `FuelCards[]`, insurance/inspection fields, `Notes[]`, `References[]`,
   `CreatedAt`. Nested fuel/weight fields are kept minimal and unknown JSON is tolerated.
 
+### LTL matching context resources
+
+The following five resources add the context the LTL candidate matcher needs:
+locations (geography), drivers (assignment/readiness), dispatch preferences
+(dispatcher/driver/truck/trailer pairing), customers (billing separation / customer
+matching) and users (dispatcher display names/roles). All are **read-only** queries.
+
+> Note on shared shapes: these resources return `ZipCode` (not `Zip`) and no country, so
+> they use a dedicated `AlvysContextAddress`. Their notes use a richer shape than load
+> notes (`id`/`Description`/`NoteType`/`Time`/`User`/`UserId`), modelled as
+> `AlvysContextNote`. Both are distinct from the load `AlvysAddress`/`AlvysNote` types.
+
+#### `dispatchpreferences/search` → `POST /api/p/v{version}/dispatchpreferences/search`
+
+Dispatcher/driver/truck/trailer assignment pairings. **The upstream response is a bare
+array** (not a paged envelope), so the client returns `IReadOnlyList<AlvysDispatchPreference>`
+and the internal endpoint returns a bare JSON array.
+
+- **Request** (`DispatchPreferenceSearchRequest`): all optional — `DispatcherIds[]`,
+  `DriverIds[]`, `TruckIds[]`, `TrailerIds[]`, `UpdatedAtStart`, `UpdatedAtEnd`. No
+  `PageSize` (the endpoint is not paged), so there is no local validation.
+- **Response** (`AlvysDispatchPreference[]`): `UpdatedAt` (required), `DispatcherId?`,
+  `Driver1Id?`, `Driver2Id?`, `TruckId?`, `TrailerId?`.
+
+#### `locations/search` → `POST /api/p/v{version}/locations/search`
+
+Pickup/delivery/hub/yard geography and shipper/consignee/warehouse context.
+
+- **Request** (`LocationSearchRequest`): `Page` (0-based), `PageSize` (> 0), optional
+  `Status[]` (Active/Disabled/Inactive), `LocationIds[]`, `CreatedDateRange`.
+- **Local validation** (`Validate`): only `PageSize > 0`.
+- **Response** (`AlvysLocationsResponse` = paged envelope; `Facets`/`Aggregations` and any
+  unknown JSON are tolerated): `AlvysLocation` — `Id`, `Name`, `CompanyNumber`, `Type`,
+  `Status`, `PhysicalAddress` (`AlvysContextAddress`), `Email[]`, `Phone[]`, `Fax?`,
+  `DateCreated?`, `ExternalId?`, `Notes[]` (`AlvysContextNote`).
+
+#### `drivers/search` → `POST /api/p/v{version}/drivers/search`
+
+Driver assignment/readiness context.
+
+- **Request** (`DriverSearchRequest`): `Page` (0-based), `PageSize` (> 0), optional
+  `Status[]`, `Name`, `EmployeeId`, `FleetName`, `IsActive`.
+- **Local validation** (`Validate`): only `PageSize > 0`. Alvys enforces the conditional-
+  filter requirement server-side.
+- **Response** (`AlvysDriversResponse` = paged envelope): `AlvysDriver` — `Id`,
+  `EmployeeId?`, `PhoneNumber?`, `UserId?`, `Email?`, `Name`, `Type`, `SubsidiaryId`,
+  `Address?` (`AlvysContextAddress`), `Status`, `IsActive`, license fields and expiries,
+  `MedicalExpiresAt?`, `HiredAt?`, `TerminatedAt?`, `Notes[]` (`AlvysContextNote`),
+  `Fleet?` (`AlvysFleet`), `References[]` (`AlvysDriverReference`), `CreatedAt`.
+
+#### `customers/search` → `POST /api/p/v{version}/customers/search`
+
+Billing separation, customer policy/approval and customer-specific matching context.
+
+- **Request** (`CustomerSearchRequest`): `Page` (0-based), `PageSize` (> 0), `Statuses[]`
+  (**required** by Alvys), optional `CreatedDateRange`.
+- **Local validation** (`Validate`): only `PageSize > 0`. Alvys enforces the required
+  `Statuses` server-side.
+- **Response** (`AlvysCustomersResponse` = paged envelope): `AlvysCustomer` — `Id`, `Name`,
+  `CompanyNumber`, `Type`, `Status`, `BillingAddress?` (`AlvysContextAddress`), `Email[]`,
+  `Phone[]`, `Fax?`, `DateCreated?`, `InvoicingInformation?` (`AlvysInvoicingInformation`:
+  address/emails/phone/invoicing names/`PaymentType`/`PaymentTermsInDays`), `ExternalId?`,
+  `Contacts[]` (`AlvysCustomerContact`), `SalesAgentId?`, `Notes[]` (`AlvysContextNote`).
+
+#### `users/search` → `POST /api/p/v{version}/users/search`
+
+Dispatcher display names/roles/filters.
+
+- **Request** (`UserSearchRequest`): `Page` (0-based), `PageSize` (> 0), optional `Keyword`.
+- **Local validation** (`Validate`): only `PageSize > 0`.
+- **Response** (`AlvysUsersResponse` = paged envelope): `AlvysUser` — `Id`, `UserName`,
+  `Name`, `Email?`, `UserType`, `Role` (Admin/Dispatcher/Driver/Biller/SalesAgent/DataEntry/
+  Safety/OperationManager), `Phone?`, `CompanyCode`, `Status` (Active/Disabled/Deleted),
+  `Permissions[]`, `CreatedAt?`, `ModifiedAt?`. `Role`/`Status`/`UserType` are kept as
+  strings (not enums) for tolerance, consistent with the other read models.
+
+#### Alvys docs reviewed for this slice
+
+The five context endpoints were modelled from the Alvys public-API reference (discovered
+via `https://docs.alvys.com/llms.txt`):
+
+- Dispatch preferences — `https://docs.alvys.com/reference/post_api-p-v-version-dispatchpreferences-search.md`
+- Locations — `https://docs.alvys.com/reference/post_api-p-v-version-locations-search.md`
+- Drivers — `https://docs.alvys.com/reference/post_api-p-v-version-drivers-search.md`
+- Customers — `https://docs.alvys.com/reference/post_api-p-v-version-customers-search.md`
+- Users — `https://docs.alvys.com/reference/post_api-p-v-version-users-search.md`
+
 Registered in `Program.cs` via `builder.Services.AddAlvysIntegration(builder.Configuration)`.
 
 ## Safety
@@ -208,16 +300,19 @@ of truth for the auth/client pattern. Exact files reviewed at `main`:
 ## Read-only stance
 
 This integration phase is **read-only**. Both the internal API endpoints
-(`/api/alvys/{loads,trips,trailers,trucks}/search`) and the upstream Alvys client calls
-issue queries only. Alvys models searches as `POST` (the filter set is the request
-body), but no data is created, updated or deleted and there is no writeback to Alvys. No
-`PUT`/`PATCH`/`DELETE` or POST-mutation calls are made. Live Alvys remains the default
-source of truth; the `Fallback` provider is opt-in for local/UAT and returns empty
-(shape-preserving) results.
+(`/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users}/search`)
+and the upstream Alvys client calls issue queries only. Alvys models searches as `POST`
+(the filter set is the request body), but no data is created, updated or deleted and there
+is no writeback to Alvys. No `PUT`/`PATCH`/`DELETE` or POST-mutation calls are made. Live
+Alvys remains the default source of truth; the `Fallback` provider is opt-in for local/UAT
+and returns empty (shape-preserving) results.
 
 ## Next slice
 
-Dispatcher UI and domain logic on top of these endpoints: richer normalized read models
-for the planner/booker views, equipment compatibility/capacity logic, and the Angular
-services that consume `/api/alvys/*`. Writeback (booking/assignment) remains out of
-scope until the read-only phase is signed off.
+The read-only endpoints now cover loads, trips, equipment (trucks/trailers) and the LTL
+matching context (locations, drivers, dispatch preferences, customers, users) — enough to
+start the LTL candidate matcher. Next: the matcher domain logic (consolidation candidate
+detection using load geography + customer billing separation + equipment/driver readiness),
+richer normalized read models for the planner/booker views, and the Angular services that
+consume `/api/alvys/*`. Writeback (booking/assignment) remains out of scope until the
+read-only phase is signed off.

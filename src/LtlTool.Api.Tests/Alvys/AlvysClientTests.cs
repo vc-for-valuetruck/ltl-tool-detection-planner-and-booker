@@ -324,4 +324,270 @@ public sealed class AlvysClientTests
         Assert.Empty(result.Items);
         Assert.Contains("500", logger.AllText);
     }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/dispatchpreferences/search")]
+    [InlineData("2.0", "/api/p/v2.0/dispatchpreferences/search")]   // normalized — no double "v"
+    public async Task SearchDispatchPreferences_maps_bare_array_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """[{"UpdatedAt":"2026-01-02T03:04:05Z","DispatcherId":"D1","Driver1Id":"DR1","TruckId":"TK1","TrailerId":"TR1"}]"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.SearchDispatchPreferencesAsync(
+            new DispatchPreferenceSearchRequest { DispatcherIds = ["D1"] });
+
+        var item = Assert.Single(result);
+        Assert.Equal("D1", item.DispatcherId);
+        Assert.Equal("DR1", item.Driver1Id);
+        Assert.Equal("TK1", item.TruckId);
+        Assert.Equal("TR1", item.TrailerId);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchDispatchPreferences_serializes_only_supplied_filters_in_pascal_case()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("[]"),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchDispatchPreferencesAsync(new DispatchPreferenceSearchRequest { TruckIds = ["TK1"] });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"TruckIds\":[\"TK1\"]", body);
+        Assert.DoesNotContain("DispatcherIds", body);   // null filters are omitted
+        Assert.DoesNotContain("UpdatedAtStart", body);
+    }
+
+    [Fact]
+    public async Task SearchDispatchPreferences_returns_empty_on_rate_limit_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        var result = await client.SearchDispatchPreferencesAsync(
+            new DispatchPreferenceSearchRequest { DriverIds = ["DR1"] });
+
+        Assert.Empty(result);
+        Assert.Contains("429", logger.AllText);
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/locations/search")]
+    [InlineData("2.0", "/api/p/v2.0/locations/search")]   // normalized — no double "v"
+    public async Task SearchLocations_maps_response_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Page":0,"PageSize":100,"Total":1,"Facets":null,"Aggregations":null,"Items":[{"Id":"LOC1","Name":"Dallas Hub","Type":"Terminal","Status":"Active","PhysicalAddress":{"Street":"1 Main","City":"Dallas","State":"TX","ZipCode":"75201"},"Email":["ops@vt.com"],"Notes":[{"id":"N1","Description":"hub","NoteType":"General","User":"jane"}]}]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.SearchLocationsAsync(new LocationSearchRequest { Status = ["Active"] });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("LOC1", item.Id);
+        Assert.Equal("Dallas Hub", item.Name);
+        Assert.Equal("75201", item.PhysicalAddress?.ZipCode);
+        Assert.Equal("ops@vt.com", Assert.Single(item.Email!));
+        Assert.Equal("hub", Assert.Single(item.Notes!).Description);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchLocations_rejects_non_positive_page_size_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchLocationsAsync(new LocationSearchRequest { PageSize = 0 }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/drivers/search")]
+    [InlineData("2.0", "/api/p/v2.0/drivers/search")]
+    public async Task SearchDrivers_maps_response_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Page":0,"PageSize":100,"Total":1,"Items":[{"Id":"DR1","Name":"Sam Driver","EmployeeId":"E9","Status":"OFF DUTY","IsActive":true,"Address":{"ZipCode":"75201"},"Fleet":{"Id":"F1","Name":"Main"},"References":[{"Id":"R1","Type":"Tractor","Value":"42"}]}]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.SearchDriversAsync(new DriverSearchRequest { IsActive = true });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("DR1", item.Id);
+        Assert.Equal("Sam Driver", item.Name);
+        Assert.True(item.IsActive);
+        Assert.Equal("75201", item.Address?.ZipCode);
+        Assert.Equal("Main", item.Fleet?.Name);
+        Assert.Equal("42", Assert.Single(item.References!).Value);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchDrivers_serializes_only_supplied_filters_in_pascal_case()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Items":[]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchDriversAsync(new DriverSearchRequest { Page = 1, FleetName = "Main" });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"Page\":1", body);
+        Assert.Contains("\"FleetName\":\"Main\"", body);
+        Assert.DoesNotContain("EmployeeId", body);   // null filters are omitted
+        Assert.DoesNotContain("IsActive", body);
+    }
+
+    [Fact]
+    public async Task SearchDrivers_rejects_non_positive_page_size_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchDriversAsync(new DriverSearchRequest { PageSize = 0 }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/customers/search")]
+    [InlineData("2.0", "/api/p/v2.0/customers/search")]
+    public async Task SearchCustomers_maps_response_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Page":0,"PageSize":100,"Total":1,"Items":[{"Id":"C1","Name":"Acme","Type":"Customer","Status":"Active","BillingAddress":{"ZipCode":"60601"},"InvoicingInformation":{"PaymentTermsInDays":30,"PaymentType":"Net"},"Contacts":[{"Id":"K1","Name":"Pat","Title":"AP"}],"SalesAgentId":"SA1"}]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.SearchCustomersAsync(new CustomerSearchRequest { Statuses = ["Active"] });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("C1", item.Id);
+        Assert.Equal("Acme", item.Name);
+        Assert.Equal("60601", item.BillingAddress?.ZipCode);
+        Assert.Equal(30, item.InvoicingInformation?.PaymentTermsInDays);
+        Assert.Equal("Pat", Assert.Single(item.Contacts!).Name);
+        Assert.Equal("SA1", item.SalesAgentId);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchCustomers_serializes_statuses_and_page_in_pascal_case()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Items":[]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchCustomersAsync(new CustomerSearchRequest { Page = 2, Statuses = ["Active"] });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"Page\":2", body);
+        Assert.Contains("\"Statuses\":[\"Active\"]", body);
+        Assert.DoesNotContain("CreatedDateRange", body);   // null filter omitted
+    }
+
+    [Fact]
+    public async Task SearchCustomers_rejects_non_positive_page_size_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchCustomersAsync(new CustomerSearchRequest { PageSize = 0, Statuses = ["Active"] }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/users/search")]
+    [InlineData("2.0", "/api/p/v2.0/users/search")]
+    public async Task SearchUsers_maps_response_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Page":0,"PageSize":100,"Total":1,"Items":[{"Id":"U1","UserName":"jdoe","Name":"Jane Doe","Role":"Dispatcher","Status":"Active","CompanyCode":"VT","Permissions":["loads.read","trips.read"]}]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.SearchUsersAsync(new UserSearchRequest { Keyword = "jane" });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("U1", item.Id);
+        Assert.Equal("jdoe", item.UserName);
+        Assert.Equal("Dispatcher", item.Role);
+        Assert.Equal("Active", item.Status);
+        Assert.Equal(2, item.Permissions?.Count);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchUsers_serializes_only_supplied_filters_in_pascal_case()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Items":[]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchUsersAsync(new UserSearchRequest { Page = 1 });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"Page\":1", body);
+        Assert.DoesNotContain("Keyword", body);   // null filter omitted
+    }
+
+    [Fact]
+    public async Task SearchUsers_rejects_non_positive_page_size_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchUsersAsync(new UserSearchRequest { PageSize = 0 }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task SearchUsers_returns_empty_on_server_error_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        var result = await client.SearchUsersAsync(new UserSearchRequest { Keyword = "x" });
+
+        Assert.Empty(result.Items);
+        Assert.Contains("500", logger.AllText);
+    }
 }

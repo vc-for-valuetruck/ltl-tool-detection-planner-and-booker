@@ -20,6 +20,11 @@ public sealed class AlvysSearchEndpointTests(TemplateWebApplicationFactory facto
     [InlineData("/api/alvys/trips/search")]
     [InlineData("/api/alvys/trailers/search")]
     [InlineData("/api/alvys/trucks/search")]
+    [InlineData("/api/alvys/dispatch-preferences/search")]
+    [InlineData("/api/alvys/locations/search")]
+    [InlineData("/api/alvys/drivers/search")]
+    [InlineData("/api/alvys/customers/search")]
+    [InlineData("/api/alvys/users/search")]
     public async Task Search_routes_require_authentication(string route)
     {
         var client = _factory.CreateClient();

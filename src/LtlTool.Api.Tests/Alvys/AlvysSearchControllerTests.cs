@@ -21,6 +21,11 @@ public sealed class AlvysSearchControllerTests
         public TripSearchRequest? Trips { get; private set; }
         public TrailerSearchRequest? Trailers { get; private set; }
         public TruckSearchRequest? Trucks { get; private set; }
+        public DispatchPreferenceSearchRequest? DispatchPreferences { get; private set; }
+        public LocationSearchRequest? Locations { get; private set; }
+        public DriverSearchRequest? Drivers { get; private set; }
+        public CustomerSearchRequest? Customers { get; private set; }
+        public UserSearchRequest? Users { get; private set; }
 
         public Task<AlvysLoadsResponse> SearchLoadsAsync(
             int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
@@ -66,6 +71,54 @@ public sealed class AlvysSearchControllerTests
             {
                 Total = 1,
                 Items = [new AlvysTruck { Id = "TK1", TruckNum = "42" }],
+            });
+        }
+
+        public Task<IReadOnlyList<AlvysDispatchPreference>> SearchDispatchPreferencesAsync(
+            DispatchPreferenceSearchRequest request, CancellationToken ct = default)
+        {
+            DispatchPreferences = request;
+            return Task.FromResult<IReadOnlyList<AlvysDispatchPreference>>(
+                [new AlvysDispatchPreference { DispatcherId = "D1", TruckId = "TK1" }]);
+        }
+
+        public Task<AlvysLocationsResponse> SearchLocationsAsync(LocationSearchRequest request, CancellationToken ct = default)
+        {
+            Locations = request;
+            return Task.FromResult(new AlvysLocationsResponse
+            {
+                Total = 1,
+                Items = [new AlvysLocation { Id = "LOC1", Name = "Dallas Hub" }],
+            });
+        }
+
+        public Task<AlvysDriversResponse> SearchDriversAsync(DriverSearchRequest request, CancellationToken ct = default)
+        {
+            Drivers = request;
+            return Task.FromResult(new AlvysDriversResponse
+            {
+                Total = 1,
+                Items = [new AlvysDriver { Id = "DR1", Name = "Sam Driver" }],
+            });
+        }
+
+        public Task<AlvysCustomersResponse> SearchCustomersAsync(CustomerSearchRequest request, CancellationToken ct = default)
+        {
+            Customers = request;
+            return Task.FromResult(new AlvysCustomersResponse
+            {
+                Total = 1,
+                Items = [new AlvysCustomer { Id = "C1", Name = "Acme" }],
+            });
+        }
+
+        public Task<AlvysUsersResponse> SearchUsersAsync(UserSearchRequest request, CancellationToken ct = default)
+        {
+            Users = request;
+            return Task.FromResult(new AlvysUsersResponse
+            {
+                Total = 1,
+                Items = [new AlvysUser { Id = "U1", UserName = "jdoe" }],
             });
         }
     }
@@ -126,6 +179,73 @@ public sealed class AlvysSearchControllerTests
     }
 
     [Fact]
+    public async Task SearchDispatchPreferences_passes_request_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var request = new DispatchPreferenceSearchRequest { DispatcherIds = ["D1"] };
+
+        var result = await controller.SearchDispatchPreferences(request, default);
+        var body = Assert.IsAssignableFrom<IReadOnlyList<AlvysDispatchPreference>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Same(request, client.DispatchPreferences);
+        Assert.Equal("TK1", Assert.Single(body).TruckId);
+    }
+
+    [Fact]
+    public async Task SearchLocations_passes_request_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var request = new LocationSearchRequest { Status = ["Active"] };
+
+        var body = Body(await controller.SearchLocations(request, default));
+
+        Assert.Same(request, client.Locations);
+        Assert.Equal("Dallas Hub", Assert.Single(body.Items).Name);
+    }
+
+    [Fact]
+    public async Task SearchDrivers_passes_request_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var request = new DriverSearchRequest { IsActive = true };
+
+        var body = Body(await controller.SearchDrivers(request, default));
+
+        Assert.Same(request, client.Drivers);
+        Assert.Equal("Sam Driver", Assert.Single(body.Items).Name);
+    }
+
+    [Fact]
+    public async Task SearchCustomers_passes_request_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var request = new CustomerSearchRequest { Statuses = ["Active"] };
+
+        var body = Body(await controller.SearchCustomers(request, default));
+
+        Assert.Same(request, client.Customers);
+        Assert.Equal("Acme", Assert.Single(body.Items).Name);
+    }
+
+    [Fact]
+    public async Task SearchUsers_passes_request_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var request = new UserSearchRequest { Keyword = "jane" };
+
+        var body = Body(await controller.SearchUsers(request, default));
+
+        Assert.Same(request, client.Users);
+        Assert.Equal("jdoe", Assert.Single(body.Items).UserName);
+    }
+
+    [Fact]
     public async Task Responses_carry_no_credential_or_secret_fields()
     {
         var client = new RecordingAlvysClient();
@@ -137,6 +257,11 @@ public sealed class AlvysSearchControllerTests
             JsonSerializer.Serialize(Body(await controller.SearchTrips(new TripSearchRequest { Status = ["In Transit"] }, default))),
             JsonSerializer.Serialize(Body(await controller.SearchTrailers(new TrailerSearchRequest { Status = ["Active"] }, default))),
             JsonSerializer.Serialize(Body(await controller.SearchTrucks(new TruckSearchRequest { IsActive = true }, default))),
+            JsonSerializer.Serialize(((OkObjectResult)(await controller.SearchDispatchPreferences(new DispatchPreferenceSearchRequest { DispatcherIds = ["D1"] }, default)).Result!).Value),
+            JsonSerializer.Serialize(Body(await controller.SearchLocations(new LocationSearchRequest { Status = ["Active"] }, default))),
+            JsonSerializer.Serialize(Body(await controller.SearchDrivers(new DriverSearchRequest { IsActive = true }, default))),
+            JsonSerializer.Serialize(Body(await controller.SearchCustomers(new CustomerSearchRequest { Statuses = ["Active"] }, default))),
+            JsonSerializer.Serialize(Body(await controller.SearchUsers(new UserSearchRequest { Keyword = "jane" }, default))),
         };
 
         string[] forbidden =
