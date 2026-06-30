@@ -13,8 +13,12 @@ public sealed class AlvysClientTests
     }
 
     private static AlvysClient Build(
-        StubHttpMessageHandler handler, CapturingLogger<AlvysClient> logger)
-        => new(new StubHttpClientFactory(handler, new Uri("https://alvys.test/api/")), new StubTokenProvider(), logger);
+        StubHttpMessageHandler handler, CapturingLogger<AlvysClient> logger, string apiVersion = "v1")
+        => new(
+            new StubHttpClientFactory(handler, new Uri("https://alvys.test/")),
+            new StubTokenProvider(),
+            Microsoft.Extensions.Options.Options.Create(new AlvysOptions { ApiVersion = apiVersion }),
+            logger);
 
     [Fact]
     public async Task SearchLoads_parses_paged_response_and_sends_bearer_token()
@@ -86,5 +90,101 @@ public sealed class AlvysClientTests
 
         Assert.NotNull(load);
         Assert.Equal("999", load!.LoadNumber);
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/loads/search")]
+    [InlineData("v2.0", "/api/p/v2.0/loads/search")]
+    [InlineData("2.0", "/api/p/v2.0/loads/search")]   // normalized — no double "v"
+    public async Task SearchLoads_targets_versioned_path(string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Items":[]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        await client.SearchLoadsAsync();
+
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/trips/search")]
+    [InlineData("v2.0", "/api/p/v2.0/trips/search")]
+    public async Task SearchTrips_targets_versioned_path_and_sends_bearer_token(string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Page":0,"PageSize":100,"Total":1,"Items":[{"Id":"T1","TripNumber":"500","Status":"In Transit","LoadedMileage":120.5,"Trailer":{"Id":"TR1","EquipmentType":"Reefer"}}]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.SearchTripsAsync(new TripSearchRequest { TripNumbers = ["500"] });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("T1", item.Id);
+        Assert.Equal("500", item.TripNumber);
+        Assert.Equal(120.5m, item.LoadedMileage);
+        Assert.Equal("Reefer", item.Trailer?.EquipmentType);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchTrips_returns_empty_on_server_error_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        var result = await client.SearchTripsAsync(new TripSearchRequest { Status = ["In Transit"] });
+
+        Assert.Empty(result.Items);
+        Assert.Contains("429", logger.AllText);
+    }
+
+    [Fact]
+    public async Task SearchLoads_rejects_non_positive_page_size_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchLoadsAsync(new LoadSearchRequest { PageSize = 0 }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task SearchLoads_rejects_more_than_150_load_numbers()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+        var request = new LoadSearchRequest
+        {
+            LoadNumbers = Enumerable.Range(0, 151).Select(i => i.ToString()).ToList(),
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.SearchLoadsAsync(request));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task SearchTrips_serializes_only_supplied_filters_in_pascal_case()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Items":[]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchTripsAsync(new TripSearchRequest { Page = 1, TripNumbers = ["500"] });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"Page\":1", body);
+        Assert.Contains("\"TripNumbers\":[\"500\"]", body);
+        Assert.DoesNotContain("Status", body);          // null filters are omitted
+        Assert.DoesNotContain("PickupDateRange", body);
     }
 }

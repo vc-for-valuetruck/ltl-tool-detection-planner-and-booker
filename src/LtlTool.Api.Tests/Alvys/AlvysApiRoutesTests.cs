@@ -1,0 +1,36 @@
+using LtlTool.Api.Features.Integrations.Alvys;
+using Xunit;
+
+namespace LtlTool.Api.Tests.Alvys;
+
+public sealed class AlvysApiRoutesTests
+{
+    [Theory]
+    [InlineData("v1", "v1")]
+    [InlineData("V1", "v1")]
+    [InlineData("1", "v1")]
+    [InlineData("v2.0", "v2.0")]
+    [InlineData("2.0", "v2.0")]
+    [InlineData("  v2.0  ", "v2.0")]
+    [InlineData(null, "v1")]
+    [InlineData("", "v1")]
+    [InlineData("   ", "v1")]
+    public void NormalizeVersion_avoids_double_v_and_falls_back(string? input, string expected)
+        => Assert.Equal(expected, AlvysApiRoutes.NormalizeVersion(input));
+
+    [Fact]
+    public void LoadsSearch_builds_relative_versioned_path()
+        => Assert.Equal("api/p/v2.0/loads/search", AlvysApiRoutes.LoadsSearch("v2.0"));
+
+    [Fact]
+    public void TripsSearch_builds_relative_versioned_path()
+        => Assert.Equal("api/p/v1/trips/search", AlvysApiRoutes.TripsSearch("v1"));
+
+    [Fact]
+    public void Search_paths_are_relative_so_they_resolve_under_the_host_base()
+    {
+        var baseAddress = new Uri("https://integrations.alvys.com/");
+        var resolved = new Uri(baseAddress, AlvysApiRoutes.TripsSearch("v1"));
+        Assert.Equal("https://integrations.alvys.com/api/p/v1/trips/search", resolved.ToString());
+    }
+}

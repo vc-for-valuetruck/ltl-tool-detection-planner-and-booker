@@ -29,6 +29,7 @@ services:
       # with ALVYS_PROVIDER=Live + real credentials to demo against live Alvys.
       Alvys__Provider: "${ALVYS_PROVIDER:-Fallback}"
       Alvys__ApiBaseUrl: "${ALVYS_API_BASE_URL:-}"
+      Alvys__ApiVersion: "${ALVYS_API_VERSION:-v1}"
       Alvys__TenantId: "${ALVYS_TENANT_ID:-}"
       Alvys__ClientId: "${ALVYS_CLIENT_ID:-}"
       Alvys__ClientSecret: "${ALVYS_CLIENT_SECRET:-}"

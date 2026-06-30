@@ -33,4 +33,17 @@ public sealed class AlvysProviderSelectionTests
     [Fact]
     public void Live_remains_default_even_when_credentials_absent()
         => Assert.IsType<AlvysClient>(ResolveClient(new() { ["Alvys:ClientId"] = "", ["Alvys:ClientSecret"] = "" }));
+
+    [Fact]
+    public async Task Fallback_client_returns_empty_paged_shapes_for_loads_and_trips()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        var loads = await client.SearchLoadsAsync(new LoadSearchRequest { Status = ["Open"] });
+        var trips = await client.SearchTripsAsync(new TripSearchRequest { Status = ["In Transit"] });
+
+        Assert.Empty(loads.Items);
+        Assert.Empty(trips.Items);
+        Assert.Null(await client.GetLoadByNumberAsync("123"));
+    }
 }

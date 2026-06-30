@@ -10,15 +10,28 @@ namespace LtlTool.Api.Features.Integrations.Alvys;
 public interface IAlvysClient
 {
     /// <summary>
-    /// Searches loads via <c>POST /loads/search</c>. <paramref name="page"/> is
-    /// 1-based and translated to the Alvys 0-based page internally.
+    /// Searches loads via <c>POST /api/p/v{version}/loads/search</c>.
+    /// <paramref name="page"/> is 1-based and translated to the Alvys 0-based page
+    /// internally. Convenience overload of <see cref="SearchLoadsAsync(LoadSearchRequest, CancellationToken)"/>.
     /// </summary>
     Task<AlvysLoadsResponse> SearchLoadsAsync(
         int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches loads via <c>POST /api/p/v{version}/loads/search</c> with a fully
+    /// specified request. <see cref="LoadSearchRequest.Page"/> is the 0-based Alvys page.
+    /// </summary>
+    Task<AlvysLoadsResponse> SearchLoadsAsync(LoadSearchRequest request, CancellationToken ct = default);
 
     /// <summary>
     /// Returns a single load by its Alvys load number, or <c>null</c> when not
     /// found or on a transport error.
     /// </summary>
     Task<AlvysLoad?> GetLoadByNumberAsync(string loadNumber, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches trips via <c>POST /api/p/v{version}/trips/search</c>.
+    /// <see cref="TripSearchRequest.Page"/> is the 0-based Alvys page.
+    /// </summary>
+    Task<AlvysTripsResponse> SearchTripsAsync(TripSearchRequest request, CancellationToken ct = default);
 }
