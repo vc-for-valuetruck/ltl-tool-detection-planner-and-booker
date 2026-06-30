@@ -220,4 +220,82 @@ public sealed class AlvysSearchController(IAlvysClient alvys) : ControllerBase
         var tender = await alvys.GetTenderByIdAsync(tenderId, ct);
         return tender is null ? NotFound() : Ok(tender);
     }
+
+    /// <summary>
+    /// Read-only invoice search (billing readiness/worklist context: already-invoiced,
+    /// remaining balance, invoice status, load link, line-item visibility). Passes
+    /// <paramref name="request"/> through to
+    /// <see cref="IAlvysClient.SearchInvoicesAsync(InvoiceSearchRequest, CancellationToken)"/>.
+    /// </summary>
+    [HttpPost("invoices/search")]
+    [ProducesResponseType(typeof(AlvysInvoicesResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AlvysInvoicesResponse>> SearchInvoices(
+        [FromBody] InvoiceSearchRequest request, CancellationToken ct)
+        => Ok(await alvys.SearchInvoicesAsync(request, ct));
+
+    /// <summary>
+    /// Read-only single-invoice lookup by <c>id</c> or <c>invoiceNumber</c> query parameter
+    /// (at least one required). Returns 400 when no criterion is supplied and 404 when the
+    /// invoice is not found (or upstream degraded to <c>null</c>), mirroring the other read paths.
+    /// </summary>
+    [HttpGet("invoices")]
+    [ProducesResponseType(typeof(AlvysInvoice), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AlvysInvoice>> GetInvoice([FromQuery] InvoiceLookup lookup, CancellationToken ct)
+    {
+        if (!lookup.HasCriteria)
+            return BadRequest("Supply one of id or invoiceNumber.");
+
+        var invoice = await alvys.GetInvoiceAsync(lookup, ct);
+        return invoice is null ? NotFound() : Ok(invoice);
+    }
+
+    /// <summary>
+    /// Read-only inbound visibility-history listing for a load (event timeline; errors/reasons
+    /// surface as exception context). Passes <paramref name="loadNumber"/> through to
+    /// <see cref="IAlvysClient.ListInboundVisibilityHistoryAsync(string, CancellationToken)"/>
+    /// and returns the bare Alvys array.
+    /// </summary>
+    [HttpGet("visibility/inbound/{loadNumber}/history")]
+    [ProducesResponseType(typeof(IReadOnlyList<AlvysVisibilityHistoryEvent>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AlvysVisibilityHistoryEvent>>> ListInboundVisibilityHistory(
+        string loadNumber, CancellationToken ct)
+        => Ok(await alvys.ListInboundVisibilityHistoryAsync(loadNumber, ct));
+
+    /// <summary>
+    /// Read-only outbound visibility-history listing for a load (event timeline; errors/reasons
+    /// surface as exception context). Passes <paramref name="loadNumber"/> through to
+    /// <see cref="IAlvysClient.ListOutboundVisibilityHistoryAsync(string, CancellationToken)"/>
+    /// and returns the bare Alvys array.
+    /// </summary>
+    [HttpGet("visibility/outbound/{loadNumber}/history")]
+    [ProducesResponseType(typeof(IReadOnlyList<AlvysVisibilityHistoryEvent>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AlvysVisibilityHistoryEvent>>> ListOutboundVisibilityHistory(
+        string loadNumber, CancellationToken ct)
+        => Ok(await alvys.ListOutboundVisibilityHistoryAsync(loadNumber, ct));
+
+    /// <summary>
+    /// Read-only truck-event search (repair/maintenance/availability events used to explain
+    /// match risk when they overlap a pickup/delivery window). Passes <paramref name="request"/>
+    /// through to <see cref="IAlvysClient.SearchTruckEventsAsync(TruckEventSearchRequest, CancellationToken)"/>.
+    /// Returns a bare array, matching the upstream Alvys shape.
+    /// </summary>
+    [HttpPost("trucks/events/search")]
+    [ProducesResponseType(typeof(IReadOnlyList<AlvysTruckEvent>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AlvysTruckEvent>>> SearchTruckEvents(
+        [FromBody] TruckEventSearchRequest request, CancellationToken ct)
+        => Ok(await alvys.SearchTruckEventsAsync(request, ct));
+
+    /// <summary>
+    /// Read-only trailer-event search (repair/maintenance/availability events used to explain
+    /// match risk when they overlap a pickup/delivery window). Passes <paramref name="request"/>
+    /// through to <see cref="IAlvysClient.SearchTrailerEventsAsync(TrailerEventSearchRequest, CancellationToken)"/>.
+    /// Returns a bare array, matching the upstream Alvys shape.
+    /// </summary>
+    [HttpPost("trailers/events/search")]
+    [ProducesResponseType(typeof(IReadOnlyList<AlvysTrailerEvent>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AlvysTrailerEvent>>> SearchTrailerEvents(
+        [FromBody] TrailerEventSearchRequest request, CancellationToken ct)
+        => Ok(await alvys.SearchTrailerEventsAsync(request, ct));
 }

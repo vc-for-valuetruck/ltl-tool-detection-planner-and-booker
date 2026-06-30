@@ -182,6 +182,72 @@ public sealed class AlvysApiRoutesTests
         => Assert.Equal(expected, AlvysApiRoutes.TripStops("v1", tripId));
 
     [Fact]
+    public void InvoicesSearch_builds_relative_versioned_path()
+        => Assert.Equal("api/p/v2.0/invoices/search", AlvysApiRoutes.InvoicesSearch("2.0"));
+
+    [Fact]
+    public void TruckEventsSearch_builds_relative_versioned_path()
+        => Assert.Equal("api/p/v1/trucks/events/search", AlvysApiRoutes.TruckEventsSearch("v1"));
+
+    [Fact]
+    public void TrailerEventsSearch_builds_relative_versioned_path()
+        => Assert.Equal("api/p/v2.0/trailers/events/search", AlvysApiRoutes.TrailerEventsSearch("2.0"));
+
+    [Fact]
+    public void InvoiceDetail_builds_relative_versioned_path_with_id_query()
+        => Assert.Equal(
+            "api/p/v2.0/invoices?id=I-1",
+            AlvysApiRoutes.InvoiceDetail("2.0", new InvoiceLookup { Id = "I-1" }));
+
+    [Fact]
+    public void InvoiceDetail_builds_query_for_invoice_number()
+        => Assert.Equal(
+            "api/p/v1/invoices?invoiceNumber=INV-100",
+            AlvysApiRoutes.InvoiceDetail("v1", new InvoiceLookup { InvoiceNumber = "INV-100" }));
+
+    [Fact]
+    public void InvoiceDetail_includes_all_supplied_criteria()
+        => Assert.Equal(
+            "api/p/v1/invoices?id=I-1&invoiceNumber=INV-100",
+            AlvysApiRoutes.InvoiceDetail("v1", new InvoiceLookup { Id = "I-1", InvoiceNumber = "INV-100" }));
+
+    [Theory]
+    [InlineData("INV 100/A", "api/p/v1/invoices?invoiceNumber=INV%20100%2FA")]
+    [InlineData("a#1", "api/p/v1/invoices?invoiceNumber=a%231")]
+    [InlineData("a&b=c", "api/p/v1/invoices?invoiceNumber=a%26b%3Dc")]
+    public void InvoiceDetail_url_encodes_query_values(string invoiceNumber, string expected)
+        => Assert.Equal(
+            expected, AlvysApiRoutes.InvoiceDetail("v1", new InvoiceLookup { InvoiceNumber = invoiceNumber }));
+
+    [Fact]
+    public void InvoiceDetail_throws_when_no_criteria_supplied()
+        => Assert.Throws<ArgumentException>(() => AlvysApiRoutes.InvoiceDetail("v1", new InvoiceLookup()));
+
+    [Fact]
+    public void VisibilityInboundHistory_builds_relative_versioned_path()
+        => Assert.Equal(
+            "api/p/v2.0/visibility/inbound/VT-100/history",
+            AlvysApiRoutes.VisibilityInboundHistory("2.0", "VT-100"));
+
+    [Fact]
+    public void VisibilityOutboundHistory_builds_relative_versioned_path()
+        => Assert.Equal(
+            "api/p/v1/visibility/outbound/VT-100/history",
+            AlvysApiRoutes.VisibilityOutboundHistory("v1", "VT-100"));
+
+    [Theory]
+    [InlineData("VT 100/A", "api/p/v1/visibility/inbound/VT%20100%2FA/history")]
+    [InlineData("a#1", "api/p/v1/visibility/inbound/a%231/history")]
+    public void VisibilityInboundHistory_url_encodes_the_load_number_segment(string loadNumber, string expected)
+        => Assert.Equal(expected, AlvysApiRoutes.VisibilityInboundHistory("v1", loadNumber));
+
+    [Fact]
+    public void VisibilityOutboundHistory_url_encodes_the_load_number_segment()
+        => Assert.Equal(
+            "api/p/v1/visibility/outbound/VT%20100%2FA/history",
+            AlvysApiRoutes.VisibilityOutboundHistory("v1", "VT 100/A"));
+
+    [Fact]
     public void Search_paths_are_relative_so_they_resolve_under_the_host_base()
     {
         var baseAddress = new Uri("https://integrations.alvys.com/");

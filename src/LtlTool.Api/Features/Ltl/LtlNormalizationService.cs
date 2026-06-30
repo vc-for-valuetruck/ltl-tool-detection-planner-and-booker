@@ -30,10 +30,14 @@ public sealed class LtlNormalizationService(
 
     /// <summary>
     /// Normalize a load. <paramref name="documents"/> is optional and only used to enable POD
-    /// evaluation in the billing-readiness fold-in.
+    /// evaluation in the billing-readiness fold-in. <paramref name="invoices"/> is optional and,
+    /// when supplied (detail path), confirms already-invoiced state and surfaces invoice-derived
+    /// billing risks.
     /// </summary>
     public LtlLoadSummary Normalize(
-        AlvysLoad load, IReadOnlyList<AlvysLoadDocument>? documents = null)
+        AlvysLoad load,
+        IReadOnlyList<AlvysLoadDocument>? documents = null,
+        IReadOnlyList<AlvysInvoice>? invoices = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -71,7 +75,7 @@ public sealed class LtlNormalizationService(
 
         var (isLtl, classification) = ClassifyLtl(load, equipment);
 
-        var billingResult = billing.Evaluate(load, documents);
+        var billingResult = billing.Evaluate(load, documents, invoices);
         if (!billingResult.PodEvaluated || billingResult.IsAlreadyInvoiced)
         {
             // InvoiceStatus is known; nothing to flag. (Kept explicit for readability.)

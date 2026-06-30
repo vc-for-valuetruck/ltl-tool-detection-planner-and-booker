@@ -35,6 +35,51 @@ public static class AlvysApiRoutes
 
     public static string TendersSearch(string? apiVersion) => BuildSearchPath(apiVersion, "tenders");
 
+    public static string InvoicesSearch(string? apiVersion) => BuildSearchPath(apiVersion, "invoices");
+
+    public static string TruckEventsSearch(string? apiVersion)
+        => BuildSearchPath(apiVersion, "trucks/events");
+
+    public static string TrailerEventsSearch(string? apiVersion)
+        => BuildSearchPath(apiVersion, "trailers/events");
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/invoices?{query}</c> for the read-only invoice-detail
+    /// lookup. At least one of <see cref="InvoiceLookup.Id"/>/<see cref="InvoiceLookup.InvoiceNumber"/>
+    /// must be supplied (enforced by <see cref="InvoiceLookup.Validate"/>); only the supplied
+    /// criteria are emitted and each value is URL-encoded.
+    /// </summary>
+    public static string InvoiceDetail(string? apiVersion, InvoiceLookup lookup)
+    {
+        lookup.Validate();
+        var query = BuildQuery(
+            ("id", lookup.Id),
+            ("invoiceNumber", lookup.InvoiceNumber));
+        return $"api/p/{NormalizeVersion(apiVersion)}/invoices{query}";
+    }
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/visibility/inbound/{loadNumber}/history</c> for the
+    /// read-only inbound visibility-history listing. <paramref name="loadNumber"/> is URL-encoded.
+    /// </summary>
+    public static string VisibilityInboundHistory(string? apiVersion, string loadNumber)
+        => BuildVisibilityHistoryPath(apiVersion, "inbound", loadNumber);
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/visibility/outbound/{loadNumber}/history</c> for the
+    /// read-only outbound visibility-history listing. <paramref name="loadNumber"/> is URL-encoded.
+    /// </summary>
+    public static string VisibilityOutboundHistory(string? apiVersion, string loadNumber)
+        => BuildVisibilityHistoryPath(apiVersion, "outbound", loadNumber);
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/visibility/{direction}/{loadNumber}/history</c>. The
+    /// <paramref name="loadNumber"/> segment is URL-encoded so values with spaces or reserved
+    /// characters resolve correctly.
+    /// </summary>
+    private static string BuildVisibilityHistoryPath(string? apiVersion, string direction, string loadNumber)
+        => $"api/p/{NormalizeVersion(apiVersion)}/visibility/{direction}/{Uri.EscapeDataString(loadNumber)}/history";
+
     /// <summary>
     /// Relative path <c>api/p/v{version}/tenders/{tenderId}</c> for a single tender.
     /// <paramref name="tenderId"/> is URL-encoded so ids with slashes/spaces/reserved

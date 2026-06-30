@@ -2052,6 +2052,423 @@ public sealed class AlvysTenderReference
     public string? Description { get; set; }
 }
 
+// ---------------------------------------------------------------------------
+// Invoices (read-only): search + single-invoice detail.
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/invoices/search</c>. Page is 0-based.
+/// All filters are conditional and omitted from the serialized body when null so only
+/// the supplied criteria reach Alvys. <see cref="Validate"/> enforces only the locally
+/// checkable rule (<c>PageSize &gt; 0</c>); Alvys still enforces its own filter rules
+/// server-side.
+/// </summary>
+public sealed class InvoiceSearchRequest
+{
+    [JsonPropertyName("Page")]
+    public int Page { get; set; }
+
+    [JsonPropertyName("PageSize")]
+    public int PageSize { get; set; } = 100;
+
+    [JsonPropertyName("InvoicedDateRange")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AlvysDateRange? InvoicedDateRange { get; set; }
+
+    [JsonPropertyName("InvoiceSentRange")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AlvysDateRange? InvoiceSentRange { get; set; }
+
+    [JsonPropertyName("PaidDateRange")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AlvysDateRange? PaidDateRange { get; set; }
+
+    [JsonPropertyName("Status")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Status { get; set; }
+
+    [JsonPropertyName("LoadNumbers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? LoadNumbers { get; set; }
+
+    [JsonPropertyName("PONumbers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? PONumbers { get; set; }
+
+    [JsonPropertyName("OrderNumbers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? OrderNumbers { get; set; }
+
+    [JsonPropertyName("CustomerId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CustomerId { get; set; }
+
+    /// <summary>Light client-side guard: only <c>PageSize &gt; 0</c> is enforceable here.</summary>
+    public void Validate()
+    {
+        if (PageSize <= 0)
+            throw new ArgumentException("PageSize must be greater than zero.", nameof(PageSize));
+    }
+}
+
+/// <summary>Invoices search response: paged envelope of <see cref="AlvysInvoice"/>.</summary>
+public sealed class AlvysInvoicesResponse : AlvysPagedResponse<AlvysInvoice>;
+
+/// <summary>
+/// A monetary amount as carried on Alvys invoice fields: an amount plus an ISO currency
+/// code. Both are nullable/tolerant of missing values.
+/// </summary>
+public sealed class AlvysMoney
+{
+    [JsonPropertyName("Amount")]
+    public decimal? Amount { get; set; }
+
+    [JsonPropertyName("Currency")]
+    public string? Currency { get; set; }
+}
+
+/// <summary>
+/// Pragmatic invoice projection for billing-readiness/worklist support. Unknown JSON
+/// properties are tolerated, so this can lag the full Alvys schema. Preserves Alvys
+/// PascalCase. Read-only — nothing here is written back to Alvys.
+/// </summary>
+public sealed class AlvysInvoice
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("Number")]
+    public string? Number { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("CreatedDate")]
+    public DateTimeOffset? CreatedDate { get; set; }
+
+    [JsonPropertyName("InvoicedDate")]
+    public DateTimeOffset? InvoicedDate { get; set; }
+
+    [JsonPropertyName("DueDate")]
+    public DateTimeOffset? DueDate { get; set; }
+
+    [JsonPropertyName("PaidDate")]
+    public DateTimeOffset? PaidDate { get; set; }
+
+    [JsonPropertyName("Total")]
+    public AlvysMoney? Total { get; set; }
+
+    [JsonPropertyName("AmountPaid")]
+    public decimal? AmountPaid { get; set; }
+
+    [JsonPropertyName("RemainingBalance")]
+    public decimal? RemainingBalance { get; set; }
+
+    [JsonPropertyName("OverPaymentAmount")]
+    public decimal? OverPaymentAmount { get; set; }
+
+    [JsonPropertyName("IsSubmitted")]
+    public bool? IsSubmitted { get; set; }
+
+    [JsonPropertyName("LastSendDate")]
+    public DateTimeOffset? LastSendDate { get; set; }
+
+    [JsonPropertyName("SupplementalInvoiceType")]
+    public string? SupplementalInvoiceType { get; set; }
+
+    [JsonPropertyName("Vendor")]
+    public AlvysInvoiceParty? Vendor { get; set; }
+
+    [JsonPropertyName("Customer")]
+    public AlvysInvoiceParty? Customer { get; set; }
+
+    [JsonPropertyName("LineItems")]
+    public List<AlvysInvoiceLineItem>? LineItems { get; set; }
+
+    [JsonPropertyName("Loads")]
+    public List<AlvysInvoiceLoadRef>? Loads { get; set; }
+
+    [JsonPropertyName("Payments")]
+    public List<AlvysLoadPayment>? Payments { get; set; }
+}
+
+/// <summary>A billing party (vendor or customer) referenced by an invoice.</summary>
+public sealed class AlvysInvoiceParty
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+}
+
+/// <summary>A single rate/charge line on an invoice (linehaul/fuel/accessorial/etc.).</summary>
+public sealed class AlvysInvoiceLineItem
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("Description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Quantity")]
+    public decimal? Quantity { get; set; }
+
+    [JsonPropertyName("Rate")]
+    public decimal? Rate { get; set; }
+
+    [JsonPropertyName("Amount")]
+    public decimal? Amount { get; set; }
+}
+
+/// <summary>A load referenced by an invoice (links an invoice back to its load).</summary>
+public sealed class AlvysInvoiceLoadRef
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("LoadNumber")]
+    public string? LoadNumber { get; set; }
+
+    [JsonPropertyName("OrderNumber")]
+    public string? OrderNumber { get; set; }
+}
+
+/// <summary>
+/// Query parameters for the read-only invoice-detail lookup
+/// (<c>GET /api/p/v{version}/invoices?id=…|invoiceNumber=…</c>). At least one of the two
+/// must be supplied; bound from the internal endpoint query string and passed to
+/// <see cref="AlvysApiRoutes.InvoiceDetail"/>. A 404 upstream degrades to <c>null</c>.
+/// </summary>
+public sealed class InvoiceLookup
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("invoiceNumber")]
+    public string? InvoiceNumber { get; set; }
+
+    /// <summary>True when at least one lookup key is supplied (non-blank).</summary>
+    [JsonIgnore]
+    public bool HasCriteria =>
+        !string.IsNullOrWhiteSpace(Id) || !string.IsNullOrWhiteSpace(InvoiceNumber);
+
+    /// <summary>Guards that at least one of <see cref="Id"/>/<see cref="InvoiceNumber"/> is supplied.</summary>
+    public void Validate()
+    {
+        if (!HasCriteria)
+            throw new ArgumentException(
+                "An invoice lookup requires one of id or invoiceNumber.", nameof(InvoiceLookup));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Visibility history (read-only): inbound/outbound event timelines by load number.
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// A single inbound/outbound visibility event shared for a load
+/// (<c>GET /api/p/v{version}/visibility/{inbound|outbound}/{loadNumber}/history</c>).
+/// <see cref="Error"/>/<see cref="Reason"/> carry the upstream failure context surfaced as
+/// exception signals. Tolerant of missing/nullable fields and preserves Alvys PascalCase.
+/// </summary>
+public sealed class AlvysVisibilityHistoryEvent
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("ExternalId")]
+    public string? ExternalId { get; set; }
+
+    [JsonPropertyName("TripNumber")]
+    public string? TripNumber { get; set; }
+
+    [JsonPropertyName("LoadNumber")]
+    public string? LoadNumber { get; set; }
+
+    [JsonPropertyName("EventType")]
+    public string? EventType { get; set; }
+
+    [JsonPropertyName("SharedAt")]
+    public DateTimeOffset? SharedAt { get; set; }
+
+    [JsonPropertyName("Destination")]
+    public string? Destination { get; set; }
+
+    [JsonPropertyName("TruckNumber")]
+    public string? TruckNumber { get; set; }
+
+    [JsonPropertyName("DriverName")]
+    public string? DriverName { get; set; }
+
+    [JsonPropertyName("TrailerNumber")]
+    public string? TrailerNumber { get; set; }
+
+    [JsonPropertyName("StopId")]
+    public string? StopId { get; set; }
+
+    [JsonPropertyName("LocationId")]
+    public string? LocationId { get; set; }
+
+    [JsonPropertyName("SharedBy")]
+    public string? SharedBy { get; set; }
+
+    [JsonPropertyName("Reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("Address")]
+    public AlvysContextAddress? Address { get; set; }
+
+    [JsonPropertyName("Coordinates")]
+    public AlvysCoordinates? Coordinates { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("Error")]
+    public string? Error { get; set; }
+}
+
+// ---------------------------------------------------------------------------
+// Equipment events (read-only): truck + trailer event searches.
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/trucks/events/search</c>.
+/// <see cref="StartDate"/> and <see cref="TruckIds"/> are required; <see cref="EndDate"/>
+/// is optional (open-ended window). <see cref="Validate"/> enforces both required fields.
+/// </summary>
+public sealed class TruckEventSearchRequest
+{
+    [JsonPropertyName("StartDate")]
+    public DateTimeOffset? StartDate { get; set; }
+
+    [JsonPropertyName("EndDate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? EndDate { get; set; }
+
+    [JsonPropertyName("TruckIds")]
+    public List<string> TruckIds { get; set; } = [];
+
+    /// <summary>Guards the Alvys-required fields before the request is sent.</summary>
+    public void Validate()
+    {
+        if (StartDate is null)
+            throw new ArgumentException("StartDate is required.", nameof(StartDate));
+        if (TruckIds is not { Count: > 0 })
+            throw new ArgumentException("At least one truck id is required.", nameof(TruckIds));
+    }
+}
+
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/trailers/events/search</c>.
+/// <see cref="StartDate"/> and <see cref="TrailerIds"/> are required; <see cref="EndDate"/>
+/// is optional (open-ended window). <see cref="Validate"/> enforces both required fields.
+/// </summary>
+public sealed class TrailerEventSearchRequest
+{
+    [JsonPropertyName("StartDate")]
+    public DateTimeOffset? StartDate { get; set; }
+
+    [JsonPropertyName("EndDate")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? EndDate { get; set; }
+
+    [JsonPropertyName("TrailerIds")]
+    public List<string> TrailerIds { get; set; } = [];
+
+    /// <summary>Guards the Alvys-required fields before the request is sent.</summary>
+    public void Validate()
+    {
+        if (StartDate is null)
+            throw new ArgumentException("StartDate is required.", nameof(StartDate));
+        if (TrailerIds is not { Count: > 0 })
+            throw new ArgumentException("At least one trailer id is required.", nameof(TrailerIds));
+    }
+}
+
+/// <summary>
+/// A truck event (repair/maintenance/availability/other) used to explain match risk when
+/// it overlaps a pickup/delivery window. Tolerant of missing fields; never used to fabricate
+/// availability when no event data is returned.
+/// </summary>
+public sealed class AlvysTruckEvent
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("TruckId")]
+    public string? TruckId { get; set; }
+
+    [JsonPropertyName("Title")]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("EventType")]
+    public string? EventType { get; set; }
+
+    [JsonPropertyName("Description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("StartDate")]
+    public DateTimeOffset? StartDate { get; set; }
+
+    [JsonPropertyName("EndDate")]
+    public DateTimeOffset? EndDate { get; set; }
+
+    [JsonPropertyName("Address")]
+    public AlvysContextAddress? Address { get; set; }
+
+    [JsonPropertyName("CreatedBy")]
+    public string? CreatedBy { get; set; }
+
+    [JsonPropertyName("CreatedAt")]
+    public DateTimeOffset? CreatedAt { get; set; }
+}
+
+/// <summary>
+/// A trailer event (repair/maintenance/availability/other) used to explain match risk when
+/// it overlaps a pickup/delivery window. Tolerant of missing fields; never used to fabricate
+/// availability when no event data is returned.
+/// </summary>
+public sealed class AlvysTrailerEvent
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("TrailerId")]
+    public string? TrailerId { get; set; }
+
+    [JsonPropertyName("Title")]
+    public string? Title { get; set; }
+
+    [JsonPropertyName("EventType")]
+    public string? EventType { get; set; }
+
+    [JsonPropertyName("Description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("StartDate")]
+    public DateTimeOffset? StartDate { get; set; }
+
+    [JsonPropertyName("EndDate")]
+    public DateTimeOffset? EndDate { get; set; }
+
+    [JsonPropertyName("Address")]
+    public AlvysContextAddress? Address { get; set; }
+
+    [JsonPropertyName("CreatedBy")]
+    public string? CreatedBy { get; set; }
+
+    [JsonPropertyName("CreatedAt")]
+    public DateTimeOffset? CreatedAt { get; set; }
+}
+
 /// <summary>OAuth2 token response from the Alvys token endpoint.</summary>
 internal sealed record AlvysTokenResponse(
     [property: JsonPropertyName("access_token")] string AccessToken,

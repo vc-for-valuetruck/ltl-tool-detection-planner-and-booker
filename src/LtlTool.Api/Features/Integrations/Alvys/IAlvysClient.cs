@@ -134,4 +134,51 @@ public interface IAlvysClient
     /// read paths.
     /// </summary>
     Task<AlvysTender?> GetTenderByIdAsync(string tenderId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches invoices via <c>POST /api/p/v{version}/invoices/search</c> for billing
+    /// readiness/worklist support (already-invoiced, remaining balance, invoice status,
+    /// load link, line-item visibility). <see cref="InvoiceSearchRequest.Page"/> is the
+    /// 0-based Alvys page.
+    /// </summary>
+    Task<AlvysInvoicesResponse> SearchInvoicesAsync(InvoiceSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a single invoice by id/invoiceNumber via <c>GET /api/p/v{version}/invoices?…</c>
+    /// (at least one criterion required). Returns <c>null</c> when not found or on a
+    /// non-success/transport error — degrading gracefully like the other read paths.
+    /// </summary>
+    Task<AlvysInvoice?> GetInvoiceAsync(InvoiceLookup lookup, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists inbound visibility-history events for a load via
+    /// <c>GET /api/p/v{version}/visibility/inbound/{loadNumber}/history</c>. The Alvys response
+    /// is a bare array, so this returns a list rather than a paged envelope.
+    /// </summary>
+    Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListInboundVisibilityHistoryAsync(
+        string loadNumber, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists outbound visibility-history events for a load via
+    /// <c>GET /api/p/v{version}/visibility/outbound/{loadNumber}/history</c>. The Alvys response
+    /// is a bare array, so this returns a list rather than a paged envelope.
+    /// </summary>
+    Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListOutboundVisibilityHistoryAsync(
+        string loadNumber, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches truck events via <c>POST /api/p/v{version}/trucks/events/search</c> for match
+    /// risk/explanation (repair/maintenance events overlapping a pickup/delivery window). The
+    /// Alvys response is a bare array, so this returns a list rather than a paged envelope.
+    /// </summary>
+    Task<IReadOnlyList<AlvysTruckEvent>> SearchTruckEventsAsync(
+        TruckEventSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches trailer events via <c>POST /api/p/v{version}/trailers/events/search</c> for match
+    /// risk/explanation (repair/maintenance events overlapping a pickup/delivery window). The
+    /// Alvys response is a bare array, so this returns a list rather than a paged envelope.
+    /// </summary>
+    Task<IReadOnlyList<AlvysTrailerEvent>> SearchTrailerEventsAsync(
+        TrailerEventSearchRequest request, CancellationToken ct = default);
 }

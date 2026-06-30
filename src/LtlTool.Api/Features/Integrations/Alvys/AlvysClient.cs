@@ -178,6 +178,51 @@ public sealed class AlvysClient(
         return GetAsync<AlvysTender>(path, ct);
     }
 
+    public async Task<AlvysInvoicesResponse> SearchInvoicesAsync(
+        InvoiceSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.InvoicesSearch(_options.ApiVersion);
+        return await PostSearchAsync<InvoiceSearchRequest, AlvysInvoicesResponse>(path, request, ct)
+            ?? new AlvysInvoicesResponse();
+    }
+
+    public Task<AlvysInvoice?> GetInvoiceAsync(InvoiceLookup lookup, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.InvoiceDetail(_options.ApiVersion, lookup);
+        return GetAsync<AlvysInvoice>(path, ct);
+    }
+
+    public async Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListInboundVisibilityHistoryAsync(
+        string loadNumber, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.VisibilityInboundHistory(_options.ApiVersion, loadNumber);
+        return await GetListAsync<AlvysVisibilityHistoryEvent>(path, ct) ?? [];
+    }
+
+    public async Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListOutboundVisibilityHistoryAsync(
+        string loadNumber, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.VisibilityOutboundHistory(_options.ApiVersion, loadNumber);
+        return await GetListAsync<AlvysVisibilityHistoryEvent>(path, ct) ?? [];
+    }
+
+    public async Task<IReadOnlyList<AlvysTruckEvent>> SearchTruckEventsAsync(
+        TruckEventSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.TruckEventsSearch(_options.ApiVersion);
+        return await PostListAsync<TruckEventSearchRequest, AlvysTruckEvent>(path, request, ct) ?? [];
+    }
+
+    public async Task<IReadOnlyList<AlvysTrailerEvent>> SearchTrailerEventsAsync(
+        TrailerEventSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.TrailerEventsSearch(_options.ApiVersion);
+        return await PostListAsync<TrailerEventSearchRequest, AlvysTrailerEvent>(path, request, ct) ?? [];
+    }
+
     private async Task<TResponse?> GetAsync<TResponse>(string path, CancellationToken ct)
         where TResponse : class
     {
@@ -272,6 +317,52 @@ public sealed class AlvysClient(
             var token = await tokenProvider.GetAccessTokenAsync(ct);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            using var response = await client.SendAsync(request, ct);
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return [];
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogError(
+                    "Alvys {Path} failed with HTTP {StatusCode}.", path, (int)response.StatusCode);
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<List<T>>(JsonOptions, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            // Log the exception type/message but not credentials or payloads.
+            logger.LogError(ex, "Alvys {Path} transport error: {Message}", path, ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Issues a read-only <c>POST</c> (filter body) against an Alvys endpoint that returns a
+    /// bare JSON array — e.g. the truck/trailer event searches. Mirrors <see cref="GetListAsync"/>'s
+    /// safety stance: 404 yields an empty list, other non-success statuses are logged (status
+    /// only) and surfaced as <c>null</c> so callers degrade to an empty list.
+    /// </summary>
+    private async Task<List<T>?> PostListAsync<TRequest, T>(string path, TRequest body, CancellationToken ct)
+    {
+        try
+        {
+            var client = httpClientFactory.CreateClient(ApiHttpClientName);
+            var token = await tokenProvider.GetAccessTokenAsync(ct);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, path)
+            {
+                Content = JsonContent.Create(body),
+            };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
