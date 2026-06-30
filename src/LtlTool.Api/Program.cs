@@ -2,9 +2,9 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
-using MyApp.Api.Data;
-using MyApp.Api.Options;
-using MyApp.Api.Security;
+using LtlTool.Api.Data;
+using LtlTool.Api.Options;
+using LtlTool.Api.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 

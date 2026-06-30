@@ -1,11 +1,11 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
-using MyApp.Api.Options;
-using MyApp.Api.Security;
+using LtlTool.Api.Options;
+using LtlTool.Api.Security;
 using Xunit;
 
-namespace MyApp.Api.Tests;
+namespace LtlTool.Api.Tests;
 
 public sealed class AllowedEmailDomainHandlerTests
 {

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Xunit;
 
-namespace MyApp.Api.Tests;
+namespace LtlTool.Api.Tests;
 
 public sealed class TemplateWebApplicationFactory : WebApplicationFactory<Program>
 {

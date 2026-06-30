@@ -24,6 +24,14 @@ services:
     environment:
       # Allow the ngrok origin (set by start-demo.sh) alongside localhost.
       Cors__AllowedOrigins__1: "${PUBLIC_URL:-http://localhost:4200}"
+      # Alvys TMS — API only, never surfaced to the SPA.
+      Alvys__ApiBaseUrl: "${ALVYS_API_BASE_URL:-}"
+      Alvys__TenantId: "${ALVYS_TENANT_ID:-}"
+      Alvys__ClientId: "${ALVYS_CLIENT_ID:-}"
+      Alvys__ClientSecret: "${ALVYS_CLIENT_SECRET:-}"
+      # LTL app settings.
+      Ltl__DetectionEnabled: "${LTL_DETECTION_ENABLED:-false}"
+      Ltl__DefaultTimezone: "${LTL_DEFAULT_TIMEZONE:-America/Chicago}"
 
   web:
     environment:
@@ -32,7 +40,7 @@ services:
 
   ngrok:
     image: ngrok/ngrok:latest
-    container_name: myapp-ngrok
+    container_name: ltl-tool-detection-planner-and-booker-ngrok
     depends_on:
       - web
     environment:

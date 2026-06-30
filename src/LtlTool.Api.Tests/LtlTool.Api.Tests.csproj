@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\MyApp.Api\MyApp.Api.csproj" />
+    <ProjectReference Include="..\LtlTool.Api\LtlTool.Api.csproj" />
   </ItemGroup>
 
 </Project>

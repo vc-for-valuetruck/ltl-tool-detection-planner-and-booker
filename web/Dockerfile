@@ -7,7 +7,7 @@ COPY web/ ./
 RUN npm run build -- --configuration production
 
 FROM nginx:1.27-alpine AS final
-COPY --from=build /app/dist/myapp-web/browser /usr/share/nginx/html
+COPY --from=build /app/dist/ltl-tool-detection-planner-and-booker-web/browser /usr/share/nginx/html
 COPY web/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY web/docker-entrypoint.sh /docker-entrypoint.d/10-runtime-config.sh
 RUN chmod +x /docker-entrypoint.d/10-runtime-config.sh

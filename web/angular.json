@@ -3,7 +3,7 @@
   "version": 1,
   "newProjectRoot": "projects",
   "projects": {
-    "myapp-web": {
+    "ltl-tool-detection-planner-and-booker-web": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
@@ -12,7 +12,7 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "outputPath": "dist/myapp-web",
+            "outputPath": "dist/ltl-tool-detection-planner-and-booker-web",
             "index": "src/index.html",
             "browser": "src/main.ts",
             "polyfills": ["zone.js"],
@@ -42,8 +42,8 @@
         "serve": {
           "builder": "@angular/build:dev-server",
           "configurations": {
-            "production": { "buildTarget": "myapp-web:build:production" },
-            "development": { "buildTarget": "myapp-web:build:development" }
+            "production": { "buildTarget": "ltl-tool-detection-planner-and-booker-web:build:production" },
+            "development": { "buildTarget": "ltl-tool-detection-planner-and-booker-web:build:development" }
           },
           "defaultConfiguration": "development"
         },

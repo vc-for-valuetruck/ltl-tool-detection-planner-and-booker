@@ -8,7 +8,7 @@ import { RUNTIME_CONFIG, isAuthConfigured } from './runtime-config';
   imports: [RouterOutlet],
   template: `
     <header class="app-header">
-      <h1>MyApp</h1>
+      <h1>LTL Tool Detection, Planner, and Booker</h1>
       <span class="auth-state" [class.ok]="authConfigured">
         {{ authConfigured ? 'Auth configured' : 'Auth not configured' }}
       </span>

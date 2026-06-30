@@ -1,4 +1,4 @@
-namespace MyApp.Api.Options;
+namespace LtlTool.Api.Options;
 
 public sealed class AccessPolicyOptions
 {

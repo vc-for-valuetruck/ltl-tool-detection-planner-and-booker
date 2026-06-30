@@ -22,25 +22,27 @@ Complete these steps when creating a new app from this template.
 - [ ] Set `ALLOWED_EMAIL_DOMAIN` to your org's email domain (or leave default for open UAT)
 - [ ] Set `MSSQL_SA_PASSWORD` to a strong password
 - [ ] (Optional) Set `EXTERNAL_API_BASE_URL` / `EXTERNAL_API_KEY`
+- [ ] Leave `ALVYS_*` / `LTL_*` blank/defaulted until Phase 2 (API only; never expose Alvys secrets to the SPA)
 - [ ] (Optional, for ngrok demo) Set `NGROK_AUTHTOKEN` — never commit it
 
-## 3. Rename the App
+## 3. App Naming (already applied)
 
-Replace `MyApp` / `myapp` with your application name (see README section 5):
+This repo has already been renamed from the template placeholders to the
+`LtlTool` / `ltl-tool-detection-planner-and-booker` identity (see README
+section 5). The placeholders `MyApp` / `myapp` should no longer appear:
 
-- [ ] `src/MyApp.Api/` folder → `src/YourApp.Api/`
-- [ ] `src/MyApp.Api/MyApp.Api.csproj` (file name, `RootNamespace`, `AssemblyName`)
-- [ ] `src/MyApp.Api.Tests/` folder + `.csproj` + `ProjectReference`
-- [ ] `MyApp.sln` (name + project paths)
-- [ ] `docker-compose.yml` (`name:`, `image:`, `container_name:`, `Database=`, Dockerfile paths)
-- [ ] `web/package.json` (`"name": "myapp-web"`)
-- [ ] `web/angular.json` (project name, `outputPath`, `buildTarget`)
-- [ ] `web/Dockerfile` (`dist/myapp-web/browser` copy path)
-- [ ] `web/src/index.html` (`<title>`)
-- [ ] `init/01-seed.sql` (database name)
-- [ ] `.devcontainer/devcontainer.json` (`name`)
-- [ ] `docker-compose.demo.yml` (ngrok `container_name`)
-- [ ] `scripts/start-codespaces-demo.sh` (`API_PROJECT` default path)
+- [x] `src/LtlTool.Api/` (folder, csproj, `RootNamespace`, `AssemblyName`)
+- [x] `src/LtlTool.Api.Tests/` (folder + csproj + `ProjectReference`)
+- [x] `LtlTool.sln` (name + project paths)
+- [x] `docker-compose.yml` (`name:`, `image:`, `container_name:`, `Database=`, Dockerfile paths)
+- [x] `web/package.json` (`"name": "ltl-tool-detection-planner-and-booker-web"`)
+- [x] `web/angular.json` (project name, `outputPath`, `buildTarget`)
+- [x] `web/Dockerfile` (`dist/ltl-tool-detection-planner-and-booker-web/browser` copy path)
+- [x] `web/src/index.html` (`<title>`)
+- [x] `init/01-seed.sql` (database name)
+- [x] `.devcontainer/devcontainer.json` (`name`)
+- [x] `docker-compose.demo.yml` (ngrok `container_name`)
+- [x] `scripts/start-codespaces-demo.sh` (`API_PROJECT` default path)
 
 ## 4. Start and Verify
 

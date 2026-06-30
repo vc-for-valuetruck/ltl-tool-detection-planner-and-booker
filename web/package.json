@@ -1,7 +1,7 @@
 {
-  "name": "myapp-web",
+  "name": "ltl-tool-detection-planner-and-booker-web",
   "version": "0.1.0",
-  "description": "MyApp Angular SPA (UAT template).",
+  "description": "LTL Tool Detection, Planner, and Booker Angular SPA.",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --port 4200",

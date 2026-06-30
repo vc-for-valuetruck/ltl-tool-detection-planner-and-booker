@@ -1,9 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
-using MyApp.Api.Options;
+using LtlTool.Api.Options;
 
-namespace MyApp.Api.Security;
+namespace LtlTool.Api.Security;
 
 public sealed class AllowedEmailDomainRequirement : IAuthorizationRequirement;
 

@@ -8,7 +8,7 @@ import { RUNTIME_CONFIG, isAuthConfigured } from '../../runtime-config';
   standalone: true,
   template: `
     <section>
-      <p>This is the <strong>MyApp</strong> starter SPA. Replace this page with your application.</p>
+      <p>This is the <strong>LTL Tool Detection, Planner, and Booker</strong> app.</p>
 
       @if (authConfigured) {
         <button type="button" (click)="login()">Sign in</button>

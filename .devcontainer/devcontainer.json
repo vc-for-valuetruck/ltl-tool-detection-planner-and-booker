@@ -1,5 +1,5 @@
 {
-  "name": "MyApp Dev Container",
+  "name": "LTL Tool Detection, Planner, and Booker Dev Container",
   "image": "mcr.microsoft.com/devcontainers/universal:2",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
