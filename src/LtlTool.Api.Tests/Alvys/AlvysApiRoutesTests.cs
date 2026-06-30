@@ -27,6 +27,14 @@ public sealed class AlvysApiRoutesTests
         => Assert.Equal("api/p/v1/trips/search", AlvysApiRoutes.TripsSearch("v1"));
 
     [Fact]
+    public void TrailersSearch_builds_relative_versioned_path()
+        => Assert.Equal("api/p/v1/trailers/search", AlvysApiRoutes.TrailersSearch("1"));
+
+    [Fact]
+    public void TrucksSearch_builds_relative_versioned_path()
+        => Assert.Equal("api/p/v2.0/trucks/search", AlvysApiRoutes.TrucksSearch("2.0"));
+
+    [Fact]
     public void Search_paths_are_relative_so_they_resolve_under_the_host_base()
     {
         var baseAddress = new Uri("https://integrations.alvys.com/");

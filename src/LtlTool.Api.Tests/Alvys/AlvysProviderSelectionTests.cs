@@ -46,4 +46,16 @@ public sealed class AlvysProviderSelectionTests
         Assert.Empty(trips.Items);
         Assert.Null(await client.GetLoadByNumberAsync("123"));
     }
+
+    [Fact]
+    public async Task Fallback_client_returns_empty_paged_shapes_for_trailers_and_trucks()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        var trailers = await client.SearchTrailersAsync(new TrailerSearchRequest { Status = ["Active"] });
+        var trucks = await client.SearchTrucksAsync(new TruckSearchRequest { IsActive = true });
+
+        Assert.Empty(trailers.Items);
+        Assert.Empty(trucks.Items);
+    }
 }

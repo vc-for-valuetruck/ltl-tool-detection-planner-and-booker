@@ -68,6 +68,24 @@ public sealed class AlvysClient(
             ?? new AlvysTripsResponse();
     }
 
+    public async Task<AlvysTrailersResponse> SearchTrailersAsync(
+        TrailerSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.TrailersSearch(_options.ApiVersion);
+        return await PostSearchAsync<TrailerSearchRequest, AlvysTrailersResponse>(path, request, ct)
+            ?? new AlvysTrailersResponse();
+    }
+
+    public async Task<AlvysTrucksResponse> SearchTrucksAsync(
+        TruckSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.TrucksSearch(_options.ApiVersion);
+        return await PostSearchAsync<TruckSearchRequest, AlvysTrucksResponse>(path, request, ct)
+            ?? new AlvysTrucksResponse();
+    }
+
     private async Task<TResponse?> PostSearchAsync<TRequest, TResponse>(
         string path, TRequest body, CancellationToken ct)
         where TResponse : class, new()

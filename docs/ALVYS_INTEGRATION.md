@@ -58,12 +58,12 @@ All under `src/LtlTool.Api/Features/Integrations/Alvys/`:
 | File | Purpose |
 | --- | --- |
 | `AlvysOptions.cs` | Strongly-typed config (`ApiBaseUrl` host + `ApiVersion`) + `AlvysProvider` enum (`Live`/`Fallback`). |
-| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `SearchTripsAsync`). |
+| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `SearchTripsAsync`, `SearchTrailersAsync`, `SearchTrucksAsync`). |
 | `AlvysClient.cs` | Live client; default source of truth. Named `HttpClient` + bearer token per request. |
 | `AlvysApiRoutes.cs` | Builds versioned `/api/p/v{version}/...` paths and normalizes the version (no double `v`). |
 | `AlvysTokenProvider.cs` | OAuth2 token acquisition + caching (`IAlvysTokenProvider`). |
 | `FallbackAlvysClient.cs` | Non-default empty-result stub for local/UAT only. |
-| `AlvysDtos.cs` | Load + trip search request/response DTOs + token response. |
+| `AlvysDtos.cs` | Load + trip + trailer + truck search request/response DTOs + token response. |
 | `AlvysServiceCollectionExtensions.cs` | DI wiring + provider selection (live default). |
 
 ## Search endpoints
@@ -110,6 +110,42 @@ mileage, assigned truck/trailer and driver/carrier/operator pay context.
   context, and `IsDeleted`. Nested payroll/accessorial classes are kept flexible and
   unknown JSON is tolerated.
 
+### `trailers/search` → `POST /api/p/v{version}/trailers/search`
+
+Trailers are equipment master data used for LTL capacity, equipment-compatibility and
+assignment-readiness decisions in the planner/booker. **Read-only** — this slice issues
+queries only; no trailer is created or mutated.
+
+- **Request** (`TrailerSearchRequest`): `Page` (0-based), `PageSize` (> 0), optional
+  `Status[]`, `TrailerNumber`, `FleetName`, `VinNumber`.
+- **Local validation** (`TrailerSearchRequest.Validate`): only `PageSize > 0` is locally
+  enforced. Alvys enforces the conditional-filter requirement server-side
+  (`TrailerNumber`/`FleetName`/`VinNumber` are conditionally required when the other
+  conditional filters are empty).
+- **Response** (`AlvysTrailersResponse` = paged `{ Page, PageSize, Total, Items[] }`):
+  pragmatic `AlvysTrailerEquipment` projection — `Id`, `TrailerNum`, `Fleet`
+  (`Id`/`Name`/`InvoiceNumberPrefix`), `Year`, `Make`, license/plate fields and expiries,
+  `VinNum`, `Status`, `SubsidiaryId`, `EquipmentType`, `EquipmentSize`, `Capacity`
+  (`Pallets`/`Weight`), insurance/inspection fields, `Notes[]`, `References[]`, `CreatedAt`.
+  Unknown JSON properties are tolerated.
+
+### `trucks/search` → `POST /api/p/v{version}/trucks/search`
+
+Trucks are equipment master data used for the same capacity/compatibility/assignment-
+readiness decisions. **Read-only** — queries only.
+
+- **Request** (`TruckSearchRequest`): `Page` (0-based), `PageSize` (> 0), optional
+  `Status[]`, `TruckNumber`, `FleetName`, `VinNumber`, `IsActive`, `RegisteredName`.
+- **Local validation** (`TruckSearchRequest.Validate`): only `PageSize > 0` is locally
+  enforced. Alvys enforces the conditional-filter requirement server-side
+  (`TruckNumber`/`FleetName`/`VinNumber`/`IsActive`/`RegisteredName` are conditionally
+  required when the other conditional filters are empty).
+- **Response** (`AlvysTrucksResponse` = paged envelope): pragmatic `AlvysTruck` projection —
+  `Id`, `TruckNum`, `VinNumber`, `Year`, `Make`, `Model`, license/plate fields and expiries,
+  `Status`, `SubsidiaryId`, `NumberOfAxles`, `Fleet`, `GrossWeight`, `EmptyWeight`, `Color`,
+  `FuelType`, `FuelCards[]`, insurance/inspection fields, `Notes[]`, `References[]`,
+  `CreatedAt`. Nested fuel/weight fields are kept minimal and unknown JSON is tolerated.
+
 Registered in `Program.cs` via `builder.Services.AddAlvysIntegration(builder.Configuration)`.
 
 ## Safety
@@ -143,8 +179,17 @@ of truth for the auth/client pattern. Exact files reviewed at `main`:
   avoid adding a dependency for this skeleton slice. The token-acquisition pattern is
   unchanged.
 
+## Read-only stance
+
+This integration phase is **read-only**. All four search endpoints
+(`loads`/`trips`/`trailers`/`trucks`) issue queries only. Alvys models searches as
+`POST` (the filter set is the request body), but no data is created, updated or deleted
+and there is no writeback to Alvys. No `PUT`/`PATCH`/`DELETE` or POST-mutation calls are
+made. Live Alvys remains the default source of truth; the `Fallback` provider is opt-in
+for local/UAT and returns empty (shape-preserving) results.
+
 ## Next slice
 
-`trucks/search` and `trailers/search` support (equipment master data for planning),
-then Alvys-backed read endpoints (e.g. `GET /api/loads`, `GET /api/trips`) that call
-`IAlvysClient`, plus richer DTO mapping for the planner/booker views.
+Alvys-backed read endpoints (e.g. `GET /api/loads`, `GET /api/trips`,
+`GET /api/equipment`) that call `IAlvysClient`, plus richer DTO mapping for the
+planner/booker views and equipment compatibility/capacity logic.

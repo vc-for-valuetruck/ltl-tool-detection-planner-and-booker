@@ -34,4 +34,18 @@ public interface IAlvysClient
     /// <see cref="TripSearchRequest.Page"/> is the 0-based Alvys page.
     /// </summary>
     Task<AlvysTripsResponse> SearchTripsAsync(TripSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches trailers via <c>POST /api/p/v{version}/trailers/search</c> for
+    /// equipment master data (capacity/equipment-type/assignment readiness).
+    /// <see cref="TrailerSearchRequest.Page"/> is the 0-based Alvys page.
+    /// </summary>
+    Task<AlvysTrailersResponse> SearchTrailersAsync(TrailerSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches trucks via <c>POST /api/p/v{version}/trucks/search</c> for equipment
+    /// master data (capacity/equipment/assignment readiness).
+    /// <see cref="TruckSearchRequest.Page"/> is the 0-based Alvys page.
+    /// </summary>
+    Task<AlvysTrucksResponse> SearchTrucksAsync(TruckSearchRequest request, CancellationToken ct = default);
 }

@@ -582,6 +582,303 @@ public sealed class AlvysECheck
     public decimal? Amount { get; set; }
 }
 
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/trailers/search</c>. Page is 0-based.
+/// Alvys requires at least one conditional filter
+/// (TrailerNumber/FleetName/VinNumber) server-side when others are empty.
+/// </summary>
+public sealed class TrailerSearchRequest
+{
+    [JsonPropertyName("Page")]
+    public int Page { get; set; }
+
+    [JsonPropertyName("PageSize")]
+    public int PageSize { get; set; } = 100;
+
+    [JsonPropertyName("Status")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Status { get; set; }
+
+    [JsonPropertyName("TrailerNumber")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TrailerNumber { get; set; }
+
+    [JsonPropertyName("FleetName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FleetName { get; set; }
+
+    [JsonPropertyName("VinNumber")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? VinNumber { get; set; }
+
+    /// <summary>
+    /// Light client-side guard: only <c>PageSize &gt; 0</c> is locally enforceable.
+    /// Alvys enforces the conditional-filter requirement (TrailerNumber/FleetName/
+    /// VinNumber required when the other conditional filters are empty) server-side.
+    /// </summary>
+    public void Validate()
+    {
+        if (PageSize <= 0)
+            throw new ArgumentException("PageSize must be greater than zero.", nameof(PageSize));
+    }
+}
+
+/// <summary>Trailers search response: paged envelope of <see cref="AlvysTrailerEquipment"/>.</summary>
+public sealed class AlvysTrailersResponse : AlvysPagedResponse<AlvysTrailerEquipment>;
+
+/// <summary>
+/// Pragmatic trailer master-data projection covering the capacity/equipment/assignment-
+/// readiness fields used by the LTL planner/booker. Unknown JSON properties are tolerated
+/// so this can lag the full Alvys schema without breaking deserialization.
+/// </summary>
+public sealed class AlvysTrailerEquipment
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("TrailerNum")]
+    public string? TrailerNum { get; set; }
+
+    [JsonPropertyName("Fleet")]
+    public AlvysFleet? Fleet { get; set; }
+
+    [JsonPropertyName("Year")]
+    public int? Year { get; set; }
+
+    [JsonPropertyName("Make")]
+    public string? Make { get; set; }
+
+    [JsonPropertyName("LicenseNum")]
+    public string? LicenseNum { get; set; }
+
+    [JsonPropertyName("LicenseState")]
+    public string? LicenseState { get; set; }
+
+    [JsonPropertyName("LicenseCountry")]
+    public string? LicenseCountry { get; set; }
+
+    [JsonPropertyName("PlateExpiresAt")]
+    public DateTimeOffset? PlateExpiresAt { get; set; }
+
+    [JsonPropertyName("LicenseExpiresAt")]
+    public DateTimeOffset? LicenseExpiresAt { get; set; }
+
+    [JsonPropertyName("VinNum")]
+    public string? VinNum { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("SubsidiaryId")]
+    public string? SubsidiaryId { get; set; }
+
+    [JsonPropertyName("EquipmentType")]
+    public string? EquipmentType { get; set; }
+
+    [JsonPropertyName("EquipmentSize")]
+    public string? EquipmentSize { get; set; }
+
+    [JsonPropertyName("Capacity")]
+    public AlvysTrailerCapacity? Capacity { get; set; }
+
+    [JsonPropertyName("InsuranceCompany")]
+    public string? InsuranceCompany { get; set; }
+
+    [JsonPropertyName("InsurancePolicyNumber")]
+    public string? InsurancePolicyNumber { get; set; }
+
+    [JsonPropertyName("InsuranceExpiresAt")]
+    public DateTimeOffset? InsuranceExpiresAt { get; set; }
+
+    [JsonPropertyName("InspectionExpiresAt")]
+    public DateTimeOffset? InspectionExpiresAt { get; set; }
+
+    [JsonPropertyName("Notes")]
+    public List<AlvysNote>? Notes { get; set; }
+
+    [JsonPropertyName("References")]
+    public List<AlvysReference>? References { get; set; }
+
+    [JsonPropertyName("CreatedAt")]
+    public DateTimeOffset? CreatedAt { get; set; }
+}
+
+/// <summary>Fleet reference carried on equipment master data (trucks/trailers).</summary>
+public sealed class AlvysFleet
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("InvoiceNumberPrefix")]
+    public string? InvoiceNumberPrefix { get; set; }
+}
+
+/// <summary>Trailer load capacity used for LTL planning/capacity decisions.</summary>
+public sealed class AlvysTrailerCapacity
+{
+    [JsonPropertyName("Pallets")]
+    public decimal? Pallets { get; set; }
+
+    [JsonPropertyName("Weight")]
+    public decimal? Weight { get; set; }
+}
+
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/trucks/search</c>. Page is 0-based.
+/// Alvys requires at least one conditional filter
+/// (TruckNumber/FleetName/VinNumber/IsActive/RegisteredName) server-side when others
+/// are empty.
+/// </summary>
+public sealed class TruckSearchRequest
+{
+    [JsonPropertyName("Page")]
+    public int Page { get; set; }
+
+    [JsonPropertyName("PageSize")]
+    public int PageSize { get; set; } = 100;
+
+    [JsonPropertyName("Status")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Status { get; set; }
+
+    [JsonPropertyName("TruckNumber")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TruckNumber { get; set; }
+
+    [JsonPropertyName("FleetName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FleetName { get; set; }
+
+    [JsonPropertyName("VinNumber")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? VinNumber { get; set; }
+
+    [JsonPropertyName("IsActive")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsActive { get; set; }
+
+    [JsonPropertyName("RegisteredName")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RegisteredName { get; set; }
+
+    /// <summary>
+    /// Light client-side guard: only <c>PageSize &gt; 0</c> is locally enforceable.
+    /// Alvys enforces the conditional-filter requirement (TruckNumber/FleetName/
+    /// VinNumber/IsActive/RegisteredName required when the other conditional filters
+    /// are empty) server-side.
+    /// </summary>
+    public void Validate()
+    {
+        if (PageSize <= 0)
+            throw new ArgumentException("PageSize must be greater than zero.", nameof(PageSize));
+    }
+}
+
+/// <summary>Trucks search response: paged envelope of <see cref="AlvysTruck"/>.</summary>
+public sealed class AlvysTrucksResponse : AlvysPagedResponse<AlvysTruck>;
+
+/// <summary>
+/// Pragmatic truck master-data projection covering the capacity/equipment/assignment-
+/// readiness fields used by the LTL planner/booker. Unknown JSON properties are tolerated
+/// so this can lag the full Alvys schema without breaking deserialization.
+/// </summary>
+public sealed class AlvysTruck
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("TruckNum")]
+    public string? TruckNum { get; set; }
+
+    [JsonPropertyName("VinNumber")]
+    public string? VinNumber { get; set; }
+
+    [JsonPropertyName("Year")]
+    public int? Year { get; set; }
+
+    [JsonPropertyName("Make")]
+    public string? Make { get; set; }
+
+    [JsonPropertyName("Model")]
+    public string? Model { get; set; }
+
+    [JsonPropertyName("LicenseNum")]
+    public string? LicenseNum { get; set; }
+
+    [JsonPropertyName("LicenseState")]
+    public string? LicenseState { get; set; }
+
+    [JsonPropertyName("LicenseCountry")]
+    public string? LicenseCountry { get; set; }
+
+    [JsonPropertyName("PlateExpirationDate")]
+    public DateTimeOffset? PlateExpirationDate { get; set; }
+
+    [JsonPropertyName("LicenseExpirationDate")]
+    public DateTimeOffset? LicenseExpirationDate { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("SubsidiaryId")]
+    public string? SubsidiaryId { get; set; }
+
+    [JsonPropertyName("NumberOfAxles")]
+    public int? NumberOfAxles { get; set; }
+
+    [JsonPropertyName("Fleet")]
+    public AlvysFleet? Fleet { get; set; }
+
+    [JsonPropertyName("GrossWeight")]
+    public decimal? GrossWeight { get; set; }
+
+    [JsonPropertyName("EmptyWeight")]
+    public decimal? EmptyWeight { get; set; }
+
+    [JsonPropertyName("Color")]
+    public string? Color { get; set; }
+
+    [JsonPropertyName("FuelType")]
+    public string? FuelType { get; set; }
+
+    [JsonPropertyName("FuelCards")]
+    public List<AlvysFuelCard>? FuelCards { get; set; }
+
+    [JsonPropertyName("InsuranceCompany")]
+    public string? InsuranceCompany { get; set; }
+
+    [JsonPropertyName("InsurancePolicyNumber")]
+    public string? InsurancePolicyNumber { get; set; }
+
+    [JsonPropertyName("InsuranceExpirationDate")]
+    public DateTimeOffset? InsuranceExpirationDate { get; set; }
+
+    [JsonPropertyName("InspectionExpirationDate")]
+    public DateTimeOffset? InspectionExpirationDate { get; set; }
+
+    [JsonPropertyName("Notes")]
+    public List<AlvysNote>? Notes { get; set; }
+
+    [JsonPropertyName("References")]
+    public List<AlvysReference>? References { get; set; }
+
+    [JsonPropertyName("CreatedAt")]
+    public DateTimeOffset? CreatedAt { get; set; }
+}
+
+/// <summary>A fuel card assigned to a truck. Kept minimal/tolerant of unknown fields.</summary>
+public sealed class AlvysFuelCard
+{
+    [JsonPropertyName("Number")]
+    public string? Number { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+}
+
 /// <summary>OAuth2 token response from the Alvys token endpoint.</summary>
 internal sealed record AlvysTokenResponse(
     [property: JsonPropertyName("access_token")] string AccessToken,
