@@ -132,6 +132,113 @@ public sealed class AlvysClientTests
         Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
     }
 
+    [Theory]
+    [InlineData("v1", "/api/p/v1/loads/100/documents")]
+    [InlineData("2.0", "/api/p/v2.0/loads/100/documents")]   // normalized — no double "v"
+    public async Task ListLoadDocuments_maps_bare_array_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """[{"id":"DOC1","AttachmentPath":"loads/100/rate-con.pdf","AttachmentType":"RateConfirmation","AttachmentSize":20480,"UploadedAt":"2026-01-02T03:04:05Z","ParentId":"L1","ParentType":"Load","UploadedBy":"jane","DownloadUrl":"https://files.alvys.test/abc","ExpiresAt":"2026-01-02T04:04:05Z"}]"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.ListLoadDocumentsAsync("100");
+
+        var item = Assert.Single(result);
+        Assert.Equal("DOC1", item.Id);
+        Assert.Equal("loads/100/rate-con.pdf", item.AttachmentPath);
+        Assert.Equal("RateConfirmation", item.AttachmentType);
+        Assert.Equal(20480L, item.AttachmentSize);
+        Assert.Equal("L1", item.ParentId);
+        Assert.Equal("https://files.alvys.test/abc", item.DownloadUrl);
+        Assert.Equal(HttpMethod.Get, handler.Calls[0].Request.Method);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task ListLoadDocuments_url_encodes_load_number_in_path()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("[]"),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.ListLoadDocumentsAsync("VT 100/A");
+
+        // AbsolutePath is decoded; AbsoluteUri preserves the percent-encoding.
+        Assert.Contains("/api/p/v1/loads/VT%20100%2FA/documents", handler.Calls[0].Request.RequestUri?.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task ListLoadDocuments_returns_empty_on_rate_limit_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        var result = await client.ListLoadDocumentsAsync("100");
+
+        Assert.Empty(result);
+        Assert.Contains("429", logger.AllText);
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/loads/100/notes")]
+    [InlineData("2.0", "/api/p/v2.0/loads/100/notes")]   // normalized — no double "v"
+    public async Task ListLoadNotes_maps_bare_array_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """[{"Id":"N1","Description":"Detention approved","NoteType":"Operations","CreatedAt":"2026-01-02T03:04:05Z","CreatedBy":"Jane Doe","CreatedById":"U1"}]"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.ListLoadNotesAsync("100");
+
+        var item = Assert.Single(result);
+        Assert.Equal("N1", item.Id);
+        Assert.Equal("Detention approved", item.Description);
+        Assert.Equal("Operations", item.NoteType);
+        Assert.Equal("Jane Doe", item.CreatedBy);
+        Assert.Equal("U1", item.CreatedById);
+        Assert.Equal(HttpMethod.Get, handler.Calls[0].Request.Method);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task ListLoadNotes_returns_empty_on_server_error_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        var result = await client.ListLoadNotesAsync("100");
+
+        Assert.Empty(result);
+        Assert.Contains("500", logger.AllText);
+    }
+
+    [Fact]
+    public async Task ListLoadNotes_returns_empty_on_not_found_without_logging_error()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        var result = await client.ListLoadNotesAsync("999");
+
+        Assert.Empty(result);
+        Assert.Empty(logger.Messages);
+    }
+
     [Fact]
     public async Task SearchTrips_returns_empty_on_server_error_without_throwing()
     {

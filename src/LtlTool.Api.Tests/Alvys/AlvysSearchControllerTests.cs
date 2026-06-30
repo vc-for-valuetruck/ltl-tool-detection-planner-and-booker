@@ -26,6 +26,8 @@ public sealed class AlvysSearchControllerTests
         public DriverSearchRequest? Drivers { get; private set; }
         public CustomerSearchRequest? Customers { get; private set; }
         public UserSearchRequest? Users { get; private set; }
+        public string? DocumentsLoadNumber { get; private set; }
+        public string? NotesLoadNumber { get; private set; }
 
         public Task<AlvysLoadsResponse> SearchLoadsAsync(
             int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
@@ -43,6 +45,20 @@ public sealed class AlvysSearchControllerTests
 
         public Task<AlvysLoad?> GetLoadByNumberAsync(string loadNumber, CancellationToken ct = default)
             => Task.FromResult<AlvysLoad?>(null);
+
+        public Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(string loadNumber, CancellationToken ct = default)
+        {
+            DocumentsLoadNumber = loadNumber;
+            return Task.FromResult<IReadOnlyList<AlvysLoadDocument>>(
+                [new AlvysLoadDocument { Id = "DOC1", AttachmentType = "RateConfirmation", DownloadUrl = "https://files.alvys.test/abc" }]);
+        }
+
+        public Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(string loadNumber, CancellationToken ct = default)
+        {
+            NotesLoadNumber = loadNumber;
+            return Task.FromResult<IReadOnlyList<AlvysLoadNote>>(
+                [new AlvysLoadNote { Id = "N1", Description = "Detention approved", NoteType = "Operations" }]);
+        }
 
         public Task<AlvysTripsResponse> SearchTripsAsync(TripSearchRequest request, CancellationToken ct = default)
         {
@@ -246,6 +262,34 @@ public sealed class AlvysSearchControllerTests
     }
 
     [Fact]
+    public async Task ListLoadDocuments_passes_load_number_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.ListLoadDocuments("100", default);
+        var body = Assert.IsAssignableFrom<IReadOnlyList<AlvysLoadDocument>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Equal("100", client.DocumentsLoadNumber);
+        Assert.Equal("DOC1", Assert.Single(body).Id);
+    }
+
+    [Fact]
+    public async Task ListLoadNotes_passes_load_number_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.ListLoadNotes("100", default);
+        var body = Assert.IsAssignableFrom<IReadOnlyList<AlvysLoadNote>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Equal("100", client.NotesLoadNumber);
+        Assert.Equal("Detention approved", Assert.Single(body).Description);
+    }
+
+    [Fact]
     public async Task Responses_carry_no_credential_or_secret_fields()
     {
         var client = new RecordingAlvysClient();
@@ -262,6 +306,8 @@ public sealed class AlvysSearchControllerTests
             JsonSerializer.Serialize(Body(await controller.SearchDrivers(new DriverSearchRequest { IsActive = true }, default))),
             JsonSerializer.Serialize(Body(await controller.SearchCustomers(new CustomerSearchRequest { Statuses = ["Active"] }, default))),
             JsonSerializer.Serialize(Body(await controller.SearchUsers(new UserSearchRequest { Keyword = "jane" }, default))),
+            JsonSerializer.Serialize(((OkObjectResult)(await controller.ListLoadDocuments("100", default)).Result!).Value),
+            JsonSerializer.Serialize(((OkObjectResult)(await controller.ListLoadNotes("100", default)).Result!).Value),
         };
 
         string[] forbidden =
