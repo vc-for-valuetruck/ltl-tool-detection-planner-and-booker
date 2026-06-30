@@ -35,9 +35,9 @@ public static class LtlServiceCollectionExtensions
         // swap for a persistent IAssignmentAuditStore in production.
         services.AddSingleton<IAssignmentAuditStore, InMemoryAssignmentAuditStore>();
 
-        // Tool-local dispatcher saved views. Singleton in-memory store for this slice (server-side,
-        // not browser storage); swap for a persistent ISavedViewStore in production. No Alvys writeback.
-        services.AddSingleton<ISavedViewStore, InMemorySavedViewStore>();
+        // Tool-local dispatcher saved views, persisted durably in AppDbContext (server-side, never
+        // browser storage). Scoped to match the DbContext lifetime. Owner-scoped; no Alvys writeback.
+        services.AddScoped<ISavedViewStore, EfSavedViewStore>();
 
         return services;
     }

@@ -89,10 +89,10 @@ public sealed class SavedViewCollection
 }
 
 /// <summary>
-/// Persists dispatcher saved views. The seam is intentionally abstracted (mirroring the assignment
-/// audit store) so a production deployment can swap the in-memory default for a durable, queryable
-/// store (e.g. EF Core via <c>AppDbContext</c>) without touching the controller. All operations are
-/// scoped to an owner so one dispatcher never sees or mutates another's views.
+/// Persists dispatcher saved views. The seam is intentionally abstracted so the durable production
+/// store (<see cref="EfSavedViewStore"/>, backed by EF Core / <c>AppDbContext</c>) and the lightweight
+/// in-memory store used by unit tests share one contract without touching the controller. All
+/// operations are scoped to an owner so one dispatcher never sees or mutates another's views.
 /// </summary>
 public interface ISavedViewStore
 {
@@ -104,9 +104,9 @@ public interface ISavedViewStore
 }
 
 /// <summary>
-/// Thread-safe in-memory <see cref="ISavedViewStore"/>. Suitable for this slice and local/UAT;
-/// <b>not durable across restarts</b>. Swap for a persistent store for production (the
-/// <see cref="SavedView"/> shape maps cleanly onto an EF Core entity).
+/// Thread-safe in-memory <see cref="ISavedViewStore"/>. <b>Not durable across restarts</b>, so it is
+/// not registered in production — <see cref="EfSavedViewStore"/> is. Retained as a fast, dependency-free
+/// double for controller/store unit tests.
 /// </summary>
 public sealed class InMemorySavedViewStore : ISavedViewStore
 {

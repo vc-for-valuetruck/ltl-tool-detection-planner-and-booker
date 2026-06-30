@@ -68,6 +68,14 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Apply pending EF Core migrations on startup so the schema (e.g. dispatcher saved views) is ready.
+// Skipped under the "Testing" environment, where integration tests boot the app without a database.
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    using var scope = app.Services.CreateScope();
+    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+}
+
 // Surface a clear warning when the live source of truth is selected (the default)
 // but no credentials are present — live Alvys calls will fail until configured.
 {
