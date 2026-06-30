@@ -56,6 +56,21 @@ public sealed class AlvysApiRoutesTests
         => Assert.Equal("api/p/v1/users/search", AlvysApiRoutes.UsersSearch(null));
 
     [Fact]
+    public void TendersSearch_builds_relative_versioned_path()
+        => Assert.Equal("api/p/v2.0/tenders/search", AlvysApiRoutes.TendersSearch("2.0"));
+
+    [Fact]
+    public void TenderById_builds_relative_versioned_path()
+        => Assert.Equal("api/p/v1/tenders/T-100", AlvysApiRoutes.TenderById("v1", "T-100"));
+
+    [Theory]
+    [InlineData("a/b", "api/p/v1/tenders/a%2Fb")]
+    [InlineData("a b", "api/p/v1/tenders/a%20b")]
+    [InlineData("a#b?c", "api/p/v1/tenders/a%23b%3Fc")]
+    public void TenderById_url_encodes_the_tender_id(string tenderId, string expected)
+        => Assert.Equal(expected, AlvysApiRoutes.TenderById("v1", tenderId));
+
+    [Fact]
     public void LoadDocuments_builds_relative_versioned_path()
         => Assert.Equal("api/p/v2.0/loads/100/documents", AlvysApiRoutes.LoadDocuments("2.0", "100"));
 

@@ -61,4 +61,11 @@ public sealed class FallbackAlvysClient : IAlvysClient
     public Task<AlvysUsersResponse> SearchUsersAsync(
         UserSearchRequest request, CancellationToken ct = default)
         => Task.FromResult(new AlvysUsersResponse());
+
+    public Task<AlvysTendersResponse> SearchTendersAsync(
+        TenderSearchRequest request, CancellationToken ct = default)
+        => Task.FromResult(new AlvysTendersResponse());
+
+    public Task<AlvysTender?> GetTenderByIdAsync(string tenderId, CancellationToken ct = default)
+        => Task.FromResult<AlvysTender?>(null);
 }

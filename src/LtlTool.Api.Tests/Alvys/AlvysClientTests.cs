@@ -697,4 +697,161 @@ public sealed class AlvysClientTests
         Assert.Empty(result.Items);
         Assert.Contains("500", logger.AllText);
     }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/tenders/search")]
+    [InlineData("2.0", "/api/p/v2.0/tenders/search")]   // normalized — no double "v"
+    public async Task SearchTenders_maps_response_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Page":0,"PageSize":100,"Total":1,"Facets":null,"Aggregations":null,"Items":[{"Id":"TEN1","CompanyCode":"VT","Status":"Offered","LoadNumber":"100","SCAC":"VTUK","Weight":12000,"WeightUnitCode":"L","QtyPallets":12,"Rate":1850.50,"Equipment":{"Number":"1","Length":53,"Type":"V"},"Entities":[{"Type":"ShipFrom","Name":"Acme","City":"Dallas","State":"TX","PostalCode":"75201"}],"ExpirationDate":{"DateTime":"2026-02-01T12:00:00Z","TimeZoneCode":"America/Chicago"},"Stops":[{"StopId":"S1","Type":"Pickup","SequenceNumber":1,"ScheduledArrivalStart":{"DateTime":"2026-02-02T08:00:00Z"},"Orders":[{"Quantity":10,"Weight":5000,"PoNumber":"PO9"}],"References":[{"Id":"R1","Qualifier":"BM","Description":"BOL"}]}],"References":[{"Id":"T1","Qualifier":"SI","Description":"ship"}]}]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var result = await client.SearchTendersAsync(
+            new TenderSearchRequest { Filter = new TenderSearchFilter { Status = ["Offered"] } });
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("TEN1", item.Id);
+        Assert.Equal("Offered", item.Status);
+        Assert.Equal("VTUK", item.SCAC);
+        Assert.Equal(12, item.QtyPallets);
+        Assert.Equal(1850.50m, item.Rate);
+        Assert.Equal("V", item.Equipment?.Type);
+        Assert.Equal("Acme", Assert.Single(item.Entities!).Name);
+        Assert.Equal("America/Chicago", item.ExpirationDate?.TimeZoneCode);
+        var stop = Assert.Single(item.Stops!);
+        Assert.Equal("S1", stop.StopId);
+        Assert.Equal("Pickup", stop.Type);
+        Assert.Equal("PO9", Assert.Single(stop.Orders!).PoNumber);
+        Assert.Equal("BM", Assert.Single(stop.References!).Qualifier);
+        Assert.Equal("SI", Assert.Single(item.References!).Qualifier);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Post, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task SearchTenders_serializes_only_supplied_nested_filters_in_pascal_case()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Items":[]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchTendersAsync(new TenderSearchRequest
+        {
+            Page = 1,
+            Sort = new TenderSort { Field = "DateImported", Direction = "Desc" },
+            Filter = new TenderSearchFilter { LoadNumber = "100" },
+        });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"Page\":1", body);
+        Assert.Contains("\"Sort\":{", body);
+        Assert.Contains("\"Field\":\"DateImported\"", body);
+        Assert.Contains("\"LoadNumber\":\"100\"", body);
+        Assert.DoesNotContain("Status", body);            // null filters are omitted
+        Assert.DoesNotContain("CreatedAtRange", body);
+        Assert.DoesNotContain("ExternalTenderId", body);
+    }
+
+    [Fact]
+    public async Task SearchTenders_rejects_non_positive_page_size_before_calling_alvys()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SearchTendersAsync(new TenderSearchRequest { PageSize = 0 }));
+        Assert.Empty(handler.Calls);
+    }
+
+    [Fact]
+    public async Task SearchTenders_returns_empty_on_rate_limit_without_throwing()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        var result = await client.SearchTendersAsync(
+            new TenderSearchRequest { Filter = new TenderSearchFilter { Status = ["Offered"] } });
+
+        Assert.Empty(result.Items);
+        Assert.Contains("429", logger.AllText);
+    }
+
+    [Theory]
+    [InlineData("v1", "/api/p/v1/tenders/T-100")]
+    [InlineData("2.0", "/api/p/v2.0/tenders/T-100")]   // normalized — no double "v"
+    public async Task GetTenderById_maps_detail_and_targets_versioned_path_with_bearer(
+        string version, string expectedPath)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"Id":"T-100","Status":"Offered","LoadNumber":"100","Equipment":{"Type":"V","Length":53},"Stops":[{"StopId":"S1","Type":"Pickup"}],"Etag":"abc"}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
+
+        var tender = await client.GetTenderByIdAsync("T-100");
+
+        Assert.NotNull(tender);
+        Assert.Equal("T-100", tender!.Id);
+        Assert.Equal("Offered", tender.Status);
+        Assert.Equal("V", tender.Equipment?.Type);
+        Assert.Equal("S1", Assert.Single(tender.Stops!).StopId);
+        Assert.Equal("abc", tender.Etag);
+        Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
+        Assert.Equal(HttpMethod.Get, handler.Calls[0].Request.Method);
+        Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task GetTenderById_url_encodes_the_tender_id()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Id":"a/b c"}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.GetTenderByIdAsync("a/b c");
+
+        // The raw request URI keeps the percent-encoded segment (single path segment).
+        Assert.Equal("/api/p/v1/tenders/a%2Fb%20c", handler.Calls[0].Request.RequestUri?.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task GetTenderById_returns_null_on_not_found()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Null(await client.GetTenderByIdAsync("missing"));
+        Assert.DoesNotContain("failed with HTTP", logger.AllText);   // 404 is not an error
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest, "400")]
+    [InlineData(HttpStatusCode.Unauthorized, "401")]
+    [InlineData(HttpStatusCode.Forbidden, "403")]
+    [InlineData(HttpStatusCode.TooManyRequests, "429")]
+    [InlineData(HttpStatusCode.InternalServerError, "500")]
+    public async Task GetTenderById_returns_null_and_logs_status_on_non_success(
+        HttpStatusCode status, string expectedCode)
+    {
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(status));
+        var logger = new CapturingLogger<AlvysClient>();
+        var client = Build(handler, logger);
+
+        Assert.Null(await client.GetTenderByIdAsync("T-100"));
+        Assert.Contains(expectedCode, logger.AllText);
+        Assert.DoesNotContain("test-token", logger.AllText);   // token never logged
+    }
 }

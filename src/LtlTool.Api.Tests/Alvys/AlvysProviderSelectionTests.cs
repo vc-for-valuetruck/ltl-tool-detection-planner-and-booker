@@ -78,6 +78,18 @@ public sealed class AlvysProviderSelectionTests
     }
 
     [Fact]
+    public async Task Fallback_client_returns_empty_paged_shape_and_null_for_tenders()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        var tenders = await client.SearchTendersAsync(
+            new TenderSearchRequest { Filter = new TenderSearchFilter { Status = ["Offered"] } });
+
+        Assert.Empty(tenders.Items);
+        Assert.Null(await client.GetTenderByIdAsync("TEN1"));
+    }
+
+    [Fact]
     public async Task Fallback_client_returns_empty_arrays_for_load_documents_and_notes()
     {
         var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });

@@ -96,4 +96,19 @@ public interface IAlvysClient
     /// names/roles/filters. <see cref="UserSearchRequest.Page"/> is the 0-based Alvys page.
     /// </summary>
     Task<AlvysUsersResponse> SearchUsersAsync(UserSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches tenders via <c>POST /api/p/v{version}/tenders/search</c> for inbound EDI/
+    /// tender offers used as a planning source. <see cref="TenderSearchRequest.Page"/> is the
+    /// 0-based Alvys page.
+    /// </summary>
+    Task<AlvysTendersResponse> SearchTendersAsync(TenderSearchRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a single tender by its Alvys tender id via
+    /// <c>GET /api/p/v{version}/tenders/{tenderId}</c>, or <c>null</c> when not found
+    /// (404) or on a transport/non-success error — degrading gracefully like the other
+    /// read paths.
+    /// </summary>
+    Task<AlvysTender?> GetTenderByIdAsync(string tenderId, CancellationToken ct = default);
 }

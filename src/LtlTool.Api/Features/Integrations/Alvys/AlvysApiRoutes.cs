@@ -33,6 +33,16 @@ public static class AlvysApiRoutes
 
     public static string UsersSearch(string? apiVersion) => BuildSearchPath(apiVersion, "users");
 
+    public static string TendersSearch(string? apiVersion) => BuildSearchPath(apiVersion, "tenders");
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/tenders/{tenderId}</c> for a single tender.
+    /// <paramref name="tenderId"/> is URL-encoded so ids with slashes/spaces/reserved
+    /// characters resolve to a single path segment.
+    /// </summary>
+    public static string TenderById(string? apiVersion, string tenderId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/tenders/{Uri.EscapeDataString(tenderId)}";
+
     /// <summary>
     /// Relative path <c>api/p/v{version}/loads/{loadNumber}/documents</c> for the
     /// read-only load-documents listing. <paramref name="loadNumber"/> is URL-encoded.

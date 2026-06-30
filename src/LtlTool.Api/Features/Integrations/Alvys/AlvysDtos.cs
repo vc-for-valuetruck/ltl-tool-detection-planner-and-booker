@@ -1479,6 +1479,334 @@ public sealed class AlvysUser
     public DateTimeOffset? ModifiedAt { get; set; }
 }
 
+/// <summary>
+/// Request body for <c>POST /api/p/v{version}/tenders/search</c>. Page is 0-based.
+/// <see cref="Page"/> and <see cref="PageSize"/> are required by Alvys; <see cref="Sort"/>
+/// and <see cref="Filter"/> are optional. Provides inbound EDI/tender offers as a planning
+/// source for the LTL detection/planner/booker.
+/// </summary>
+public sealed class TenderSearchRequest
+{
+    [JsonPropertyName("Page")]
+    public int Page { get; set; }
+
+    [JsonPropertyName("PageSize")]
+    public int PageSize { get; set; } = 100;
+
+    [JsonPropertyName("Sort")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TenderSort? Sort { get; set; }
+
+    [JsonPropertyName("Filter")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TenderSearchFilter? Filter { get; set; }
+
+    /// <summary>Light client-side guard: only <c>PageSize &gt; 0</c> is locally enforceable.</summary>
+    public void Validate()
+    {
+        if (PageSize <= 0)
+            throw new ArgumentException("PageSize must be greater than zero.", nameof(PageSize));
+    }
+}
+
+/// <summary>Sort directive on a tender search: a field name and a direction.</summary>
+public sealed class TenderSort
+{
+    [JsonPropertyName("Field")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Field { get; set; }
+
+    [JsonPropertyName("Direction")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Direction { get; set; }
+}
+
+/// <summary>Optional filter block on a tender search. All members are optional.</summary>
+public sealed class TenderSearchFilter
+{
+    [JsonPropertyName("Status")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Status { get; set; }
+
+    [JsonPropertyName("CreatedAtRange")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AlvysDateRange? CreatedAtRange { get; set; }
+
+    [JsonPropertyName("Type")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Source")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Source { get; set; }
+
+    [JsonPropertyName("SourceCustomer")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceCustomer { get; set; }
+
+    [JsonPropertyName("ShipmentId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ShipmentId { get; set; }
+
+    [JsonPropertyName("LoadNumber")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LoadNumber { get; set; }
+
+    [JsonPropertyName("ExternalTenderId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExternalTenderId { get; set; }
+}
+
+/// <summary>Tenders search response: paged envelope of <see cref="AlvysTender"/>.</summary>
+public sealed class AlvysTendersResponse : AlvysPagedResponse<AlvysTender>;
+
+/// <summary>
+/// Pragmatic tender projection covering the inbound-offer fields used by the LTL
+/// planner/booker. Alvys casing is preserved and unknown JSON properties (including
+/// envelope <c>Facets</c>/<c>Aggregations</c>) are tolerated, so this can lag the full
+/// Alvys schema without breaking deserialization.
+/// </summary>
+public sealed class AlvysTender
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("CompanyCode")]
+    public string? CompanyCode { get; set; }
+
+    [JsonPropertyName("Status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("DateImported")]
+    public AlvysTenderDateTime? DateImported { get; set; }
+
+    [JsonPropertyName("ShipmentId")]
+    public string? ShipmentId { get; set; }
+
+    [JsonPropertyName("LoadNumber")]
+    public string? LoadNumber { get; set; }
+
+    [JsonPropertyName("Equipment")]
+    public AlvysTenderEquipment? Equipment { get; set; }
+
+    [JsonPropertyName("Entities")]
+    public List<AlvysTenderEntity>? Entities { get; set; }
+
+    [JsonPropertyName("PaymentMethod")]
+    public string? PaymentMethod { get; set; }
+
+    [JsonPropertyName("QtyPallets")]
+    public int? QtyPallets { get; set; }
+
+    [JsonPropertyName("SCAC")]
+    public string? SCAC { get; set; }
+
+    [JsonPropertyName("Weight")]
+    public decimal? Weight { get; set; }
+
+    [JsonPropertyName("WeightUnitCode")]
+    public string? WeightUnitCode { get; set; }
+
+    [JsonPropertyName("Volume")]
+    public decimal? Volume { get; set; }
+
+    [JsonPropertyName("VolumeUnitCode")]
+    public string? VolumeUnitCode { get; set; }
+
+    [JsonPropertyName("Rate")]
+    public decimal? Rate { get; set; }
+
+    [JsonPropertyName("ExpirationDate")]
+    public AlvysTenderDateTime? ExpirationDate { get; set; }
+
+    [JsonPropertyName("Notes")]
+    public List<string>? Notes { get; set; }
+
+    [JsonPropertyName("Stops")]
+    public List<AlvysTenderStop>? Stops { get; set; }
+
+    [JsonPropertyName("References")]
+    public List<AlvysTenderReference>? References { get; set; }
+
+    [JsonPropertyName("RoutingSequenceCode")]
+    public string? RoutingSequenceCode { get; set; }
+
+    [JsonPropertyName("TransportationMethodTypeCode")]
+    public string? TransportationMethodTypeCode { get; set; }
+
+    [JsonPropertyName("Etag")]
+    public string? Etag { get; set; }
+}
+
+/// <summary>Equipment requested on a tender (number/length/type).</summary>
+public sealed class AlvysTenderEquipment
+{
+    [JsonPropertyName("Number")]
+    public string? Number { get; set; }
+
+    [JsonPropertyName("Length")]
+    public decimal? Length { get; set; }
+
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+}
+
+/// <summary>
+/// An EDI party/entity on a tender or tender stop (shipper/consignee/bill-to, etc.).
+/// Carries the N1/N3/N4-style identity and address fields from the inbound tender.
+/// </summary>
+public sealed class AlvysTenderEntity
+{
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("CompanyName")]
+    public string? CompanyName { get; set; }
+
+    [JsonPropertyName("IdCodeQualifier")]
+    public string? IdCodeQualifier { get; set; }
+
+    [JsonPropertyName("IdCode")]
+    public string? IdCode { get; set; }
+
+    [JsonPropertyName("N1Qualifier")]
+    public string? N1Qualifier { get; set; }
+
+    [JsonPropertyName("Street")]
+    public string? Street { get; set; }
+
+    [JsonPropertyName("City")]
+    public string? City { get; set; }
+
+    [JsonPropertyName("PostalCode")]
+    public string? PostalCode { get; set; }
+
+    [JsonPropertyName("CountryCode")]
+    public string? CountryCode { get; set; }
+
+    [JsonPropertyName("Phone")]
+    public string? Phone { get; set; }
+
+    [JsonPropertyName("Email")]
+    public string? Email { get; set; }
+
+    [JsonPropertyName("State")]
+    public string? State { get; set; }
+}
+
+/// <summary>
+/// A tender date-time: the instant plus an optional IANA/Olson <c>TimeZoneCode</c>. Alvys
+/// returns tender schedule/expiry timestamps in this wrapper rather than a bare instant.
+/// </summary>
+public sealed class AlvysTenderDateTime
+{
+    [JsonPropertyName("DateTime")]
+    public DateTimeOffset DateTime { get; set; }
+
+    [JsonPropertyName("TimeZoneCode")]
+    public string? TimeZoneCode { get; set; }
+}
+
+/// <summary>A stop on a tender: entity, schedule windows, order detail and references.</summary>
+public sealed class AlvysTenderStop
+{
+    [JsonPropertyName("StopId")]
+    public string StopId { get; set; } = string.Empty;
+
+    [JsonPropertyName("Type")]
+    public string Type { get; set; } = string.Empty;
+
+    [JsonPropertyName("Entity")]
+    public AlvysTenderEntity? Entity { get; set; }
+
+    [JsonPropertyName("SequenceNumber")]
+    public int? SequenceNumber { get; set; }
+
+    [JsonPropertyName("Orders")]
+    public List<AlvysTenderOrderDetail>? Orders { get; set; }
+
+    [JsonPropertyName("References")]
+    public List<AlvysTenderReference>? References { get; set; }
+
+    [JsonPropertyName("WeightQualifier")]
+    public string? WeightQualifier { get; set; }
+
+    [JsonPropertyName("ArrivedAt")]
+    public AlvysTenderDateTime? ArrivedAt { get; set; }
+
+    [JsonPropertyName("DepartedAt")]
+    public AlvysTenderDateTime? DepartedAt { get; set; }
+
+    [JsonPropertyName("ScheduledArrivalStart")]
+    public AlvysTenderDateTime? ScheduledArrivalStart { get; set; }
+
+    [JsonPropertyName("ScheduledArrivalEnd")]
+    public AlvysTenderDateTime? ScheduledArrivalEnd { get; set; }
+
+    [JsonPropertyName("StopReasonCode")]
+    public string? StopReasonCode { get; set; }
+
+    [JsonPropertyName("Notes")]
+    public List<string>? Notes { get; set; }
+}
+
+/// <summary>A line of order detail on a tender stop (quantity/weight/volume + references).</summary>
+public sealed class AlvysTenderOrderDetail
+{
+    [JsonPropertyName("Quantity")]
+    public decimal? Quantity { get; set; }
+
+    [JsonPropertyName("WeightUnitCode")]
+    public string? WeightUnitCode { get; set; }
+
+    [JsonPropertyName("Weight")]
+    public decimal? Weight { get; set; }
+
+    [JsonPropertyName("ReferenceId")]
+    public string? ReferenceId { get; set; }
+
+    [JsonPropertyName("PoNumber")]
+    public string? PoNumber { get; set; }
+
+    [JsonPropertyName("VolumeUnitQualifier")]
+    public string? VolumeUnitQualifier { get; set; }
+
+    [JsonPropertyName("Volume")]
+    public decimal? Volume { get; set; }
+
+    [JsonPropertyName("UnitBasisForMeasurement")]
+    public string? UnitBasisForMeasurement { get; set; }
+
+    [JsonPropertyName("Description")]
+    public string? Description { get; set; }
+
+    [JsonPropertyName("ReferenceId2")]
+    public string? ReferenceId2 { get; set; }
+
+    [JsonPropertyName("SequenceNumber")]
+    public int? SequenceNumber { get; set; }
+}
+
+/// <summary>
+/// A typed reference on a tender or tender stop. Distinct from the load
+/// <see cref="AlvysReference"/> (Type/Value): the tender reference uses
+/// <c>Id</c>/<c>Qualifier</c>/<c>Description</c>.
+/// </summary>
+public sealed class AlvysTenderReference
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("Qualifier")]
+    public string? Qualifier { get; set; }
+
+    [JsonPropertyName("Description")]
+    public string? Description { get; set; }
+}
+
 /// <summary>OAuth2 token response from the Alvys token endpoint.</summary>
 internal sealed record AlvysTokenResponse(
     [property: JsonPropertyName("access_token")] string AccessToken,
