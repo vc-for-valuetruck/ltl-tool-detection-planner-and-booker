@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
 using LtlTool.Api.Data;
+using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Options;
 using LtlTool.Api.Security;
 
@@ -46,6 +47,10 @@ builder.Services.AddHttpClient("ExternalApi", (sp, client) =>
     }
 });
 
+// Alvys TMS integration. Live Alvys is the default source of truth for LTL data;
+// credentials stay server-side and are never exposed to the Angular SPA.
+builder.Services.AddAlvysIntegration(builder.Configuration);
+
 // CORS for the SPA.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? new[] { "http://localhost:4200" };
@@ -53,6 +58,23 @@ builder.Services.AddCors(options =>
     options.AddDefaultPolicy(p => p.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
 
 var app = builder.Build();
+
+// Surface a clear warning when the live source of truth is selected (the default)
+// but no credentials are present — live Alvys calls will fail until configured.
+{
+    var alvys = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AlvysOptions>>().Value;
+    var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Alvys");
+    if (alvys.Provider == AlvysProvider.Live && !alvys.HasCredentials)
+    {
+        startupLogger.LogWarning(
+            "Alvys provider is Live (default source of truth) but no credentials are configured. " +
+            "Set Alvys:ClientId / Alvys:ClientSecret server-side, or select the Fallback provider for local/UAT.");
+    }
+    else
+    {
+        startupLogger.LogInformation("Alvys provider configured: {Provider}.", alvys.Provider);
+    }
+}
 
 if (app.Environment.IsDevelopment())
 {

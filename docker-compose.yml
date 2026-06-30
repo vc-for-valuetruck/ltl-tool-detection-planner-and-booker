@@ -50,7 +50,10 @@ services:
       ExternalApi__BaseUrl: "${EXTERNAL_API_BASE_URL:-}"
       ExternalApi__ApiKey: "${EXTERNAL_API_KEY:-}"
       # Alvys TMS — API only, never surfaced to the SPA.
-      Alvys__ApiBaseUrl: "${ALVYS_API_BASE_URL:-}"
+      # Live is the default source of truth; set ALVYS_PROVIDER=Fallback for
+      # local/UAT runs without a live tenant.
+      Alvys__Provider: "${ALVYS_PROVIDER:-Live}"
+      Alvys__ApiBaseUrl: "${ALVYS_API_BASE_URL:-https://integrations.alvys.com/api/p/v1}"
       Alvys__TenantId: "${ALVYS_TENANT_ID:-}"
       Alvys__ClientId: "${ALVYS_CLIENT_ID:-}"
       Alvys__ClientSecret: "${ALVYS_CLIENT_SECRET:-}"

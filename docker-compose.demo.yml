@@ -25,6 +25,9 @@ services:
       # Allow the ngrok origin (set by start-demo.sh) alongside localhost.
       Cors__AllowedOrigins__1: "${PUBLIC_URL:-http://localhost:4200}"
       # Alvys TMS — API only, never surfaced to the SPA.
+      # Demo defaults to the Fallback provider (no live tenant required). Override
+      # with ALVYS_PROVIDER=Live + real credentials to demo against live Alvys.
+      Alvys__Provider: "${ALVYS_PROVIDER:-Fallback}"
       Alvys__ApiBaseUrl: "${ALVYS_API_BASE_URL:-}"
       Alvys__TenantId: "${ALVYS_TENANT_ID:-}"
       Alvys__ClientId: "${ALVYS_CLIENT_ID:-}"

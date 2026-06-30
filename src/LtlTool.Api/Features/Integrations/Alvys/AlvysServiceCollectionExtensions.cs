@@ -1,0 +1,42 @@
+using Microsoft.Extensions.Options;
+
+namespace LtlTool.Api.Features.Integrations.Alvys;
+
+/// <summary>
+/// DI wiring for the Alvys integration. Live Alvys is the default source of
+/// truth; the fallback provider is opt-in for local/UAT only.
+/// </summary>
+public static class AlvysServiceCollectionExtensions
+{
+    public static IServiceCollection AddAlvysIntegration(
+        this IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddOptions<AlvysOptions>()
+            .Bind(configuration.GetSection(AlvysOptions.SectionName));
+
+        var options = configuration.GetSection(AlvysOptions.SectionName).Get<AlvysOptions>()
+            ?? new AlvysOptions();
+
+        // Named clients: one for OAuth2 token requests, one for API calls.
+        services.AddHttpClient(AlvysTokenProvider.AuthHttpClientName,
+            client => client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds));
+
+        services.AddHttpClient(AlvysClient.ApiHttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(options.ApiBaseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        });
+
+        services.AddSingleton<IAlvysTokenProvider, AlvysTokenProvider>();
+
+        // Provider selection. Live is the default source of truth; Fallback must
+        // be chosen explicitly and is intended for local/UAT only.
+        if (options.Provider == AlvysProvider.Fallback)
+            services.AddScoped<IAlvysClient, FallbackAlvysClient>();
+        else
+            services.AddScoped<IAlvysClient, AlvysClient>();
+
+        return services;
+    }
+}
