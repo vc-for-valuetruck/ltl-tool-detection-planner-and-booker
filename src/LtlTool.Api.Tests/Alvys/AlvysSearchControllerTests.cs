@@ -26,6 +26,10 @@ public sealed class AlvysSearchControllerTests
         public DriverSearchRequest? Drivers { get; private set; }
         public CustomerSearchRequest? Customers { get; private set; }
         public UserSearchRequest? Users { get; private set; }
+        public TenderSearchRequest? Tenders { get; private set; }
+        public string? RequestedTenderId { get; private set; }
+        public AlvysTender? TenderToReturn { get; set; } =
+            new() { Id = "TEN1", Status = "Offered", LoadNumber = "100" };
 
         public Task<AlvysLoadsResponse> SearchLoadsAsync(
             int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
@@ -120,6 +124,22 @@ public sealed class AlvysSearchControllerTests
                 Total = 1,
                 Items = [new AlvysUser { Id = "U1", UserName = "jdoe" }],
             });
+        }
+
+        public Task<AlvysTendersResponse> SearchTendersAsync(TenderSearchRequest request, CancellationToken ct = default)
+        {
+            Tenders = request;
+            return Task.FromResult(new AlvysTendersResponse
+            {
+                Total = 1,
+                Items = [new AlvysTender { Id = "TEN1", Status = "Offered", LoadNumber = "100" }],
+            });
+        }
+
+        public Task<AlvysTender?> GetTenderByIdAsync(string tenderId, CancellationToken ct = default)
+        {
+            RequestedTenderId = tenderId;
+            return Task.FromResult(TenderToReturn);
         }
     }
 
@@ -246,6 +266,44 @@ public sealed class AlvysSearchControllerTests
     }
 
     [Fact]
+    public async Task SearchTenders_passes_request_through_and_returns_response()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+        var request = new TenderSearchRequest { Filter = new TenderSearchFilter { Status = ["Offered"] } };
+
+        var body = Body(await controller.SearchTenders(request, default));
+
+        Assert.Same(request, client.Tenders);
+        Assert.Equal("TEN1", Assert.Single(body.Items).Id);
+    }
+
+    [Fact]
+    public async Task GetTender_returns_tender_when_found()
+    {
+        var client = new RecordingAlvysClient();
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.GetTender("TEN1", default);
+        var body = Assert.IsType<AlvysTender>(Assert.IsType<OkObjectResult>(result.Result).Value);
+
+        Assert.Equal("TEN1", client.RequestedTenderId);
+        Assert.Equal("TEN1", body.Id);
+    }
+
+    [Fact]
+    public async Task GetTender_returns_404_when_not_found()
+    {
+        var client = new RecordingAlvysClient { TenderToReturn = null };
+        var controller = new AlvysSearchController(client);
+
+        var result = await controller.GetTender("missing", default);
+
+        Assert.IsType<NotFoundResult>(result.Result);
+        Assert.Equal("missing", client.RequestedTenderId);
+    }
+
+    [Fact]
     public async Task Responses_carry_no_credential_or_secret_fields()
     {
         var client = new RecordingAlvysClient();
@@ -262,6 +320,8 @@ public sealed class AlvysSearchControllerTests
             JsonSerializer.Serialize(Body(await controller.SearchDrivers(new DriverSearchRequest { IsActive = true }, default))),
             JsonSerializer.Serialize(Body(await controller.SearchCustomers(new CustomerSearchRequest { Statuses = ["Active"] }, default))),
             JsonSerializer.Serialize(Body(await controller.SearchUsers(new UserSearchRequest { Keyword = "jane" }, default))),
+            JsonSerializer.Serialize(Body(await controller.SearchTenders(new TenderSearchRequest { Filter = new TenderSearchFilter { Status = ["Offered"] } }, default))),
+            JsonSerializer.Serialize(Assert.IsType<AlvysTender>(((OkObjectResult)(await controller.GetTender("TEN1", default)).Result!).Value)),
         };
 
         string[] forbidden =

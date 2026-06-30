@@ -76,4 +76,16 @@ public sealed class AlvysProviderSelectionTests
         Assert.Empty(customers.Items);
         Assert.Empty(users.Items);
     }
+
+    [Fact]
+    public async Task Fallback_client_returns_empty_paged_shape_and_null_for_tenders()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        var tenders = await client.SearchTendersAsync(
+            new TenderSearchRequest { Filter = new TenderSearchFilter { Status = ["Offered"] } });
+
+        Assert.Empty(tenders.Items);
+        Assert.Null(await client.GetTenderByIdAsync("TEN1"));
+    }
 }

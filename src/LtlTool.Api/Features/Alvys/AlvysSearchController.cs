@@ -120,4 +120,28 @@ public sealed class AlvysSearchController(IAlvysClient alvys) : ControllerBase
     public async Task<ActionResult<AlvysUsersResponse>> SearchUsers(
         [FromBody] UserSearchRequest request, CancellationToken ct)
         => Ok(await alvys.SearchUsersAsync(request, ct));
+
+    /// <summary>
+    /// Read-only tender (inbound EDI offer) search. Passes <paramref name="request"/> through
+    /// to <see cref="IAlvysClient.SearchTendersAsync(TenderSearchRequest, CancellationToken)"/>.
+    /// </summary>
+    [HttpPost("tenders/search")]
+    [ProducesResponseType(typeof(AlvysTendersResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AlvysTendersResponse>> SearchTenders(
+        [FromBody] TenderSearchRequest request, CancellationToken ct)
+        => Ok(await alvys.SearchTendersAsync(request, ct));
+
+    /// <summary>
+    /// Read-only single-tender lookup by Alvys tender id. Returns 404 when the tender is not
+    /// found (or upstream degraded to <c>null</c>), mirroring the graceful-degradation stance
+    /// of the other read paths.
+    /// </summary>
+    [HttpGet("tenders/{tenderId}")]
+    [ProducesResponseType(typeof(AlvysTender), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AlvysTender>> GetTender(string tenderId, CancellationToken ct)
+    {
+        var tender = await alvys.GetTenderByIdAsync(tenderId, ct);
+        return tender is null ? NotFound() : Ok(tender);
+    }
 }

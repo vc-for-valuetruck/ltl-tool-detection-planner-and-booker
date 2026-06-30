@@ -27,28 +27,36 @@ Coverage:
   default even when credentials are absent. The fallback returns empty shapes for every
   resource — loads, trips, trailers, trucks, plus the context resources (dispatch
   preferences as an empty array; locations, drivers, customers and users as empty paged
-  envelopes).
+  envelopes) and tenders (empty paged envelope for search; `null` for the by-id lookup).
 - **Token provider** (`AlvysTokenProviderTests`) — token is acquired and cached
   (one network call for repeated reads), missing credentials throw before any network
   call, and a failed token request **never logs the client secret** (logs status only).
 - **Route/version normalization** (`AlvysApiRoutesTests`) — `loads/search`,
   `trips/search`, `trailers/search`, `trucks/search`, `dispatchpreferences/search`,
-  `locations/search`, `drivers/search`, `customers/search` and `users/search` build
-  `/api/p/v{version}/...` relative paths, and the configured version is normalized so
-  `v2.0` and `2.0` both yield `v2.0` (no double `v`).
-- **Loads, trips, equipment & context search** (`AlvysClientTests`) — paged responses
-  parse for every endpoint (including nested fleet/capacity/fuel-card/address/note/contact
-  fields), the dispatch-preferences **bare-array** response parses to a list, the bearer
-  token is attached, 1-based pages translate to Alvys 0-based pages, requests target the
-  versioned path, and only supplied filters serialize (PascalCase, nulls omitted). Request
-  validation (`PageSize > 0`, `LoadNumbers ≤ 150`) throws **before** any network call, and
-  non-success responses (incl. 429) surface as empty results / `null` instead of throwing.
+  `locations/search`, `drivers/search`, `customers/search`, `users/search` and
+  `tenders/search` build `/api/p/v{version}/...` relative paths, the `tenders/{tenderId}`
+  GET path **URL-encodes** the id (slashes/spaces/reserved chars → a single segment), and
+  the configured version is normalized so `v2.0` and `2.0` both yield `v2.0` (no double `v`).
+- **Loads, trips, equipment, context & tender search** (`AlvysClientTests`) — paged
+  responses parse for every endpoint (including nested fleet/capacity/fuel-card/address/
+  note/contact and tender equipment/entity/stop/order/reference/`DateTime`-wrapper fields),
+  the dispatch-preferences **bare-array** response parses to a list, the bearer token is
+  attached, 1-based pages translate to Alvys 0-based pages, requests target the versioned
+  path with the right verb, and only supplied filters serialize (PascalCase, nulls omitted —
+  including the tender **nested** `Sort`/`Filter`). Request validation (`PageSize > 0`,
+  `LoadNumbers ≤ 150`) throws **before** any network call, and non-success responses (incl.
+  400/401/403/429/500) surface as empty results / `null` instead of throwing.
+- **Tender by-id** (`AlvysClientTests`) — `GetTenderByIdAsync` issues a `GET` to the
+  versioned, URL-encoded path with the bearer token, maps the tender detail, and returns
+  `null` on **404** (without logging it as an error) and on every other non-success status
+  (logging the status code only — never the token).
 
 - **Internal read-only endpoints** (`AlvysSearchControllerTests`,
   `AlvysSearchEndpointTests`) — the
-  `/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users}/search`
-  endpoints pass the request body straight through to `IAlvysClient` and return the read
-  model unchanged (asserted with a recording fake client). A dedicated test
+  `/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search`
+  endpoints (plus `GET /api/alvys/tenders/{tenderId}`) pass the request straight through to
+  `IAlvysClient` and return the read model unchanged (asserted with a recording fake client);
+  the tender lookup returns **404** when the client yields `null`. A dedicated test
   serializes every response and asserts **no credential/secret field** (`client_secret`,
   `access_token`, `Bearer`, `ClientId`, `TokenUrl`, …) appears. The route-level tests hit
   the endpoints through `WebApplicationFactory` and assert each returns **401 when

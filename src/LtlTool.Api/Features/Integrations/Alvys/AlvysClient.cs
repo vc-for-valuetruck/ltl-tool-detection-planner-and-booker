@@ -130,6 +130,59 @@ public sealed class AlvysClient(
             ?? new AlvysUsersResponse();
     }
 
+    public async Task<AlvysTendersResponse> SearchTendersAsync(
+        TenderSearchRequest request, CancellationToken ct = default)
+    {
+        request.Validate();
+        var path = AlvysApiRoutes.TendersSearch(_options.ApiVersion);
+        return await PostSearchAsync<TenderSearchRequest, AlvysTendersResponse>(path, request, ct)
+            ?? new AlvysTendersResponse();
+    }
+
+    public Task<AlvysTender?> GetTenderByIdAsync(string tenderId, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.TenderById(_options.ApiVersion, tenderId);
+        return GetAsync<AlvysTender>(path, ct);
+    }
+
+    private async Task<TResponse?> GetAsync<TResponse>(string path, CancellationToken ct)
+        where TResponse : class
+    {
+        try
+        {
+            var client = httpClientFactory.CreateClient(ApiHttpClientName);
+            var token = await tokenProvider.GetAccessTokenAsync(ct);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            using var response = await client.SendAsync(request, ct);
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return null;
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogError(
+                    "Alvys {Path} failed with HTTP {StatusCode}.", path, (int)response.StatusCode);
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<TResponse>(JsonOptions, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            // Log the exception type/message but not credentials or payloads.
+            logger.LogError(ex, "Alvys {Path} transport error: {Message}", path, ex.Message);
+            return null;
+        }
+    }
+
     private async Task<TResponse?> PostSearchAsync<TRequest, TResponse>(
         string path, TRequest body, CancellationToken ct)
         where TResponse : class, new()

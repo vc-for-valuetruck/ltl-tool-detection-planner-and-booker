@@ -25,11 +25,22 @@ public sealed class AlvysSearchEndpointTests(TemplateWebApplicationFactory facto
     [InlineData("/api/alvys/drivers/search")]
     [InlineData("/api/alvys/customers/search")]
     [InlineData("/api/alvys/users/search")]
+    [InlineData("/api/alvys/tenders/search")]
     public async Task Search_routes_require_authentication(string route)
     {
         var client = _factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(route, new { Status = new[] { "Open" } });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_tender_by_id_requires_authentication()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/alvys/tenders/TEN1");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }

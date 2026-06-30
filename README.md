@@ -151,7 +151,7 @@ src/LtlTool.Api/
 └── Features/                # vertical-slice features
     ├── Health/              # GET /api/health (anonymous liveness)
     ├── Me/                  # GET /api/me (protected sample endpoint)
-    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users}/search (protected, read-only)
+    ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search + GET /api/alvys/tenders/{id} (protected, read-only)
     └── Integrations/Alvys/  # server-side Alvys client (IAlvysClient) — credentials never leave the API
 ```
 
@@ -159,10 +159,11 @@ src/LtlTool.Api/
 
 The dispatcher SPA never talks to Alvys directly — it calls these protected,
 server-side endpoints, which proxy `IAlvysClient` so Alvys OAuth credentials stay on
-the API. They are **read-only search** endpoints (queries only; no Alvys writeback, no
+the API. They are **read-only** endpoints (queries only; no Alvys writeback, no
 `PUT`/`PATCH`/`DELETE`). Alvys models searches as `POST` (the filter set is the body),
-so these are `POST` too. All require the `AllowedEmailDomain` policy (401 when
-unauthenticated). Live Alvys remains the default source of truth.
+so the search endpoints are `POST`; single-record lookups (e.g. a tender by id) are
+`GET`. All require the `AllowedEmailDomain` policy (401 when unauthenticated). Live
+Alvys remains the default source of truth.
 
 | Endpoint | Request body | Returns |
 |---|---|---|
@@ -175,6 +176,8 @@ unauthenticated). Live Alvys remains the default source of truth.
 | `POST /api/alvys/drivers/search` | `DriverSearchRequest` | paged drivers (assignment/readiness) |
 | `POST /api/alvys/customers/search` | `CustomerSearchRequest` | paged customers (billing/matching context) |
 | `POST /api/alvys/users/search` | `UserSearchRequest` | paged users (dispatcher names/roles) |
+| `POST /api/alvys/tenders/search` | `TenderSearchRequest` | paged inbound tenders (EDI offers) |
+| `GET /api/alvys/tenders/{tenderId}` | _(path param)_ | single tender (404 when not found) |
 
 Add new functionality as a folder under `Features/` (controller + service + DTOs).
 
