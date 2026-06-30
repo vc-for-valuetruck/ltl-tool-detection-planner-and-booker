@@ -27,7 +27,8 @@ Coverage:
   default even when credentials are absent. The fallback returns empty shapes for every
   resource — loads, trips, trailers, trucks, plus the context resources (dispatch
   preferences as an empty array; locations, drivers, customers and users as empty paged
-  envelopes) and tenders (empty paged envelope for search; `null` for the by-id lookup).
+  envelopes), tenders (empty paged envelope for search; `null` for the by-id lookup), and
+  the load-context listings (documents and notes as empty arrays).
 - **Token provider** (`AlvysTokenProviderTests`) — token is acquired and cached
   (one network call for repeated reads), missing credentials throw before any network
   call, and a failed token request **never logs the client secret** (logs status only).
@@ -37,6 +38,8 @@ Coverage:
   `tenders/search` build `/api/p/v{version}/...` relative paths, the `tenders/{tenderId}`
   GET path **URL-encodes** the id (slashes/spaces/reserved chars → a single segment), and
   the configured version is normalized so `v2.0` and `2.0` both yield `v2.0` (no double `v`).
+  The load-context paths (`loads/{loadNumber}/documents`, `loads/{loadNumber}/notes`) build
+  the same way and **URL-encode** the `loadNumber` segment (e.g. `VT 100/A` → `VT%20100%2FA`).
 - **Loads, trips, equipment, context & tender search** (`AlvysClientTests`) — paged
   responses parse for every endpoint (including nested fleet/capacity/fuel-card/address/
   note/contact and tender equipment/entity/stop/order/reference/`DateTime`-wrapper fields),
@@ -50,18 +53,23 @@ Coverage:
   versioned, URL-encoded path with the bearer token, maps the tender detail, and returns
   `null` on **404** (without logging it as an error) and on every other non-success status
   (logging the status code only — never the token).
+- **Load documents & notes** (`AlvysClientTests`) — the `GET` listings parse their
+  **bare-array** responses to lists, issue an HTTP `GET` with the bearer token against the
+  versioned path, URL-encode the `loadNumber` segment, and surface 404 as an empty list
+  (no error logged) and 429/500 as an empty list (status-only log) instead of throwing.
 
 - **Internal read-only endpoints** (`AlvysSearchControllerTests`,
   `AlvysSearchEndpointTests`) — the
   `/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search`
   endpoints (plus `GET /api/alvys/tenders/{tenderId}`) pass the request straight through to
   `IAlvysClient` and return the read model unchanged (asserted with a recording fake client);
-  the tender lookup returns **404** when the client yields `null`. A dedicated test
-  serializes every response and asserts **no credential/secret field** (`client_secret`,
-  `access_token`, `Bearer`, `ClientId`, `TokenUrl`, …) appears. The route-level tests hit
-  the endpoints through `WebApplicationFactory` and assert each returns **401 when
-  unauthenticated** — proving the route is mapped *and* protected (a missing route would
-  be 404), while health stays anonymous.
+  the tender lookup returns **404** when the client yields `null`. The
+  `GET /api/alvys/loads/{loadNumber}/{documents,notes}` listings pass the load number through
+  and likewise return the read model unchanged. A dedicated test serializes every response
+  and asserts **no credential/secret field** (`client_secret`, `access_token`, `Bearer`,
+  `ClientId`, `TokenUrl`, …) appears. The route-level tests hit the endpoints through
+  `WebApplicationFactory` and assert each returns **401 when unauthenticated** — proving the
+  route is mapped *and* protected (a missing route would be 404), while health stays anonymous.
 
 ## Source-of-truth & fallback behavior under test
 

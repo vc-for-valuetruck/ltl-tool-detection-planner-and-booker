@@ -30,6 +30,20 @@ public interface IAlvysClient
     Task<AlvysLoad?> GetLoadByNumberAsync(string loadNumber, CancellationToken ct = default);
 
     /// <summary>
+    /// Lists documents attached to a load via <c>GET /api/p/v{version}/loads/{loadNumber}/documents</c>.
+    /// The Alvys response is a bare array, so this returns a list rather than a paged
+    /// envelope. Read-only: the time-limited <see cref="AlvysLoadDocument.DownloadUrl"/> is
+    /// returned as data but documents are not fetched in this slice.
+    /// </summary>
+    Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(string loadNumber, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists notes on a load via <c>GET /api/p/v{version}/loads/{loadNumber}/notes</c>.
+    /// The Alvys response is a bare array, so this returns a list rather than a paged envelope.
+    /// </summary>
+    Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(string loadNumber, CancellationToken ct = default);
+
+    /// <summary>
     /// Searches trips via <c>POST /api/p/v{version}/trips/search</c>.
     /// <see cref="TripSearchRequest.Page"/> is the 0-based Alvys page.
     /// </summary>

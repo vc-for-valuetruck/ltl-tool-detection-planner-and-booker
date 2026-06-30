@@ -88,4 +88,16 @@ public sealed class AlvysProviderSelectionTests
         Assert.Empty(tenders.Items);
         Assert.Null(await client.GetTenderByIdAsync("TEN1"));
     }
+
+    [Fact]
+    public async Task Fallback_client_returns_empty_arrays_for_load_documents_and_notes()
+    {
+        var client = ResolveClient(new() { ["Alvys:Provider"] = "Fallback" });
+
+        var documents = await client.ListLoadDocumentsAsync("100");
+        var notes = await client.ListLoadNotesAsync("100");
+
+        Assert.Empty(documents);
+        Assert.Empty(notes);
+    }
 }

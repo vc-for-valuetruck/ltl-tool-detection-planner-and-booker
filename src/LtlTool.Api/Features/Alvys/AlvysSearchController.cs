@@ -13,11 +13,11 @@ namespace LtlTool.Api.Features.Alvys;
 /// remains the default source of truth (see <see cref="AlvysProvider"/>).
 ///
 /// <para>
-/// This slice is <b>read-only</b>: every action is a search/query that passes the
-/// request straight through to the corresponding <c>IAlvysClient</c> method and returns
-/// the paged Alvys read model. No data is created, updated or deleted, and there is no
-/// writeback to Alvys. Alvys models searches as <c>POST</c> (the filter set is the
-/// request body), so these read endpoints are also <c>POST</c>.
+/// This slice is <b>read-only</b>: every action passes its input straight through to the
+/// corresponding <c>IAlvysClient</c> method and returns the Alvys read model. No data is
+/// created, updated or deleted, and there is no writeback to Alvys. Searches are <c>POST</c>
+/// because Alvys models the filter set as the request body; load sub-resource listings
+/// (documents, notes) are <c>GET</c> by load number.
 /// </para>
 /// </summary>
 [ApiController]
@@ -35,6 +35,31 @@ public sealed class AlvysSearchController(IAlvysClient alvys) : ControllerBase
     public async Task<ActionResult<AlvysLoadsResponse>> SearchLoads(
         [FromBody] LoadSearchRequest request, CancellationToken ct)
         => Ok(await alvys.SearchLoadsAsync(request, ct));
+
+    /// <summary>
+    /// Read-only listing of documents attached to a load (rate confirmation / POD /
+    /// customer backup visibility). Passes <paramref name="loadNumber"/> through to
+    /// <see cref="IAlvysClient.ListLoadDocumentsAsync(string, CancellationToken)"/> and
+    /// returns the bare Alvys array. The time-limited <c>DownloadUrl</c> is returned as
+    /// data only — no document is fetched server-side.
+    /// </summary>
+    [HttpGet("loads/{loadNumber}/documents")]
+    [ProducesResponseType(typeof(IReadOnlyList<AlvysLoadDocument>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AlvysLoadDocument>>> ListLoadDocuments(
+        string loadNumber, CancellationToken ct)
+        => Ok(await alvys.ListLoadDocumentsAsync(loadNumber, ct));
+
+    /// <summary>
+    /// Read-only listing of notes on a load (operational comments / audit context).
+    /// Passes <paramref name="loadNumber"/> through to
+    /// <see cref="IAlvysClient.ListLoadNotesAsync(string, CancellationToken)"/> and returns
+    /// the bare Alvys array.
+    /// </summary>
+    [HttpGet("loads/{loadNumber}/notes")]
+    [ProducesResponseType(typeof(IReadOnlyList<AlvysLoadNote>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AlvysLoadNote>>> ListLoadNotes(
+        string loadNumber, CancellationToken ct)
+        => Ok(await alvys.ListLoadNotesAsync(loadNumber, ct));
 
     /// <summary>
     /// Read-only trip search. Passes <paramref name="request"/> through to

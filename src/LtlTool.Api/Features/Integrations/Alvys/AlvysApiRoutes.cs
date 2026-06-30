@@ -43,9 +43,31 @@ public static class AlvysApiRoutes
     public static string TenderById(string? apiVersion, string tenderId)
         => $"api/p/{NormalizeVersion(apiVersion)}/tenders/{Uri.EscapeDataString(tenderId)}";
 
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/loads/{loadNumber}/documents</c> for the
+    /// read-only load-documents listing. <paramref name="loadNumber"/> is URL-encoded.
+    /// </summary>
+    public static string LoadDocuments(string? apiVersion, string loadNumber)
+        => BuildLoadSubresourcePath(apiVersion, loadNumber, "documents");
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/loads/{loadNumber}/notes</c> for the read-only
+    /// load-notes listing. <paramref name="loadNumber"/> is URL-encoded.
+    /// </summary>
+    public static string LoadNotes(string? apiVersion, string loadNumber)
+        => BuildLoadSubresourcePath(apiVersion, loadNumber, "notes");
+
     /// <summary>Relative path <c>api/p/v{version}/{resource}/search</c>.</summary>
     public static string BuildSearchPath(string? apiVersion, string resource)
         => $"api/p/{NormalizeVersion(apiVersion)}/{resource}/search";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/loads/{loadNumber}/{subresource}</c>. The
+    /// <paramref name="loadNumber"/> path segment is URL-encoded so values with spaces or
+    /// reserved characters resolve correctly.
+    /// </summary>
+    public static string BuildLoadSubresourcePath(string? apiVersion, string loadNumber, string subresource)
+        => $"api/p/{NormalizeVersion(apiVersion)}/loads/{Uri.EscapeDataString(loadNumber)}/{subresource}";
 
     /// <summary>
     /// Normalizes a configured version to a single-<c>v</c> segment (e.g. <c>v1</c>,

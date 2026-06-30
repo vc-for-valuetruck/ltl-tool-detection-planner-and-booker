@@ -59,6 +59,20 @@ public sealed class AlvysClient(
         return response.Items.FirstOrDefault();
     }
 
+    public async Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(
+        string loadNumber, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.LoadDocuments(_options.ApiVersion, loadNumber);
+        return await GetListAsync<AlvysLoadDocument>(path, ct) ?? [];
+    }
+
+    public async Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(
+        string loadNumber, CancellationToken ct = default)
+    {
+        var path = AlvysApiRoutes.LoadNotes(_options.ApiVersion, loadNumber);
+        return await GetListAsync<AlvysLoadNote>(path, ct) ?? [];
+    }
+
     public async Task<AlvysTripsResponse> SearchTripsAsync(
         TripSearchRequest request, CancellationToken ct = default)
     {
@@ -212,6 +226,49 @@ public sealed class AlvysClient(
             }
 
             return await response.Content.ReadFromJsonAsync<TResponse>(JsonOptions, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            // Log the exception type/message but not credentials or payloads.
+            logger.LogError(ex, "Alvys {Path} transport error: {Message}", path, ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Issues a read-only <c>GET</c> against an Alvys endpoint that returns a bare JSON
+    /// array. Mirrors <see cref="PostSearchAsync"/>'s safety stance: 404 yields an empty
+    /// list, other non-success statuses are logged (status only) and surfaced as
+    /// <c>null</c> so callers degrade to an empty list.
+    /// </summary>
+    private async Task<List<T>?> GetListAsync<T>(string path, CancellationToken ct)
+    {
+        try
+        {
+            var client = httpClientFactory.CreateClient(ApiHttpClientName);
+            var token = await tokenProvider.GetAccessTokenAsync(ct);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            using var response = await client.SendAsync(request, ct);
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return [];
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogError(
+                    "Alvys {Path} failed with HTTP {StatusCode}.", path, (int)response.StatusCode);
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<List<T>>(JsonOptions, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

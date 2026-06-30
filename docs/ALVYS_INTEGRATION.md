@@ -58,12 +58,12 @@ All under `src/LtlTool.Api/Features/Integrations/Alvys/`:
 | File | Purpose |
 | --- | --- |
 | `AlvysOptions.cs` | Strongly-typed config (`ApiBaseUrl` host + `ApiVersion`) + `AlvysProvider` enum (`Live`/`Fallback`). |
-| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `SearchTripsAsync`, `SearchTrailersAsync`, `SearchTrucksAsync`, `SearchDispatchPreferencesAsync`, `SearchLocationsAsync`, `SearchDriversAsync`, `SearchCustomersAsync`, `SearchUsersAsync`, `SearchTendersAsync`, `GetTenderByIdAsync`). |
+| `IAlvysClient.cs` | Client abstraction (`SearchLoadsAsync`, `GetLoadByNumberAsync`, `ListLoadDocumentsAsync`, `ListLoadNotesAsync`, `SearchTripsAsync`, `SearchTrailersAsync`, `SearchTrucksAsync`, `SearchDispatchPreferencesAsync`, `SearchLocationsAsync`, `SearchDriversAsync`, `SearchCustomersAsync`, `SearchUsersAsync`, `SearchTendersAsync`, `GetTenderByIdAsync`). |
 | `AlvysClient.cs` | Live client; default source of truth. Named `HttpClient` + bearer token per request. |
 | `AlvysApiRoutes.cs` | Builds versioned `/api/p/v{version}/...` paths (search paths + the `tenders/{tenderId}` GET path, which URL-encodes the id) and normalizes the version (no double `v`). |
 | `AlvysTokenProvider.cs` | OAuth2 token acquisition + caching (`IAlvysTokenProvider`). |
 | `FallbackAlvysClient.cs` | Non-default empty-result stub for local/UAT only. |
-| `AlvysDtos.cs` | Load + trip + trailer + truck + dispatch-preference + location + driver + customer + user + tender search request/response DTOs (+ tender detail) + token response. |
+| `AlvysDtos.cs` | Load + trip + trailer + truck + dispatch-preference + location + driver + customer + user + tender search request/response DTOs (+ tender detail), load-document/load-note list item DTOs, + token response. |
 | `AlvysServiceCollectionExtensions.cs` | DI wiring + provider selection (live default). |
 
 ## Internal read-only API endpoints
@@ -89,17 +89,19 @@ no token/config/secret is ever in the response (covered by
 | `POST /api/alvys/users/search` | `UserSearchRequest` | `SearchUsersAsync` | `POST /api/p/v{version}/users/search` |
 | `POST /api/alvys/tenders/search` | `TenderSearchRequest` | `SearchTendersAsync` | `POST /api/p/v{version}/tenders/search` |
 | `GET /api/alvys/tenders/{tenderId}` | _(path param)_ | `GetTenderByIdAsync` | `GET /api/p/v{version}/tenders/{tenderId}` |
+| `GET /api/alvys/loads/{loadNumber}/documents` | _(path param)_ | `ListLoadDocumentsAsync` | `GET /api/p/v{version}/loads/{loadNumber}/documents` |
+| `GET /api/alvys/loads/{loadNumber}/notes` | _(path param)_ | `ListLoadNotesAsync` | `GET /api/p/v{version}/loads/{loadNumber}/notes` |
 
 - **Authorization.** All require the `AllowedEmailDomain` policy, same as
   `/api/me`. An unauthenticated request returns 401 (not 404) because the route is
   matched before authorization runs — see `AlvysSearchEndpointTests`. Health stays
   anonymous.
-- **HTTP verb.** `POST` is used for searches because the filter set is the request body,
-  not because anything is mutated. Single-record reads (the tender-by-id lookup) are `GET`.
-  All these endpoints are queries only.
-- **No internal mutation endpoints exist** — there is no `PUT`/`PATCH`/`DELETE` and no
-  Alvys writeback in this phase. The tender slice is read-only: no accept/reject/cancel/
-  update/create.
+- **HTTP verb.** Searches are `POST` because the filter set is the request body, not
+  because anything is mutated. Single-record reads (the tender-by-id lookup) and the two
+  load sub-resource listings (documents, notes) are `GET`. All are queries only.
+- **No internal mutation endpoints exist** — there is no `PUT`/`PATCH`/`DELETE`, no POST
+  note/document creation, and no Alvys writeback in this phase. The tender slice is
+  read-only: no accept/reject/cancel/update/create.
 
 ## Upstream Alvys search paths
 
@@ -295,6 +297,34 @@ tender is accepted, rejected, cancelled, updated or created, and there is no wri
 > from the load `AlvysReference` (`Type`/`Value`), so tenders use a dedicated
 > `AlvysTenderReference`. Tender `Notes` are modelled as a `string[]` (EDI tender note lines).
 
+### Load context: documents and notes
+
+Load documents and load notes give dispatchers per-load confidence (rate confirmation /
+POD / customer backup visibility), operational comments and audit context. Both are
+**read-only** `GET` listings keyed by load number; the upstream Alvys responses are bare
+arrays, so the client returns `IReadOnlyList<…>` and the internal endpoints return bare
+JSON arrays. The `loadNumber` path segment is URL-encoded (`AlvysApiRoutes.BuildLoadSubresourcePath`).
+
+> This slice does **not** add create/update/delete for notes or documents — no POST note
+> creation, no document upload, and no `PUT`/`PATCH`/`DELETE`.
+
+#### `loads/{loadNumber}/documents` → `GET /api/p/v{version}/loads/{loadNumber}/documents`
+
+- **Request:** `loadNumber` path parameter only (URL-encoded). No body.
+- **Response** (`AlvysLoadDocument[]`): `id` (lowercase), `AttachmentPath`,
+  `AttachmentType`, `AttachmentSize?`, `UploadedAt?`, `ParentId`, `ParentType`,
+  `UploadedBy?`, `DownloadUrl?`, `ExpiresAt?`. `DownloadUrl` is a time-limited link
+  (`ExpiresAt`) returned as **data only** — documents are not fetched/downloaded server-side
+  in this slice. Unknown JSON properties are tolerated.
+
+#### `loads/{loadNumber}/notes` → `GET /api/p/v{version}/loads/{loadNumber}/notes`
+
+- **Request:** `loadNumber` path parameter only (URL-encoded). No body.
+- **Response** (`AlvysLoadNote[]`): `Id`, `Description`, `NoteType`, `CreatedAt?`,
+  `CreatedBy`, `CreatedById?`. Distinct from the inline load `AlvysNote`
+  (`Text`/`CreatedAt`/`CreatedBy`) carried on the load search projection. Unknown JSON
+  properties are tolerated.
+
 #### Alvys docs reviewed for this slice
 
 The five context endpoints were modelled from the Alvys public-API reference (discovered
@@ -305,6 +335,12 @@ via `https://docs.alvys.com/llms.txt`):
 - Drivers — `https://docs.alvys.com/reference/post_api-p-v-version-drivers-search.md`
 - Customers — `https://docs.alvys.com/reference/post_api-p-v-version-customers-search.md`
 - Users — `https://docs.alvys.com/reference/post_api-p-v-version-users-search.md`
+
+Load documents and notes were modelled from the same reference (docs index
+`https://docs.alvys.com/llms.txt`):
+
+- List load documents — `https://docs.alvys.com/reference/get_api-p-v-version-loads-loadnumber-documents.md`
+- List load notes — `https://docs.alvys.com/reference/get_api-p-v-version-loads-loadnumber-notes.md`
 
 Registered in `Program.cs` via `builder.Services.AddAlvysIntegration(builder.Configuration)`.
 
@@ -341,13 +377,15 @@ of truth for the auth/client pattern. Exact files reviewed at `main`:
 
 ## Read-only stance
 
-This integration phase is **read-only**. The internal API endpoints
-(`/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search`
-plus the `GET /api/alvys/tenders/{tenderId}` lookup) and the upstream Alvys client calls
-issue queries only. Alvys models searches as `POST` (the filter set is the request body)
-and single-record reads as `GET`, but no data is created, updated or deleted and there is
-no writeback to Alvys. For tenders specifically there is no accept/reject/cancel/update/
-create. No `PUT`/`PATCH`/`DELETE` or POST-mutation (other than the Alvys-defined search
+This integration phase is **read-only**. The internal API endpoints — the
+`/api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search`
+searches plus the `GET /api/alvys/tenders/{tenderId}` lookup and the
+`GET /api/alvys/loads/{loadNumber}/{documents,notes}` listings — and the upstream Alvys
+client calls issue queries only. Alvys models searches as `POST` (the filter set is the
+request body) and exposes single-record reads and the load sub-resource listings as `GET`,
+but no data is created, updated or deleted and there is no writeback to Alvys. For tenders
+specifically there is no accept/reject/cancel/update/create. No `PUT`/`PATCH`/`DELETE`, no
+POST note/document creation, and no POST-mutation (other than the Alvys-defined search
 `POST`) calls are made. Live Alvys remains the default source of truth; the `Fallback`
 provider is opt-in for local/UAT and returns empty (shape-preserving) results.
 
