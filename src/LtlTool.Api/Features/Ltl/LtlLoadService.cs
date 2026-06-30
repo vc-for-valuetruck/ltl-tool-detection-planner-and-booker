@@ -352,7 +352,7 @@ public sealed class LtlLoadService(
 
         // Nulls sort last in both directions so missing data never floats to the top.
         var ordered = q.SortDescending
-            ? items.OrderByDescending(s => key(s) is null).ThenByDescending(key)
+            ? items.OrderBy(s => key(s) is null).ThenByDescending(key)
             : items.OrderBy(s => key(s) is null).ThenBy(key);
 
         return ordered;
