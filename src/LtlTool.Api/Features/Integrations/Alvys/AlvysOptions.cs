@@ -35,8 +35,19 @@ public sealed class AlvysOptions
     /// </summary>
     public AlvysProvider Provider { get; set; } = AlvysProvider.Live;
 
-    /// <summary>Base URL for the Alvys public API (no trailing slash required).</summary>
-    public string ApiBaseUrl { get; set; } = "https://integrations.alvys.com/api/p/v1";
+    /// <summary>
+    /// Host root for the Alvys public API (no version, no trailing slash required).
+    /// The versioned <c>/api/p/v{version}/...</c> path is appended per request from
+    /// <see cref="ApiVersion"/>.
+    /// </summary>
+    public string ApiBaseUrl { get; set; } = "https://integrations.alvys.com";
+
+    /// <summary>
+    /// API version segment for the <c>/api/p/v{version}/...</c> routes. Configured
+    /// without or with the <c>v</c> prefix (e.g. <c>v2.0</c> or <c>2.0</c>); it is
+    /// normalized to a single <c>v</c> by <see cref="AlvysApiRoutes"/>.
+    /// </summary>
+    public string ApiVersion { get; set; } = AlvysApiRoutes.DefaultVersion;
 
     /// <summary>OAuth2 token endpoint for the client-credentials flow.</summary>
     public string TokenUrl { get; set; } = "https://auth.alvys.com/oauth/token";

@@ -53,7 +53,8 @@ services:
       # Live is the default source of truth; set ALVYS_PROVIDER=Fallback for
       # local/UAT runs without a live tenant.
       Alvys__Provider: "${ALVYS_PROVIDER:-Live}"
-      Alvys__ApiBaseUrl: "${ALVYS_API_BASE_URL:-https://integrations.alvys.com/api/p/v1}"
+      Alvys__ApiBaseUrl: "${ALVYS_API_BASE_URL:-https://integrations.alvys.com}"
+      Alvys__ApiVersion: "${ALVYS_API_VERSION:-v1}"
       Alvys__TenantId: "${ALVYS_TENANT_ID:-}"
       Alvys__ClientId: "${ALVYS_CLIENT_ID:-}"
       Alvys__ClientSecret: "${ALVYS_CLIENT_SECRET:-}"
