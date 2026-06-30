@@ -67,18 +67,19 @@ public sealed class AlvysWriteGatewayTests
     }
 
     [Fact]
-    public void Sandbox_mode_resolves_to_unsupported_because_no_endpoint_is_documented()
+    public void Sandbox_mode_fully_configured_signals_sandbox_execution_eligible()
     {
-        // Even fully configured for sandbox, an undocumented mutating endpoint must not be executed.
+        // Fully configured sandbox + Supported operation: gateway signals eligibility; the recorder
+        // dispatches the live call so the gateway itself never executes.
         var outcome = Gateway(
                 AlvysWritebackMode.Sandbox, environment: "sandbox",
                 sandboxBaseUrl: "https://sandbox.example.com", hasCredentials: true)
             .Execute("create-load-note", ValidNote());
 
-        Assert.Equal(AlvysOperationDisposition.Unsupported, outcome.Disposition);
+        Assert.Equal(AlvysOperationDisposition.SandboxExecuted, outcome.Disposition);
+        Assert.True(outcome.SandboxExecutionEligible);
         Assert.False(outcome.Executed);
-        Assert.NotNull(outcome.RequiredToEnable);
-        Assert.Contains("endpoint", outcome.RequiredToEnable!, System.StringComparison.OrdinalIgnoreCase);
+        Assert.Null(outcome.RequiredToEnable);
     }
 
     [Fact]

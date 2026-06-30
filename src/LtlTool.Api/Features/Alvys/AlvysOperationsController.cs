@@ -79,8 +79,8 @@ public sealed class AlvysOperationsController(
     [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(typeof(AlvysOperationConflict), StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public ActionResult<AlvysOperationResponse> Execute(
-        string operation, [FromBody] AlvysOperationRequest request)
+    public async Task<ActionResult<AlvysOperationResponse>> Execute(
+        string operation, [FromBody] AlvysOperationRequest request, CancellationToken ct)
     {
         if (AlvysWriteOperationRegistry.Find(operation) is null) return NotFound();
 
@@ -91,7 +91,7 @@ public sealed class AlvysOperationsController(
             request.IdempotencyKey = header.ToString();
         }
 
-        var result = recorder.RecordExecute(CurrentUser(), operation, request);
+        var result = await recorder.RecordExecuteAsync(CurrentUser(), operation, request, ct);
 
         if (result.Disposition == AlvysRecordDisposition.Conflict)
         {

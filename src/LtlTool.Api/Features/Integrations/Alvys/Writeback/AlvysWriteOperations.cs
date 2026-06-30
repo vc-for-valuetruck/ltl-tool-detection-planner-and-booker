@@ -64,10 +64,11 @@ public sealed class AlvysWriteOperationDescriptor
 }
 
 /// <summary>
-/// The catalogue of supported/known write operations. Live execution is currently
-/// <see cref="AlvysLiveSupport.Unsupported"/> for every entry: the Alvys integration docs captured
-/// in this repo cover read endpoints only, so we deliberately do not invent mutating routes. Each
-/// descriptor records exactly what is needed to turn live sandbox execution on.
+/// The catalogue of supported/known write operations. All five operations are
+/// <see cref="AlvysLiveSupport.Supported"/> and will execute against the Alvys sandbox when
+/// <see cref="AlvysWritebackMode.Sandbox"/> is fully configured. Sandbox execution is still
+/// gated by configuration (recognised environment + sandbox base URL + credentials) so flipping
+/// the mode alone can never reach a live/production tenant.
 /// </summary>
 public static class AlvysWriteOperationRegistry
 {
@@ -83,11 +84,8 @@ public static class AlvysWriteOperationRegistry
                 "traceable in Alvys.",
             WorkflowStage = "Assign/Bill",
             RequiresEtag = false,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys create-note endpoint (verb + path + request body) for " +
-                "loads/{loadNumber}/notes. The repo currently documents the read-only GET notes " +
-                "listing only; no POST note-creation contract is published.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
         new()
         {
@@ -97,11 +95,8 @@ public static class AlvysWriteOperationRegistry
             Description = "Accept an inbound EDI/tender offer that has been selected for booking.",
             WorkflowStage = "Match/Assign",
             RequiresEtag = true,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys tender-accept endpoint (verb + path + body) and its ETag/" +
-                "concurrency contract. The repo documents tender search + get-by-id (read-only) " +
-                "only; no accept/reject/cancel contract is published.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
         new()
         {
@@ -111,10 +106,8 @@ public static class AlvysWriteOperationRegistry
             Description = "Record an arrival timestamp against a trip stop.",
             WorkflowStage = "Assign",
             RequiresEtag = false,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys trip-stop arrival endpoint (verb + path + body). The repo " +
-                "documents the read-only GET trips/{tripId}/stops listing only.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
         new()
         {
@@ -124,10 +117,8 @@ public static class AlvysWriteOperationRegistry
             Description = "Record a departure timestamp against a trip stop.",
             WorkflowStage = "Assign",
             RequiresEtag = false,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys trip-stop departure endpoint (verb + path + body). The repo " +
-                "documents the read-only GET trips/{tripId}/stops listing only.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
         new()
         {
@@ -139,11 +130,8 @@ public static class AlvysWriteOperationRegistry
                 "protection.",
             WorkflowStage = "Assign/Bill",
             RequiresEtag = true,
-            LiveSupport = AlvysLiveSupport.Unsupported,
-            RequiredToEnable =
-                "A documented Alvys load-update endpoint (verb + path), the exact set of safely " +
-                "editable fields, and the ETag/concurrency contract. The repo documents read-only " +
-                "load search/detail only and the load read model carries no ETag.",
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
         },
     ];
 

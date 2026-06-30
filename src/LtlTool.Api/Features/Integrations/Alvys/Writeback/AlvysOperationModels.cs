@@ -1,6 +1,25 @@
 namespace LtlTool.Api.Features.Integrations.Alvys.Writeback;
 
 /// <summary>
+/// The result of a live sandbox HTTP call made by <see cref="IAlvysWriteClient"/>. Captures
+/// only the fields needed for the outbox record — no auth material, no secret headers.
+/// </summary>
+public sealed class AlvysWriteCallResult
+{
+    public required bool IsSuccess { get; init; }
+    public required int StatusCode { get; init; }
+
+    /// <summary>ETag returned by the response (null when the operation doesn't produce one).</summary>
+    public string? ETag { get; init; }
+
+    /// <summary>Response body JSON (bounded; never includes auth material).</summary>
+    public string? Body { get; init; }
+
+    /// <summary>Error detail when <see cref="IsSuccess"/> is false.</summary>
+    public string? Error { get; init; }
+}
+
+/// <summary>
 /// Inputs for a write-oriented Alvys operation. A single shape covers every operation; only the
 /// fields relevant to the requested operation are read, and the gateway validates that the required
 /// ones are present before building a payload.
@@ -121,6 +140,13 @@ public sealed class AlvysOperationOutcome
 
     /// <summary>Always <c>false</c> in this phase — no live Alvys mutation is performed.</summary>
     public bool Executed { get; init; }
+
+    /// <summary>
+    /// True when the operation is Supported and the sandbox is fully configured; the recorder
+    /// should dispatch a live call via <see cref="IAlvysWriteClient"/> and update this outcome.
+    /// Always false for dry-run and for Unsupported/blocked operations.
+    /// </summary>
+    public bool SandboxExecutionEligible { get; init; }
 
     /// <summary>A one-line, dispatcher-facing summary of the disposition.</summary>
     public required string Message { get; init; }

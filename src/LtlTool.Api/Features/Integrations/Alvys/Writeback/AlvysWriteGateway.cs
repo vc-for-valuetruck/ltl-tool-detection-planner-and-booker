@@ -8,11 +8,11 @@ namespace LtlTool.Api.Features.Integrations.Alvys.Writeback;
 /// configured <see cref="AlvysWritebackMode"/> and the operation's live-execution support.
 ///
 /// <para>
-/// In this phase the gateway <b>never</b> performs a live Alvys mutation: there is no documented
-/// mutating endpoint, so even in <see cref="AlvysWritebackMode.Sandbox"/> every operation resolves
-/// to <see cref="AlvysOperationDisposition.Unsupported"/> with the documentation required to enable
-/// it. Disabled mode yields audit-only; Simulation yields a dry-run preview. The execute path and
-/// the dry-run path share payload construction so the preview is exactly what would be sent.
+/// The gateway itself never performs a live network call — it sets
+/// <see cref="AlvysOperationOutcome.SandboxExecutionEligible"/> to signal the recorder that it
+/// should dispatch the live sandbox call. Disabled mode yields audit-only; Simulation yields a
+/// dry-run preview. The execute path and the dry-run path share payload construction so the preview
+/// is exactly what would be sent.
 /// </para>
 /// </summary>
 public interface IAlvysWriteGateway
@@ -75,11 +75,11 @@ public sealed class AlvysWriteGateway(
         var payload = BuildPayload(op, request);
         var blockers = SandboxBlockers(op);
 
-        // Decide disposition. Live execution is never reached in this phase because every operation
-        // is Unsupported, but the branching is written so that enabling a supported operation +
-        // ready sandbox config is the only path to execution.
+        // Decide disposition. Sandbox execution is gated by mode + config blockers + live support;
+        // when all gates pass on the execute path the recorder dispatches the live call.
         AlvysOperationDisposition disposition;
         string message;
+        var sandboxExecutionEligible = false;
 
         if (op.LiveSupport == AlvysLiveSupport.Unsupported)
         {
@@ -119,10 +119,11 @@ public sealed class AlvysWriteGateway(
             }
             else
             {
-                // The single future place a live sandbox call would be issued. Intentionally not
-                // implemented while every operation is Unsupported, so no live mutation can occur.
-                disposition = AlvysOperationDisposition.Unsupported;
-                message = "Live sandbox execution is not wired for this operation.";
+                // All gates passed: the recorder will dispatch the live sandbox call and update
+                // the disposition to SandboxExecuted on success.
+                disposition = AlvysOperationDisposition.SandboxExecuted;
+                message = "Sandbox execution eligible — dispatching to Alvys sandbox.";
+                sandboxExecutionEligible = true;
             }
         }
 
@@ -133,6 +134,7 @@ public sealed class AlvysWriteGateway(
             Mode = _write.Mode,
             Disposition = disposition,
             Executed = false,
+            SandboxExecutionEligible = sandboxExecutionEligible,
             Message = message,
             Payload = payload,
             Blockers = blockers,
@@ -261,9 +263,6 @@ public sealed class AlvysWriteGateway(
     private List<string> SandboxBlockers(AlvysWriteOperationDescriptor op)
     {
         var blockers = new List<string>();
-
-        if (op.LiveSupport == AlvysLiveSupport.Unsupported)
-            blockers.Add("No documented Alvys mutating endpoint for this operation.");
 
         if (_write.Mode != AlvysWritebackMode.Sandbox)
             blockers.Add($"Writeback mode is {_write.Mode}, not Sandbox.");

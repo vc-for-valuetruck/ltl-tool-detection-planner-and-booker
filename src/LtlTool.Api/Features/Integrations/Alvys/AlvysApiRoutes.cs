@@ -103,6 +103,34 @@ public static class AlvysApiRoutes
         => BuildLoadSubresourcePath(apiVersion, loadNumber, "notes");
 
     /// <summary>
+    /// Relative path <c>api/p/v{version}/loads/{loadNumber}/notes</c> for creating a note
+    /// (POST). Same path as <see cref="LoadNotes"/>; the verb distinguishes read from write.
+    /// </summary>
+    public static string CreateLoadNote(string? apiVersion, string loadNumber)
+        => BuildLoadSubresourcePath(apiVersion, loadNumber, "notes");
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/loads/{loadNumber}</c> for a partial update (PATCH)
+    /// of a load resource. <paramref name="loadNumber"/> is URL-encoded.
+    /// </summary>
+    public static string LoadPatch(string? apiVersion, string loadNumber)
+        => $"api/p/{NormalizeVersion(apiVersion)}/loads/{Uri.EscapeDataString(loadNumber)}";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/tenders/{tenderId}/accept</c> for accepting an inbound
+    /// tender. <paramref name="tenderId"/> is URL-encoded.
+    /// </summary>
+    public static string TenderAccept(string? apiVersion, string tenderId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/tenders/{Uri.EscapeDataString(tenderId)}/accept";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/stops/{stopId}</c> for recording a trip
+    /// stop arrival or departure (PATCH). Both id segments are URL-encoded.
+    /// </summary>
+    public static string TripStopPatch(string? apiVersion, string tripId, string stopId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/stops/{Uri.EscapeDataString(stopId)}";
+
+    /// <summary>
     /// Relative path <c>api/p/v{version}/loads?{query}</c> for the read-only load-detail
     /// lookup. At least one of <see cref="LoadLookup.Id"/>/<see cref="LoadLookup.LoadNumber"/>/
     /// <see cref="LoadLookup.OrderNumber"/> must be supplied (enforced by

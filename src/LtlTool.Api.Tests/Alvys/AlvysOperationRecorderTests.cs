@@ -23,7 +23,7 @@ public sealed class AlvysOperationRecorderTests
         var gateway = new AlvysWriteGateway(write, alvys);
         var store = new InMemoryAlvysOperationStore();
         var clock = new FixedClock(Now);
-        return (new AlvysOperationRecorder(gateway, store, clock), store);
+        return (new AlvysOperationRecorder(gateway, store, clock, new NoOpAlvysWriteClient()), store);
     }
 
     private static AlvysOperationRequest Note(string key, string text = "Assigned to driver D1.") =>
@@ -117,15 +117,17 @@ public sealed class AlvysOperationRecorderTests
     }
 
     [Fact]
-    public void Sandbox_unsupported_operation_is_recorded_with_unsupported_status()
+    public void Sandbox_mode_without_config_records_as_simulated()
     {
+        // Sandbox mode without sandbox URL/credentials: eligible gate is not cleared, stays Simulated.
         var (recorder, _) = Build(AlvysWritebackMode.Sandbox);
 
         var result = recorder.RecordExecute("owner@vt.com", "create-load-note", Note("k"));
 
-        Assert.Equal(AlvysOperationDisposition.Unsupported, result.Outcome.Disposition);
-        Assert.Equal(AlvysOperationRecordStatus.Unsupported, result.Record!.Status);
+        Assert.Equal(AlvysOperationDisposition.Simulated, result.Outcome.Disposition);
+        Assert.Equal(AlvysOperationRecordStatus.Recorded, result.Record!.Status);
         Assert.False(result.Outcome.Executed);
+        Assert.False(result.Outcome.SandboxExecutionEligible);
     }
 
     [Fact]
