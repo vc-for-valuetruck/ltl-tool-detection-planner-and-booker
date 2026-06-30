@@ -1,0 +1,223 @@
+<section class="ltl">
+  <div class="ltl-head">
+    <h2>LTL Loads</h2>
+    <p class="subtitle">
+      Decision support over live Alvys data &mdash; missing fields are surfaced, never invented.
+    </p>
+  </div>
+
+  <!-- Saved-view chips -->
+  <div class="chips" role="group" aria-label="Saved views">
+    @for (view of savedViews; track view.id) {
+      <button
+        type="button"
+        class="chip"
+        [class.active]="activeView() === view.id"
+        [title]="view.description"
+        (click)="applyView(view)"
+      >
+        {{ view.label }}
+      </button>
+    }
+    @if (activeView()) {
+      <button type="button" class="chip chip-clear" (click)="clearFilters()">Clear view</button>
+    }
+  </div>
+
+  <!-- Filters -->
+  <form class="filters" (ngSubmit)="onSubmit()">
+    <input
+      type="search"
+      name="keyword"
+      placeholder="Load #, order #, PO#…"
+      [(ngModel)]="filters().keyword"
+    />
+    <input type="text" name="customer" placeholder="Customer" [(ngModel)]="filters().customer" />
+    <input
+      type="text"
+      name="originState"
+      placeholder="Origin ST"
+      maxlength="2"
+      [(ngModel)]="filters().originState"
+    />
+    <input
+      type="text"
+      name="destinationState"
+      placeholder="Dest ST"
+      maxlength="2"
+      [(ngModel)]="filters().destinationState"
+    />
+    <input
+      type="text"
+      name="equipmentType"
+      placeholder="Equipment"
+      [(ngModel)]="filters().equipmentType"
+    />
+    <select name="assignment" [(ngModel)]="filters().assignment">
+      <option value="">Any assignment</option>
+      <option value="Unassigned">Unassigned</option>
+      <option value="Assigned">Assigned</option>
+    </select>
+    <label class="check"><input type="checkbox" name="ltlOnly" [(ngModel)]="filters().ltlOnly" /> LTL only</label>
+    <label class="check"><input type="checkbox" name="readyToBill" [(ngModel)]="filters().readyToBill" /> Ready to bill</label>
+    <label class="check"><input type="checkbox" name="missingBillingData" [(ngModel)]="filters().missingBillingData" /> Missing billing</label>
+    <label class="check"><input type="checkbox" name="exceptionsOnly" [(ngModel)]="filters().exceptionsOnly" /> Exceptions</label>
+    <button type="submit" class="primary">Search</button>
+    <button type="button" (click)="clearFilters()">Reset</button>
+  </form>
+
+  <!-- States -->
+  @if (loading()) {
+    <div class="state">Loading loads…</div>
+  } @else if (error()) {
+    <div class="state state-error">
+      {{ error() }}
+      <button type="button" (click)="runSearch()">Retry</button>
+    </div>
+  } @else if (!hasResults()) {
+    <div class="state">No loads match the current filters.</div>
+  } @else {
+    @if (truncated()) {
+      <div class="banner">
+        Showing the first results of a larger Alvys sweep &mdash; refine filters to narrow the set.
+      </div>
+    }
+    <div class="table-wrap">
+      <table class="grid">
+        <thead>
+          <tr>
+            @for (col of columns; track col.field) {
+              <th (click)="toggleSort(col.field)" [class.sorted]="sort() === col.field">
+                {{ col.label }} <span class="sort">{{ sortIndicator(col.field) }}</span>
+              </th>
+            }
+            <th>Flags</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (load of items(); track load.id) {
+            <tr (click)="select(load)" [class.selected]="selected()?.id === load.id">
+              <td>
+                <strong>{{ load.customerName || '—' }}</strong>
+                <div class="muted">{{ load.loadNumber || load.id }}</div>
+              </td>
+              <td>
+                {{ load.status }}
+                <div class="muted">{{ load.assignment }}</div>
+              </td>
+              <td>
+                {{ load.scheduledPickupAt ? (load.scheduledPickupAt | date: 'MMM d') : '—' }}
+                <div class="muted">{{ load.origin?.label || '—' }}</div>
+              </td>
+              <td>
+                {{ load.scheduledDeliveryAt ? (load.scheduledDeliveryAt | date: 'MMM d') : '—' }}
+                <div class="muted">{{ load.destination?.label || '—' }}</div>
+              </td>
+              <td>
+                @if (load.weightLbs !== null) {
+                  {{ load.weightLbs | number: '1.0-0' }} lb
+                } @else {
+                  <span class="missing">missing</span>
+                }
+              </td>
+              <td>
+                @if (load.revenue !== null) {
+                  &#36;{{ load.revenue | number: '1.0-0' }}
+                } @else {
+                  <span class="missing">missing</span>
+                }
+              </td>
+              <td>
+                @if (load.revenuePerMile !== null) {
+                  &#36;{{ load.revenuePerMile | number: '1.2-2' }}
+                } @else {
+                  —
+                }
+              </td>
+              <td>
+                @for (badge of load.billing.badges; track badge) {
+                  <span [class]="badgeClass(badge)">{{ badgeText(badge) }}</span>
+                }
+              </td>
+              <td>
+                @if (load.hasExceptions) {
+                  <span class="badge badge-danger" [title]="load.exceptions[0].message">
+                    {{ load.exceptions.length }} exception(s)
+                  </span>
+                }
+                @if (load.missingData.length > 0) {
+                  <span class="badge badge-warn" [title]="load.missingData.join(', ')">
+                    {{ load.missingData.length }} missing
+                  </span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pager">
+      <button type="button" (click)="goToPage(page() - 1)" [disabled]="page() <= 1">Prev</button>
+      <span>Page {{ page() }} of {{ totalPages() }} &middot; {{ total() }} loads</span>
+      <button type="button" (click)="goToPage(page() + 1)" [disabled]="page() >= totalPages()">
+        Next
+      </button>
+    </div>
+  }
+</section>
+
+<!-- Detail drawer -->
+@if (selected(); as load) {
+  <aside class="drawer" (click)="$event.stopPropagation()">
+    <header>
+      <h3>{{ load.customerName || 'Load' }} &middot; {{ load.loadNumber || load.id }}</h3>
+      <button type="button" class="close" (click)="closeDrawer()" aria-label="Close">&times;</button>
+    </header>
+
+    <dl class="detail">
+      <dt>Status</dt><dd>{{ load.status }} ({{ load.assignment }})</dd>
+      <dt>Lane</dt><dd>{{ load.origin?.label || '—' }} → {{ load.destination?.label || '—' }}</dd>
+      <dt>Equipment</dt><dd>{{ load.equipment.length ? load.equipment.join(', ') : '—' }}</dd>
+      <dt>Revenue</dt>
+      <dd>
+        @if (load.revenue !== null) { &#36;{{ load.revenue | number: '1.0-0' }} }
+        @else { <span class="missing">missing</span> }
+      </dd>
+    </dl>
+
+    @if (load.missingData.length > 0) {
+      <div class="drawer-section">
+        <h4>Missing data</h4>
+        <div class="chips">
+          @for (flag of load.missingData; track flag) {
+            <span class="badge badge-warn">{{ flag }}</span>
+          }
+        </div>
+      </div>
+    }
+
+    <div class="drawer-section">
+      <h4>Recommended matches</h4>
+      @if (matchesLoading()) {
+        <p class="muted">Scoring candidates…</p>
+      } @else if (matches() && matches()!.length > 0) {
+        <ul class="matches">
+          @for (m of matches(); track m.driverId) {
+            <li>
+              <span [class]="matchClass(m.label)">{{ m.labelText }} ({{ m.score }})</span>
+              <strong>{{ m.driverName || m.driverId }}</strong>
+              <div class="muted">{{ m.summary }}</div>
+              @if (m.disqualifiers.length > 0) {
+                <div class="missing">{{ m.disqualifiers.join('; ') }}</div>
+              }
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="muted">No eligible candidates found.</p>
+      }
+    </div>
+  </aside>
+}

@@ -1,0 +1,276 @@
+:host {
+  display: block;
+}
+
+.ltl-head h2 {
+  margin: 0;
+}
+.subtitle {
+  margin: 0.25rem 0 1rem;
+  color: #555;
+  font-size: 0.9rem;
+}
+
+/* Chips */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.chip {
+  border: 1px solid #ccd;
+  background: #f6f7fb;
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.chip:hover {
+  background: #eceefb;
+}
+.chip.active {
+  background: #2b59c3;
+  border-color: #2b59c3;
+  color: #fff;
+}
+.chip-clear {
+  border-style: dashed;
+}
+
+/* Filters */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.filters input[type='text'],
+.filters input[type='search'],
+.filters select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #ccd;
+  border-radius: 4px;
+}
+.filters input[name='originState'],
+.filters input[name='destinationState'] {
+  width: 5rem;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+button.primary {
+  background: #2b59c3;
+  color: #fff;
+  border: none;
+}
+.filters button {
+  padding: 0.4rem 0.85rem;
+  border-radius: 4px;
+  border: 1px solid #ccd;
+  cursor: pointer;
+}
+
+/* States */
+.state {
+  padding: 2rem;
+  text-align: center;
+  color: #555;
+  background: #fafafc;
+  border-radius: 6px;
+}
+.state-error {
+  color: #b00020;
+  background: #fdecef;
+}
+.banner {
+  padding: 0.5rem 0.75rem;
+  background: #fff6e0;
+  border: 1px solid #f0d48a;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Table */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e3e3ea;
+  border-radius: 6px;
+}
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.grid thead th {
+  position: sticky;
+  top: 0;
+  background: #f6f7fb;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #e3e3ea;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.grid th.sorted {
+  color: #2b59c3;
+}
+.grid tbody td {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid #f0f0f4;
+  vertical-align: top;
+}
+.grid tbody tr {
+  cursor: pointer;
+}
+.grid tbody tr:hover {
+  background: #f9faff;
+}
+.grid tbody tr.selected {
+  background: #eef2ff;
+}
+.muted {
+  color: #888;
+  font-size: 0.8rem;
+}
+.missing {
+  color: #b00020;
+  font-style: italic;
+  font-size: 0.8rem;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  margin: 0 0.2rem 0.2rem 0;
+  white-space: nowrap;
+}
+.badge-ok {
+  background: #e3f6e8;
+  color: #1b6b32;
+}
+.badge-warn {
+  background: #fff3d6;
+  color: #8a5a00;
+}
+.badge-danger {
+  background: #fdecef;
+  color: #b00020;
+}
+.badge-muted {
+  background: #eee;
+  color: #666;
+}
+
+/* Pagination */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+.pager button {
+  padding: 0.35rem 0.85rem;
+  border: 1px solid #ccd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+.pager button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Drawer */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: min(420px, 100%);
+  height: 100vh;
+  background: #fff;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+  z-index: 20;
+}
+.drawer header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.drawer h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.close {
+  border: none;
+  background: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.detail {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 0.75rem;
+  margin: 0.75rem 0;
+  font-size: 0.88rem;
+}
+.detail dt {
+  color: #888;
+}
+.detail dd {
+  margin: 0;
+}
+.drawer-section {
+  border-top: 1px solid #eee;
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+}
+.drawer-section h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+.matches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.matches li {
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 0.5rem 0.6rem;
+}
+.match {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  margin-right: 0.4rem;
+}
+.match-ok {
+  background: #e3f6e8;
+  color: #1b6b32;
+}
+.match-warn {
+  background: #fff3d6;
+  color: #8a5a00;
+}
+.match-danger {
+  background: #fdecef;
+  color: #b00020;
+}

@@ -1,8 +1,10 @@
 # LTL Tool Detection, Planner, and Booker
 
 Internal app for Value Truck dispatchers, built from the Value Truck UAT template.
-This Phase 1 slice contains the renamed template plumbing only — LTL domain
-features (detection, planning, booking) are not implemented yet.
+On top of the renamed template plumbing it now ships the first **LTL
+decision-support slice**: a normalized read model over live Alvys data, explainable
+driver/equipment match scoring, billing-readiness detection, an internal (audited,
+non-Alvys) assignment boundary, and an Angular search workspace. See section 11.
 
 It ships a pre-wired full-stack starter:
 
@@ -152,6 +154,7 @@ src/LtlTool.Api/
     ├── Health/              # GET /api/health (anonymous liveness)
     ├── Me/                  # GET /api/me (protected sample endpoint)
     ├── Alvys/               # POST /api/alvys/{loads,trips,trailers,trucks,dispatch-preferences,locations,drivers,customers,users,tenders}/search + GET /api/alvys/tenders/{id} + GET /api/alvys/{loads,trips}?… + GET /api/alvys/loads/{loadNumber}/{documents,notes} + GET /api/alvys/trips/{tripId}/stops (protected, read-only)
+    ├── Ltl/                 # LTL decision-support layer (normalization, billing readiness, match scoring, search) — see section 11
     └── Integrations/Alvys/  # server-side Alvys client (IAlvysClient) — credentials never leave the API
 ```
 
@@ -211,7 +214,8 @@ web/
         ├── app.config.ts    # MSAL + router + http wiring
         ├── app.routes.ts
         ├── runtime-config.ts
-        └── pages/home/      # lazy-loaded sample page
+        ├── pages/home/      # lazy-loaded sample page
+        └── features/ltl/    # LTL search workspace (models, service, lazy /ltl page)
 ```
 
 Auth and API config are loaded at runtime from `runtime-config.json`, so the same
@@ -301,3 +305,60 @@ make demo-up             # prints the public URL + the Entra redirect to add
 - Seed representative demo data in `init/01-seed.sql` so testers see realistic state.
 - Keep the email-domain allow-list (`ALLOWED_EMAIL_DOMAIN`) aligned with the testers
   you invite, or leave it empty during early UAT to allow any authenticated user.
+
+---
+
+## 11. LTL decision-support layer
+
+This is the first product slice: an operational/revenue-protection layer on top of the
+read-only Alvys integration. It is **not** a raw load grid — it normalizes Alvys loads
+into an LTL read model, scores driver/equipment matches with explainable labels, and
+flags billing readiness and exceptions.
+
+### Design principles
+
+- **Missing data is surfaced, never invented.** Money/weight/mileage are nullable; an
+  absent value is rendered as `missing` and tagged with a `MissingDataFlag` rather than
+  coerced to `$0`. Fields Alvys does not project (e.g. commodity) are always flagged.
+- **Explainable, deterministic scoring.** A match score is `earned / availableMax × 100`.
+  Factors whose data is unavailable (Hours-of-Service, historical performance) are reported
+  as *not scored* and excluded from the denominator, so they neither inflate nor deflate the
+  result. Hard disqualifiers (expired license/medical, terminated driver, over capacity) cap
+  the label at **Not Recommended** with a stated reason.
+- **Read-only against Alvys.** Every endpoint queries Alvys; nothing is written back.
+
+### Endpoints (`/api/ltl`, protected by `AllowedEmailDomain`)
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/ltl/search` | normalized, filtered, sorted, paged loads (`LtlSearchResponse`) |
+| `GET /api/ltl/loads/{idOrNumber}` | single normalized load detail (404 when not found) |
+| `GET /api/ltl/loads/{idOrNumber}/matches?top=` | ranked, explainable driver/equipment matches |
+| `GET /api/ltl/loads/{idOrNumber}/billing-readiness` | billing-readiness evaluation (POD-aware) |
+| `POST /api/ltl/loads/{idOrNumber}/assign` | records an **internal** assignment decision (see below) |
+| `GET /api/ltl/loads/{idOrNumber}/assignments` | internal assignment audit trail for a load |
+| `GET /api/ltl/billing/worklist?badge=` | loads needing billing attention, readiness-first |
+| `GET /api/ltl/exceptions` | loads carrying operational/billing exceptions |
+
+### Assignment boundary (no Alvys writeback)
+
+`POST /assign` is the only mutating endpoint, and it is deliberately **internal**: it
+records the decision in a local audit store (`IAssignmentAuditStore`) and returns
+`AlvysWriteback = "NotPerformed"`. The Alvys integration is read-only in this phase, so no
+trip/driver assignment is pushed upstream. The future writeback boundary lives here — when
+Alvys writes are enabled, this endpoint is where the upstream call is added and the audit
+flag flips.
+
+### Configuration (`Ltl` section / `LTL_*` env)
+
+Safe defaults ship in `appsettings.json`: Alvys sweep bound (`MaxLoadsScanned`), page size,
+match-candidate bounds (`MaxMatchCandidates`, `DefaultMatchResults`), LTL classification hints,
+stale-uninvoiced threshold, and the match scoring weights/thresholds (`Ltl:Match`).
+
+### Frontend
+
+The Angular `/ltl` route (`web/src/app/features/ltl/`) is a search workspace with saved-view
+chips (Unassigned LTL, High Revenue / Low Complexity, Missing Billing Data, Ready to Bill,
+Exceptions), filters, sortable sticky-header columns, billing/missing/exception badges,
+loading/error/empty states, pagination, and a detail drawer that loads explainable match
+recommendations on demand.
