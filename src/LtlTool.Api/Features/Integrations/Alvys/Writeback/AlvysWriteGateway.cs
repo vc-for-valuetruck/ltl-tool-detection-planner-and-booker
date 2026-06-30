@@ -202,7 +202,27 @@ public sealed class AlvysWriteGateway(
                 Require(!string.IsNullOrWhiteSpace(request.LoadNumber), "LOAD_NUMBER_REQUIRED",
                     "A load number is required.");
                 Require(request.Fields is { Count: > 0 }, "FIELDS_REQUIRED",
-                    "At least one field to update is required.");
+                    "At least one field to update is required. Currently only 'OrderNumber' is " +
+                    "writable via this endpoint (max 30 chars).");
+                break;
+
+            case AlvysWriteOperationKind.TripAssign:
+                Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
+                    "A trip id is required.");
+                Require(!string.IsNullOrWhiteSpace(request.CarrierId), "CARRIER_ID_REQUIRED",
+                    "A carrier id is required to assign to the trip.");
+                break;
+
+            case AlvysWriteOperationKind.TripDispatch:
+                Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
+                    "A trip id is required.");
+                break;
+
+            case AlvysWriteOperationKind.CarrierStatusUpdate:
+                Require(!string.IsNullOrWhiteSpace(request.CarrierId), "CARRIER_ID_REQUIRED",
+                    "A carrier id is required.");
+                Require(!string.IsNullOrWhiteSpace(request.Status), "STATUS_REQUIRED",
+                    "A status value is required (e.g. Active, Inactive).");
                 break;
         }
 
@@ -257,6 +277,24 @@ public sealed class AlvysWriteGateway(
                 foreach (var (key, value) in request.Fields ?? [])
                     body[key] = value;
                 target = $"PATCH /loads/{request.LoadNumber}";
+                break;
+
+            case AlvysWriteOperationKind.TripAssign:
+                body["CarrierId"] = request.CarrierId;
+                if (!string.IsNullOrWhiteSpace(request.DriverId)) body["DriverId"] = request.DriverId;
+                if (!string.IsNullOrWhiteSpace(request.TruckId)) body["TruckId"] = request.TruckId;
+                if (!string.IsNullOrWhiteSpace(request.TrailerId)) body["TrailerId"] = request.TrailerId;
+                target = $"POST /trips/{request.TripId}/assign";
+                break;
+
+            case AlvysWriteOperationKind.TripDispatch:
+                // Body is intentionally empty — dispatch is a state transition on the trip.
+                target = $"POST /trips/{request.TripId}/dispatch";
+                break;
+
+            case AlvysWriteOperationKind.CarrierStatusUpdate:
+                body["Status"] = request.Status;
+                target = $"PATCH /carriers/{request.CarrierId}/status";
                 break;
 
             default:

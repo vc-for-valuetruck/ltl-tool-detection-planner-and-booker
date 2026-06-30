@@ -166,6 +166,15 @@ public sealed class AlvysHttpWriteClient(
             AlvysWriteOperationKind.LoadUpdate =>
                 (HttpMethod.Patch, AlvysApiRoutes.LoadPatch(apiVersion, request.LoadNumber!)),
 
+            AlvysWriteOperationKind.TripAssign =>
+                (HttpMethod.Post, AlvysApiRoutes.TripAssign(apiVersion, request.TripId!)),
+
+            AlvysWriteOperationKind.TripDispatch =>
+                (HttpMethod.Post, AlvysApiRoutes.TripDispatch(apiVersion, request.TripId!)),
+
+            AlvysWriteOperationKind.CarrierStatusUpdate =>
+                (HttpMethod.Patch, AlvysApiRoutes.CarrierStatusPatch(apiVersion, request.CarrierId!)),
+
             _ => throw new InvalidOperationException($"No endpoint mapping for operation kind {op.Kind}."),
         };
     }

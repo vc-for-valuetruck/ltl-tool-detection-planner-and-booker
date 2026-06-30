@@ -251,6 +251,9 @@ public sealed class AlvysOperationRecorder(
             AlvysWriteOperationKind.TenderAccept => ("tender", request.TenderId),
             AlvysWriteOperationKind.TripStopArrival => ("trip", request.TripId),
             AlvysWriteOperationKind.TripStopDeparture => ("trip", request.TripId),
+            AlvysWriteOperationKind.TripAssign => ("trip", request.TripId),
+            AlvysWriteOperationKind.TripDispatch => ("trip", request.TripId),
+            AlvysWriteOperationKind.CarrierStatusUpdate => ("carrier", request.CarrierId),
             _ => (null, null),
         };
     }

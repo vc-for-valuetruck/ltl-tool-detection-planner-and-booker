@@ -35,6 +35,12 @@ public enum AlvysWriteOperationKind
     TripStopDeparture,
     /// <summary>Update a scoped set of fields on a load (optimistic-concurrency / ETag gated).</summary>
     LoadUpdate,
+    /// <summary>Assign a carrier and/or assets (driver, truck, trailer) to a trip.</summary>
+    TripAssign,
+    /// <summary>Dispatch a trip that already has a carrier and assets assigned.</summary>
+    TripDispatch,
+    /// <summary>Update a carrier's operational status (optimistic-concurrency / ETag gated).</summary>
+    CarrierStatusUpdate,
 }
 
 /// <summary>
@@ -143,9 +149,47 @@ public static class AlvysWriteOperationRegistry
             Kind = AlvysWriteOperationKind.LoadUpdate,
             Title = "Update load fields",
             Description =
-                "Update a scoped set of editable load fields with optimistic-concurrency (ETag) " +
-                "protection.",
+                "Update editable load fields with optimistic-concurrency (ETag) protection. " +
+                "Currently only OrderNumber (≤30 chars) is writable via this endpoint.",
             WorkflowStage = "Assign/Bill",
+            RequiresEtag = true,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+        new()
+        {
+            Code = "trip-assign",
+            Kind = AlvysWriteOperationKind.TripAssign,
+            Title = "Assign carrier and assets to trip",
+            Description =
+                "Assign a carrier and optionally a driver, truck, and trailer to an existing trip.",
+            WorkflowStage = "Assign",
+            RequiresEtag = false,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+        new()
+        {
+            Code = "trip-dispatch",
+            Kind = AlvysWriteOperationKind.TripDispatch,
+            Title = "Dispatch trip",
+            Description =
+                "Dispatch a trip that already has a carrier and assets assigned. The trip must be " +
+                "covered before dispatching.",
+            WorkflowStage = "Assign",
+            RequiresEtag = false,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+        new()
+        {
+            Code = "carrier-status-update",
+            Kind = AlvysWriteOperationKind.CarrierStatusUpdate,
+            Title = "Update carrier status",
+            Description =
+                "Update a carrier's operational status (e.g. Active, Inactive) with optimistic-" +
+                "concurrency (ETag) protection.",
+            WorkflowStage = "Assign",
             RequiresEtag = true,
             LiveSupport = AlvysLiveSupport.Supported,
             RequiredToEnable = null,

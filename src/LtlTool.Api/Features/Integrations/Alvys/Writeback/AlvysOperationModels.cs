@@ -32,11 +32,26 @@ public sealed class AlvysOperationRequest
     /// <summary>Target tender id (tender-accept).</summary>
     public string? TenderId { get; set; }
 
-    /// <summary>Target trip id (trip-stop arrival/departure).</summary>
+    /// <summary>Target trip id (trip-stop arrival/departure, trip-assign, trip-dispatch).</summary>
     public string? TripId { get; set; }
 
     /// <summary>Target stop id (trip-stop arrival/departure).</summary>
     public string? StopId { get; set; }
+
+    /// <summary>Target carrier id (carrier-status-update, trip-assign).</summary>
+    public string? CarrierId { get; set; }
+
+    /// <summary>Driver id for trip-assign.</summary>
+    public string? DriverId { get; set; }
+
+    /// <summary>Truck id for trip-assign.</summary>
+    public string? TruckId { get; set; }
+
+    /// <summary>Trailer id for trip-assign.</summary>
+    public string? TrailerId { get; set; }
+
+    /// <summary>Status value for carrier-status-update (e.g. <c>Active</c>, <c>Inactive</c>).</summary>
+    public string? Status { get; set; }
 
     /// <summary>Note body (create-load-note).</summary>
     public string? NoteText { get; set; }

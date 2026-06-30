@@ -117,6 +117,27 @@ public static class AlvysApiRoutes
         => $"api/p/{NormalizeVersion(apiVersion)}/loads/{Uri.EscapeDataString(loadNumber)}";
 
     /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/assign</c> for assigning a carrier and
+    /// assets to a trip (POST). <paramref name="tripId"/> is URL-encoded.
+    /// </summary>
+    public static string TripAssign(string? apiVersion, string tripId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/assign";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/dispatch</c> for dispatching a trip
+    /// that already has a carrier and assets assigned (POST). <paramref name="tripId"/> is URL-encoded.
+    /// </summary>
+    public static string TripDispatch(string? apiVersion, string tripId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/dispatch";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/carriers/{carrierId}/status</c> for updating a carrier's
+    /// operational status (PATCH). <paramref name="carrierId"/> is URL-encoded.
+    /// </summary>
+    public static string CarrierStatusPatch(string? apiVersion, string carrierId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/carriers/{Uri.EscapeDataString(carrierId)}/status";
+
+    /// <summary>
     /// Relative path <c>api/p/v{version}/tenders/{tenderId}/accept</c> for accepting an inbound
     /// tender. <paramref name="tenderId"/> is URL-encoded.
     /// </summary>
