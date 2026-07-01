@@ -34,6 +34,10 @@ defensible recommendations, and revenue protection.
   UI must state whether an action was pushed to Alvys or recorded internally only.
 - **Do not** claim live booking/writeback to Alvys unless the supported write API
   contract is confirmed and implemented safely. Do not create a fake booking path.
+  Extending writeback from sandbox to a **production** Alvys tenant is tracked
+  separately in `docs/ltl-tool.md` (per-operation contract confirmation, business
+  sign-off, and a dedicated production gate) — do not implement production execution
+  without a filled-in sign-off row there.
 - **Do not** seed fake "live" production data to make demos look real. Fallback/empty
   states are acceptable; fake live data is not.
 - **Do not** remove auditability. Assignment and billing decisions need traceable reasons.
