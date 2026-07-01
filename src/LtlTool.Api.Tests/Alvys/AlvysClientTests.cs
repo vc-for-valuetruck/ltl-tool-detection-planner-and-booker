@@ -958,6 +958,43 @@ public sealed class AlvysClientTests
     }
 
     [Fact]
+    public async Task GetTrip_maps_carrier_payable_money_fields_distinct_from_itemized_accessorials()
+    {
+        // Mirrors the real Alvys OpenAPI shape (TripResponseCarrierResponse): AccessorialsDetails
+        // is the itemized array, Accessorials is a separate aggregate money total, and TotalPayable
+        // is Linehaul + Accessorials. These were previously conflated under one "Accessorials" key.
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                {
+                  "Id": "T1",
+                  "Carrier": {
+                    "Id": "C1",
+                    "CarrierInvoiceNumber": "INV-93842",
+                    "Linehaul": { "Amount": 900.00, "Currency": "USD" },
+                    "AccessorialsDetails": [ { "Type": "Detention", "Amount": 50.00 } ],
+                    "Accessorials": { "Amount": 50.00, "Currency": "USD" },
+                    "TotalPayable": { "Amount": 950.00, "Currency": "USD" }
+                  }
+                }
+                """),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        var trip = await client.GetTripAsync(new TripLookup { Id = "T1" });
+
+        Assert.NotNull(trip?.Carrier);
+        Assert.Equal("INV-93842", trip!.Carrier!.CarrierInvoiceNumber);
+        Assert.Equal(900.00m, trip.Carrier.Linehaul?.Amount);
+        Assert.Equal(50.00m, trip.Carrier.Accessorials?.Amount);
+        Assert.Equal(950.00m, trip.Carrier.TotalPayable?.Amount);
+        Assert.Equal("USD", trip.Carrier.TotalPayable?.Currency);
+        Assert.Single(trip.Carrier.AccessorialsDetails ?? []);
+        Assert.Equal("Detention", trip.Carrier.AccessorialsDetails?[0].Type);
+    }
+
+    [Fact]
     public async Task GetTrip_sends_trip_number_and_include_deleted_as_query()
     {
         var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)

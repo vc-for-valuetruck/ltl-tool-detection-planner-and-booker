@@ -58,8 +58,9 @@ public sealed class LtlLoadService(
         var loadNumber = load.LoadNumber ?? idOrNumber;
         var documents = await alvys.ListLoadDocumentsAsync(loadNumber, ct);
         var invoices = await FetchInvoicesForLoadAsync(loadNumber, ct);
+        var carrierPayable = await FetchCarrierPayableForLoadAsync(loadNumber, ct);
         var (context, visibilityExceptions) = await FetchVisibilityAsync(loadNumber, ct);
-        return normalizer.Normalize(load, documents, invoices, context, visibilityExceptions);
+        return normalizer.Normalize(load, documents, invoices, context, visibilityExceptions, carrierPayable);
     }
 
     /// <summary>
@@ -99,6 +100,65 @@ public sealed class LtlLoadService(
         return response.Items;
     }
 
+    /// <summary>
+    /// Fetches the carrier's total payable amount for a single load's trip (read-only), by
+    /// searching trips filtered to this load number. Returns null when there is no trip, no
+    /// carrier party, or the upstream degrades — never fabricates a cost.
+    /// </summary>
+    private async Task<decimal?> FetchCarrierPayableForLoadAsync(string loadNumber, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(loadNumber)) return null;
+
+        var response = await alvys.SearchTripsAsync(
+            new TripSearchRequest { Page = 0, PageSize = 5, LoadNumbers = [loadNumber] }, ct);
+        return response.Items.Select(t => t.Carrier?.TotalPayable?.Amount).FirstOrDefault(a => a is not null);
+    }
+
+    /// <summary>
+    /// Bulk-fetches carrier total-payable amounts for a set of loads in one paged trip search
+    /// keyed by load number, returning a load-number → amount map. Same shape as
+    /// <see cref="FetchInvoicesForLoadsAsync"/> so the worklist gets margin context without an
+    /// N-call fan-out. Returns an empty map when there are no load numbers or upstream degrades.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, decimal>> FetchCarrierPayablesForLoadsAsync(
+        IReadOnlyList<AlvysLoad> loads, CancellationToken ct)
+    {
+        var loadNumbers = loads
+            .Select(l => l.LoadNumber)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Select(n => n!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var map = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        if (loadNumbers.Count == 0) return map;
+
+        var page = 0;
+        var pageSize = _options.AlvysPageSize;
+        var fetched = 0;
+
+        while (true)
+        {
+            var response = await alvys.SearchTripsAsync(
+                new TripSearchRequest { Page = page, PageSize = pageSize, LoadNumbers = loadNumbers }, ct);
+            if (response.Items.Count == 0) break;
+
+            foreach (var trip in response.Items)
+            {
+                var payable = trip.Carrier?.TotalPayable?.Amount;
+                if (payable is not null && !string.IsNullOrWhiteSpace(trip.LoadNumber) && !map.ContainsKey(trip.LoadNumber!))
+                    map[trip.LoadNumber!] = payable.Value;
+            }
+
+            fetched += response.Items.Count;
+            if (fetched >= response.Total || response.Items.Count < pageSize) break;
+            if (fetched >= _options.MaxLoadsScanned) break;
+            page++;
+        }
+
+        return map;
+    }
+
     /// <summary>Raw + documents resolution used by detail and matching.</summary>
     public async Task<AlvysLoad?> ResolveLoadAsync(string idOrNumber, CancellationToken ct)
     {
@@ -121,9 +181,15 @@ public sealed class LtlLoadService(
         // filter upstream) rather than one call per load, so invoice-backed billing readiness
         // extends to the worklist without an N-call fan-out.
         var invoicesByLoad = await FetchInvoicesForLoadsAsync(loads, ct);
+        var carrierPayableByLoad = await FetchCarrierPayablesForLoadsAsync(loads, ct);
 
         var normalized = loads.Select(l =>
-            normalizer.Normalize(l, invoices: InvoicesFor(l, invoicesByLoad)));
+            normalizer.Normalize(
+                l,
+                invoices: InvoicesFor(l, invoicesByLoad),
+                carrierPayable: !string.IsNullOrWhiteSpace(l.LoadNumber) && carrierPayableByLoad.TryGetValue(l.LoadNumber!, out var payable)
+                    ? payable
+                    : null));
 
         return normalized
             .Where(s => !s.Billing.IsAlreadyInvoiced)

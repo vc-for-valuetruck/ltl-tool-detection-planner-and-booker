@@ -12,6 +12,7 @@ import {
   AssignmentIssue,
   AssignmentValidationResult,
   BillingBadge,
+  InvoiceAgingBucket,
   LtlLoadSummary,
   LtlSearchQuery,
   LtlSearchResponse,
@@ -779,6 +780,44 @@ export class LtlSearch {
 
   protected badgeText(badge: string): string {
     return badge.replace(/([a-z])([A-Z])/g, '$1 $2');
+  }
+
+  /**
+   * Pill class for a gross-margin percent: red when negative, amber when thin, green otherwise.
+   * Severity is read from the backend's risk messages (which already apply the configurable
+   * MarginRiskThresholdPercent) rather than re-deriving it from a hardcoded threshold here.
+   */
+  protected marginClass(percent: number | null, risks: readonly string[] | null | undefined): string {
+    if (percent === null) return 'badge badge-muted';
+    if (risks?.some((r) => r.includes('Negative gross margin'))) return 'badge badge-danger';
+    if (risks?.some((r) => r.includes('Thin gross margin'))) return 'badge badge-warn';
+    return 'badge badge-ok';
+  }
+
+  protected agingLabel(bucket: InvoiceAgingBucket): string {
+    switch (bucket) {
+      case 'Current':
+        return 'Current';
+      case 'Days1To30':
+        return '1-30 days';
+      case 'Days31To60':
+        return '31-60 days';
+      case 'Days61To90':
+        return '61-90 days';
+      default:
+        return '90+ days';
+    }
+  }
+
+  protected agingClass(bucket: InvoiceAgingBucket): string {
+    switch (bucket) {
+      case 'Current':
+        return 'badge badge-ok';
+      case 'Days1To30':
+        return 'badge badge-warn';
+      default:
+        return 'badge badge-danger';
+    }
   }
 
   /**

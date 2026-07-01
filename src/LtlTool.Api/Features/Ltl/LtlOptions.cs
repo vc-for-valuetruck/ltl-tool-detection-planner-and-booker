@@ -60,6 +60,14 @@ public sealed class LtlOptions
 
     /// <summary>Match scoring weights/thresholds.</summary>
     public LtlMatchOptions Match { get; set; } = new();
+
+    /// <summary>
+    /// Gross margin percent (Revenue − Carrier payable, over Revenue) at/below which a load is
+    /// flagged as a margin risk. Only evaluated when both revenue and carrier payable are known —
+    /// never inferred from a missing value. A negative margin is always flagged regardless of
+    /// this threshold.
+    /// </summary>
+    public double MarginRiskThresholdPercent { get; set; } = 10.0;
 }
 
 /// <summary>

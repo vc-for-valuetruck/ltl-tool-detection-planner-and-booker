@@ -465,13 +465,44 @@ event list is simply empty and the matcher must not assume the equipment is free
 
 #### Invoice-driven billing readiness
 
-`BillingReadinessService.Evaluate(load, documents?, invoices?)` now optionally consumes the
-load's invoices (fetched on the detail path via `SearchInvoicesAsync` by load number). When
-a matching invoice looks posted (`IsSubmitted == true`, an `InvoicedDate`, or a posted
-`Status`), the load is treated as already-invoiced (never ready-to-bill) even when the load
-status alone would not say so; any invoice with a positive `RemainingBalance` surfaces as an
-unpaid-balance risk. Omitting invoices leaves the existing load-only inference unchanged, so
-the bulk worklist/sweep paths are not affected.
+`BillingReadinessService.Evaluate(load, documents?, invoices?, carrierPayable?)` now optionally
+consumes the load's invoices (fetched on the detail path, and in bulk on the Billing Worklist
+path, via `SearchInvoicesAsync` by load number). When a matching invoice looks posted
+(`IsSubmitted == true`, an `InvoicedDate`, or a posted `Status`), the load is treated as
+already-invoiced (never ready-to-bill) even when the load status alone would not say so; any
+invoice with a positive `RemainingBalance` surfaces as an unpaid-balance risk **and** contributes
+to `BillingReadinessResult.UnpaidBalance`/`AgingBucket`/`AgingDays` — a standard
+Current/1-30/31-60/61-90/90+ aging bucket computed from the oldest unpaid invoice's `DueDate`.
+There is no dedicated Alvys "Aging Report" endpoint (confirmed against the full OpenAPI
+reference — Alvys exposes invoice search/detail only); this is derived entirely from data already
+fetched, not a new integration. Omitting invoices leaves the existing load-only inference
+unchanged.
+
+#### Carrier payable / gross margin
+
+`carrierPayable` (optional) is the carrier's `TotalPayable` for the load's trip, fetched via
+`SearchTripsAsync` filtered by `LoadNumbers` — on the load detail path (single trip lookup) and
+in bulk on the Billing Worklist path (same shape as the invoice bulk-fetch, one paged call
+sequence keyed by load number, not an N-call fan-out). There is likewise no dedicated Alvys
+"Carrier Settlements" list endpoint (only write endpoints for factoring platforms to push carrier
+invoices/payments *into* Alvys) — `Carrier.TotalPayable` on trips/search is the closest read
+signal and is sufficient for a per-load margin check. When both revenue and `carrierPayable` are
+known, `LtlLoadSummary.GrossMargin`/`GrossMarginPercent` are computed and a negative margin (or a
+margin at/below `LtlOptions.MarginRiskThresholdPercent`, default 10%) surfaces as a billing risk.
+Neither is ever inferred from a missing value.
+
+**Fixed while wiring this up:** `AlvysPartyPay` (used for the `Carrier`/`Driver`/`Driver1`/
+`Driver2`/`OwnerOperator` trip parties) previously mapped its itemized accessorial list from the
+JSON key `Accessorials`, which the actual Alvys OpenAPI schema (`TripResponseCarrierResponse`)
+uses for a *different*, required field — the aggregate money total (`{Amount, Currency}`). The
+itemized list is under `AccessorialsDetails`. Because System.Text.Json throws on an object-vs-array
+type mismatch by default, this meant **any trip response where a party's `Accessorials` total was
+present would fail to deserialize** — a real crash risk on `GetTripAsync`/`SearchTripsAsync`
+(including the raw `/api/alvys/trips/*` passthrough), not just a silently-wrong mapping. It had
+gone uncaught because nothing in the LTL layer called these endpoints until now, and the existing
+trip-deserialization test fixture didn't include a `Carrier` object. Fixed by renaming the list
+property to `AccessorialsDetails` and adding `Linehaul`/`Accessorials`/`TotalPayable` (all
+`AlvysMoney`) plus `CarrierInvoiceNumber`; covered by a new test using the real schema shape.
 
 #### LTL decision-support signals (how the context reaches the user)
 

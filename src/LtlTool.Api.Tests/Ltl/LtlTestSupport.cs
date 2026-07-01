@@ -51,6 +51,7 @@ internal sealed class FakeAlvysClient : IAlvysClient
     public List<AlvysTrailerEquipment> Trailers { get; set; } = [];
     public List<AlvysDispatchPreference> DispatchPreferences { get; set; } = [];
     public List<AlvysInvoice> Invoices { get; set; } = [];
+    public List<AlvysTrip> Trips { get; set; } = [];
     public List<AlvysVisibilityHistoryEvent> InboundVisibility { get; set; } = [];
     public List<AlvysVisibilityHistoryEvent> OutboundVisibility { get; set; } = [];
     public List<AlvysTruckEvent> TruckEvents { get; set; } = [];
@@ -103,7 +104,7 @@ internal sealed class FakeAlvysClient : IAlvysClient
     public Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(string loadNumber, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<AlvysTripsResponse> SearchTripsAsync(TripSearchRequest request, CancellationToken ct = default)
-        => throw new NotSupportedException();
+        => Task.FromResult(new AlvysTripsResponse { Total = Trips.Count, Items = Trips });
     public Task<AlvysLocationsResponse> SearchLocationsAsync(LocationSearchRequest request, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<AlvysCustomersResponse> SearchCustomersAsync(CustomerSearchRequest request, CancellationToken ct = default)

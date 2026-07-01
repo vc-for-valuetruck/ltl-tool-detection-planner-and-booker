@@ -89,6 +89,72 @@ public sealed class LtlLoadServiceTests
     }
 
     [Fact]
+    public async Task Detail_surfaces_carrier_payable_and_gross_margin_from_trip()
+    {
+        var client = new FakeAlvysClient
+        {
+            LoadDetail = new AlvysLoad { Id = "L1", LoadNumber = "100", Status = "Delivered", CustomerRate = 1000m, Weight = 1000m },
+            Trips =
+            [
+                new AlvysTrip
+                {
+                    Id = "T1", LoadNumber = "100",
+                    Carrier = new AlvysPartyPay { Id = "C1", TotalPayable = new AlvysMoney { Amount = 700m, Currency = "USD" } },
+                },
+            ],
+        };
+
+        var summary = await Build(client).GetDetailAsync("100", default);
+
+        Assert.NotNull(summary);
+        Assert.Equal(700m, summary!.CarrierPayable);
+        Assert.Equal(300m, summary.GrossMargin);
+        Assert.Equal(30m, summary.GrossMarginPercent);
+    }
+
+    [Fact]
+    public async Task Detail_carrier_payable_is_null_when_no_trip_matches_the_load()
+    {
+        var client = new FakeAlvysClient
+        {
+            LoadDetail = new AlvysLoad { Id = "L1", LoadNumber = "100", Status = "Delivered", CustomerRate = 1000m, Weight = 1000m },
+        };
+
+        var summary = await Build(client).GetDetailAsync("100", default);
+
+        Assert.NotNull(summary);
+        Assert.Null(summary!.CarrierPayable);
+        Assert.Null(summary.GrossMargin);
+    }
+
+    [Fact]
+    public async Task BillingWorklist_surfaces_carrier_payable_per_load_from_bulk_trip_fetch()
+    {
+        var client = new FakeAlvysClient
+        {
+            Loads =
+            [
+                new AlvysLoad { Id = "L1", LoadNumber = "100", Status = "Delivered", CustomerRate = 1000m, Weight = 1000m, ActualDeliveryAt = LtlTestFactory.Now },
+                new AlvysLoad { Id = "L2", LoadNumber = "200", Status = "Delivered", CustomerRate = 500m, Weight = 500m, ActualDeliveryAt = LtlTestFactory.Now },
+            ],
+            Trips =
+            [
+                new AlvysTrip { Id = "T1", LoadNumber = "100", Carrier = new AlvysPartyPay { TotalPayable = new AlvysMoney { Amount = 900m } } },
+                // Load 200 has no matching trip — its carrier payable/margin must stay null.
+            ],
+        };
+
+        var body = await Build(client).BillingWorklistAsync(null, default);
+
+        var l1 = Assert.Single(body, s => s.Id == "L1");
+        var l2 = Assert.Single(body, s => s.Id == "L2");
+        Assert.Equal(900m, l1.CarrierPayable);
+        Assert.Equal(100m, l1.GrossMargin);
+        Assert.Null(l2.CarrierPayable);
+        Assert.Null(l2.GrossMargin);
+    }
+
+    [Fact]
     public async Task Exceptions_surfaces_visibility_failures_within_the_enrich_bound()
     {
         var client = new FakeAlvysClient
