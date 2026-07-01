@@ -7,8 +7,6 @@ on:
         description: 'Container image tag to build/deploy. Leave blank to use the current commit SHA.'
         required: false
         default: ''
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -19,26 +17,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  skip-auto-deploy:
-    name: UAT auto-deploy not enabled
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && vars.LTL_UAT_AUTO_DEPLOY != 'true'
-    steps:
-      - name: Explain skipped UAT deployment
-        shell: bash
-        run: |
-          {
-            echo "## LTL Tool UAT deployment skipped"
-            echo ""
-            echo "Push-triggered UAT deploys are disabled by default so main does not fail while Azure UAT is still being configured."
-            echo ""
-            echo "To deploy now, run this workflow manually. To deploy on every push to main, set repository/environment variable LTL_UAT_AUTO_DEPLOY=true after Azure UAT secrets and infrastructure are ready."
-          } >> "$GITHUB_STEP_SUMMARY"
-
   deploy:
     name: Build, push, and deploy to Azure UAT
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || vars.LTL_UAT_AUTO_DEPLOY == 'true'
     environment: uat
     steps:
       - uses: actions/checkout@v4
