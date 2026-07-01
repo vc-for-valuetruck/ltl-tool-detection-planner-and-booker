@@ -1,4 +1,4 @@
-.PHONY: up down build logs reset api-test web-build demo-up demo-down
+.PHONY: up down build logs reset api-test web-build
 
 up:
 	docker compose up -d
@@ -21,9 +21,3 @@ api-test:
 
 web-build:
 	cd web && npm install && npm run build
-
-demo-up:
-	./start-demo.sh
-
-demo-down:
-	./stop-demo.sh

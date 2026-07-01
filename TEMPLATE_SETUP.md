@@ -23,7 +23,6 @@ Complete these steps when creating a new app from this template.
 - [ ] Set `MSSQL_SA_PASSWORD` to a strong password
 - [ ] (Optional) Set `EXTERNAL_API_BASE_URL` / `EXTERNAL_API_KEY`
 - [ ] Leave `ALVYS_*` / `LTL_*` blank/defaulted until Phase 2 (API only; never expose Alvys secrets to the SPA)
-- [ ] (Optional, for ngrok demo) Set `NGROK_AUTHTOKEN` — never commit it
 
 ## 3. App Naming (already applied)
 
@@ -41,8 +40,6 @@ section 5). The placeholders `MyApp` / `myapp` should no longer appear:
 - [x] `web/src/index.html` (`<title>`)
 - [x] `init/01-seed.sql` (database name)
 - [x] `.devcontainer/devcontainer.json` (`name`)
-- [x] `docker-compose.demo.yml` (ngrok `container_name`)
-- [x] `scripts/start-codespaces-demo.sh` (`API_PROJECT` default path)
 
 ## 4. Start and Verify
 
@@ -60,11 +57,11 @@ section 5). The placeholders `MyApp` / `myapp` should no longer appear:
 
 ## 6. Share for UAT
 
-Pick one (see [`docs/codespaces-demo.md`](docs/codespaces-demo.md) and
-[`docs/demo-ngrok.md`](docs/demo-ngrok.md)):
+The shared environment is hosted in **Azure** (see
+[`docs/AZURE_HOSTING.md`](docs/AZURE_HOSTING.md)):
 
-- [ ] **Codespaces:** open the repo in a Codespace, `make up`, set port `4200`
-      to **Public**, share the forwarded URL, and add it to the SPA app
-      registration's redirect URIs. Store secrets via Codespaces secrets.
-- [ ] **ngrok:** set `NGROK_AUTHTOKEN` in `.env`, run `make demo-up`, then add
-      the printed public URL to the SPA app registration's redirect URIs.
+- [ ] Configure the deploy workflow's GitHub environment vars/secrets (or run the
+      `infra/` Bicep) — Entra, SQL, and Alvys values, plus the OIDC service principal.
+- [ ] Deploy (merge to `main` or run **Deploy GHCR Images to Azure Container Apps**).
+- [ ] Add the deployed Web URL to the SPA app registration's redirect URIs.
+- [ ] Share the deployed Web URL with testers.
