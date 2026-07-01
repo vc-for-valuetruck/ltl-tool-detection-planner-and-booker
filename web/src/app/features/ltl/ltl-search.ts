@@ -3,6 +3,10 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LtlService } from './ltl.service';
 import { AlvysOpsPanel } from './alvys-ops-panel';
+import { AlvysOpsService } from './alvys-ops.service';
+import { AlvysOperationDisposition } from './alvys-ops.models';
+import { AlvysTendersService } from './alvys-tenders.service';
+import { AlvysTender } from './alvys-tenders.models';
 import {
   AssignmentAudit,
   AssignmentIssue,
@@ -24,7 +28,16 @@ import {
   snapshotToFilterState,
 } from './saved-views';
 
-type ConsoleTab = 'search' | 'billing' | 'exceptions';
+type ConsoleTab = 'search' | 'billing' | 'exceptions' | 'tenders';
+
+/** Per-tender Accept outcome shown inline on the Tenders board row. */
+interface TenderActionState {
+  loading: boolean;
+  message?: string;
+  tone?: 'ok' | 'warn' | 'danger';
+}
+
+const TENDER_STATUSES = ['New', 'Accepted', 'Rejected', 'Expired', 'Cancelled'];
 
 interface SortableColumn {
   field: LtlSortField;
@@ -78,6 +91,8 @@ interface AppliedFilter {
 })
 export class LtlSearch {
   private readonly ltl = inject(LtlService);
+  private readonly alvysOps = inject(AlvysOpsService);
+  private readonly alvysTenders = inject(AlvysTendersService);
 
   // Saved views: shared built-in presets and the dispatcher's own views, loaded server-side.
   protected readonly presets = signal<SavedView[]>([]);
@@ -122,6 +137,20 @@ export class LtlSearch {
   protected readonly exceptions = signal<LtlLoadSummary[] | null>(null);
   protected readonly exceptionsLoading = signal(false);
   protected readonly exceptionsError = signal<string | null>(null);
+
+  // Tenders board: read-only inbound-offer search + sandbox-gated accept. Reject has no
+  // confirmed Alvys endpoint in this repo's write contract, so it is disabled rather than faked
+  // (see docs/ltl-tool.md — do not invent routes).
+  protected readonly tenderStatuses = TENDER_STATUSES;
+  protected readonly tenderStatus = signal('New');
+  protected readonly tenderType = signal('');
+  protected readonly tenderCustomer = signal('');
+  protected readonly tenders = signal<AlvysTender[] | null>(null);
+  protected readonly tendersTotal = signal(0);
+  protected readonly tendersLoading = signal(false);
+  protected readonly tendersError = signal<string | null>(null);
+  protected readonly tenderCompanyLinks = signal<Map<string, string>>(new Map());
+  protected readonly tenderActions = signal<Map<string, TenderActionState>>(new Map());
 
   // Detail drawer / assignment panel.
   protected readonly selected = signal<LtlLoadSummary | null>(null);
@@ -292,6 +321,7 @@ export class LtlSearch {
     this.closeDrawer();
     if (tab === 'billing' && this.worklist() === null) this.loadWorklist();
     if (tab === 'exceptions' && this.exceptions() === null) this.loadExceptions();
+    if (tab === 'tenders' && this.tenders() === null) this.loadTenders();
   }
 
   protected clearFilters(): void {
@@ -335,6 +365,23 @@ export class LtlSearch {
     this.page.set(page);
     this.runSearch();
   }
+
+  protected changePageSize(size: number): void {
+    if (size === this.pageSize()) return;
+    this.pageSize.set(size);
+    this.page.set(1);
+    this.runSearch();
+  }
+
+  /** First row number shown on the current page, for the "X–Y of Z" pager label. */
+  protected readonly rangeStart = computed(() =>
+    this.total() === 0 ? 0 : (this.page() - 1) * this.pageSize() + 1,
+  );
+
+  /** Last row number shown on the current page. */
+  protected readonly rangeEnd = computed(() =>
+    Math.min(this.page() * this.pageSize(), this.total()),
+  );
 
   protected runSearch(): void {
     this.loading.set(true);
@@ -380,6 +427,156 @@ export class LtlSearch {
         this.exceptionsLoading.set(false);
       },
     });
+  }
+
+  protected loadTenders(): void {
+    this.tendersLoading.set(true);
+    this.tendersError.set(null);
+    this.alvysTenders
+      .search({
+        Page: 0,
+        PageSize: 50,
+        Filter: {
+          Status: this.tenderStatus() ? [this.tenderStatus()] : undefined,
+          Type: this.tenderType() || undefined,
+          SourceCustomer: this.tenderCustomer() || undefined,
+        },
+      })
+      .subscribe({
+        next: (res) => {
+          this.tenders.set(res.Items);
+          this.tendersTotal.set(res.Total);
+          this.tendersLoading.set(false);
+        },
+        error: (err) => {
+          this.tendersError.set(this.describe('Tenders', err));
+          this.tendersLoading.set(false);
+        },
+      });
+  }
+
+  /** First (pickup-like) and last (delivery-like) stop for a compact lane display. */
+  protected tenderLane(tender: AlvysTender): { origin: string; destination: string } {
+    const stops = tender.Stops ?? [];
+    const label = (e?: { City?: string | null; State?: string | null } | null) =>
+      e ? [e.City, e.State].filter(Boolean).join(', ') || '—' : '—';
+    return {
+      origin: label(stops[0]?.Entity),
+      destination: label(stops[stops.length - 1]?.Entity),
+    };
+  }
+
+  /** Relative "age" label from an ISO instant to now (e.g. "42m", "3h", "2d"). */
+  protected relativeAge(iso?: string | null): string {
+    if (!iso) return '—';
+    const ms = Date.now() - new Date(iso).getTime();
+    return this.formatDuration(ms);
+  }
+
+  /** Relative "time remaining" label to an ISO instant (e.g. respond-within). Negative once past. */
+  protected relativeRemaining(iso?: string | null): string {
+    if (!iso) return '—';
+    const ms = new Date(iso).getTime() - Date.now();
+    return ms < 0 ? 'expired' : this.formatDuration(ms);
+  }
+
+  private formatDuration(ms: number): string {
+    const abs = Math.abs(ms);
+    const minutes = Math.round(abs / 60000);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    return `${Math.round(hours / 24)}d`;
+  }
+
+  private linkKey(tenderId: string, stopId: string): string {
+    return `${tenderId}::${stopId}`;
+  }
+
+  /** Editable Company ID for a tender stop, pre-filled from the stop's EDI entity IdCode as a
+   *  starting hint only — it is not asserted to be the Alvys company id, the dispatcher must
+   *  confirm it before Accept is enabled. */
+  protected companyLinkValue(tenderId: string, stop: { StopId: string; Entity?: { IdCode?: string | null } | null }): string {
+    const key = this.linkKey(tenderId, stop.StopId);
+    const existing = this.tenderCompanyLinks().get(key);
+    if (existing !== undefined) return existing;
+    return stop.Entity?.IdCode ?? '';
+  }
+
+  protected setCompanyLinkValue(tenderId: string, stopId: string, value: string): void {
+    this.tenderCompanyLinks.update((map) => {
+      const next = new Map(map);
+      next.set(this.linkKey(tenderId, stopId), value);
+      return next;
+    });
+  }
+
+  /** Accept is enabled only once every stop on the tender has a non-blank company id. */
+  protected canAcceptTender(tender: AlvysTender): boolean {
+    const stops = tender.Stops ?? [];
+    if (stops.length === 0) return false;
+    return stops.every((s) => this.companyLinkValue(tender.Id, s).trim().length > 0);
+  }
+
+  protected tenderAction(tenderId: string): TenderActionState | undefined {
+    return this.tenderActions().get(tenderId);
+  }
+
+  private setTenderAction(tenderId: string, state: TenderActionState): void {
+    this.tenderActions.update((map) => {
+      const next = new Map(map);
+      next.set(tenderId, state);
+      return next;
+    });
+  }
+
+  /**
+   * Fires the sandbox-gated tender-accept write operation. One click, no confirmation dialog —
+   * matches Alvys' own fast accept/reject UX — but the outcome always reflects the real
+   * disposition (audit-only / simulated / sandbox-executed / sandbox-failed / unsupported /
+   * blocked); this never claims a load was accepted in Alvys unless it actually was.
+   */
+  protected acceptTender(tender: AlvysTender): void {
+    if (!this.canAcceptTender(tender)) return;
+    this.setTenderAction(tender.Id, { loading: true });
+
+    const stopCompanyLinks = (tender.Stops ?? []).map((s) => ({
+      stopId: s.StopId,
+      companyId: this.companyLinkValue(tender.Id, s).trim(),
+    }));
+
+    this.alvysOps
+      .execute(
+        'tender-accept',
+        { tenderId: tender.Id, stopCompanyLinks, etag: tender.Etag ?? undefined },
+        `tender-accept:${tender.Id}`,
+      )
+      .subscribe({
+        next: (res) => this.setTenderAction(tender.Id, this.describeTenderOutcome(res.outcome.disposition, res.outcome.message)),
+        error: (err) => {
+          const disposition: AlvysOperationDisposition | undefined = err.error?.outcome?.disposition;
+          const message = err.error?.outcome?.message ?? this.describe('Accept tender', err);
+          this.setTenderAction(
+            tender.Id,
+            disposition ? this.describeTenderOutcome(disposition, message) : { loading: false, message, tone: 'danger' },
+          );
+        },
+      });
+  }
+
+  private describeTenderOutcome(disposition: AlvysOperationDisposition, message: string): TenderActionState {
+    switch (disposition) {
+      case 'SandboxExecuted':
+        return { loading: false, message: `Sent to Alvys sandbox — ${message}`, tone: 'ok' };
+      case 'SandboxFailed':
+        return { loading: false, message: `Alvys sandbox rejected it — ${message}`, tone: 'danger' };
+      case 'Blocked':
+        return { loading: false, message, tone: 'danger' };
+      case 'Unsupported':
+        return { loading: false, message: 'Not sent — live sandbox execution is not configured.', tone: 'warn' };
+      default:
+        return { loading: false, message: `Recorded internally only (${disposition}) — not sent to Alvys.`, tone: 'warn' };
+    }
   }
 
   protected select(load: LtlLoadSummary): void {
@@ -582,6 +779,23 @@ export class LtlSearch {
 
   protected badgeText(badge: string): string {
     return badge.replace(/([a-z])([A-Z])/g, '$1 $2');
+  }
+
+  /**
+   * Classifies a free-text Alvys load status into a pill variant. Alvys statuses are open text
+   * (not a fixed enum), so this matches on keyword families rather than an exact list — an
+   * unrecognised status falls back to a neutral pill rather than guessing a meaning for it.
+   */
+  protected statusClass(status: string | null | undefined): string {
+    const s = (status ?? '').toLowerCase();
+    if (!s) return 'status-pill status-default';
+    if (/cancel|void|reject|expir/.test(s)) return 'status-pill status-cancelled';
+    if (/transit|en-route|en route/.test(s)) return 'status-pill status-transit';
+    if (/deliver|trip completed|^completed$|^accepted$/.test(s)) return 'status-pill status-delivered';
+    if (/invoic|financ|paid/.test(s)) return 'status-pill status-billed';
+    if (/dispatch|covered|release/.test(s)) return 'status-pill status-dispatched';
+    if (/open|quote|reserv|review|admin|queue|^new$/.test(s)) return 'status-pill status-open';
+    return 'status-pill status-default';
   }
 
   protected stageClass(stage: WorkflowStage, blocked: boolean): string {

@@ -20,6 +20,9 @@
     <button type="button" role="tab" class="tab" [class.active]="tab() === 'exceptions'" (click)="setTab('exceptions')">
       Exceptions
     </button>
+    <button type="button" role="tab" class="tab" [class.active]="tab() === 'tenders'" (click)="setTab('tenders')">
+      Tenders
+    </button>
   </nav>
 
   <!-- ===================== SEARCH TAB ===================== -->
@@ -230,7 +233,10 @@
                   <strong>{{ load.customerName || '—' }}</strong>
                   <div class="muted">{{ load.loadNumber || load.id }}</div>
                 </td>
-                <td>{{ load.status }}<div class="muted">{{ load.assignment }}</div></td>
+                <td>
+                  <span [class]="statusClass(load.status)">{{ load.status }}</span>
+                  <div class="muted">{{ load.assignment }}</div>
+                </td>
                 <td>
                   {{ load.scheduledPickupAt ? (load.scheduledPickupAt | date: 'MMM d') : '—' }}
                   <div class="muted">{{ load.origin?.label || '—' }}</div>
@@ -281,9 +287,22 @@
       </div>
 
       <div class="pager">
-        <button type="button" (click)="goToPage(page() - 1)" [disabled]="page() <= 1">Prev</button>
-        <span>Page {{ page() }} of {{ totalPages() }} &middot; {{ total() }} loads</span>
-        <button type="button" (click)="goToPage(page() + 1)" [disabled]="page() >= totalPages()">Next</button>
+        <label class="pager-size">
+          Rows
+          <select [ngModel]="pageSize()" (ngModelChange)="changePageSize($event)" name="pageSize">
+            <option [value]="25">25</option>
+            <option [value]="50">50</option>
+            <option [value]="100">100</option>
+          </select>
+        </label>
+        <span class="pager-range">{{ rangeStart() }}&ndash;{{ rangeEnd() }} of {{ total() }} loads</span>
+        <div class="pager-nav">
+          <button type="button" title="First page" (click)="goToPage(1)" [disabled]="page() <= 1">&laquo;</button>
+          <button type="button" title="Previous page" (click)="goToPage(page() - 1)" [disabled]="page() <= 1">&lsaquo;</button>
+          <span class="pager-page">Page {{ page() }} of {{ totalPages() }}</span>
+          <button type="button" title="Next page" (click)="goToPage(page() + 1)" [disabled]="page() >= totalPages()">&rsaquo;</button>
+          <button type="button" title="Last page" (click)="goToPage(totalPages())" [disabled]="page() >= totalPages()">&raquo;</button>
+        </div>
       </div>
     }
   }
@@ -365,12 +384,117 @@
               <tr (click)="select(load)" [class.selected]="selected()?.id === load.id">
                 <td><strong>{{ load.customerName || '—' }}</strong><div class="muted">{{ load.loadNumber || load.id }}</div></td>
                 <td>{{ load.origin?.label || '—' }} → {{ load.destination?.label || '—' }}</td>
-                <td>{{ load.status }}</td>
+                <td><span [class]="statusClass(load.status)">{{ load.status }}</span></td>
                 <td>
                   @for (ex of load.exceptions; track ex.code) {
                     <span [class]="ex.blocksBilling ? 'badge badge-danger' : 'badge badge-warn'" [title]="ex.message">
                       {{ badgeText(ex.code) }}
                     </span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+
+  <!-- ===================== TENDERS TAB ===================== -->
+  @if (tab() === 'tenders') {
+    <div class="worklist-bar">
+      <label class="tender-filter">Status
+        <select name="tenderStatus" [ngModel]="tenderStatus()" (ngModelChange)="tenderStatus.set($event)">
+          <option value="">Any</option>
+          @for (s of tenderStatuses; track s) { <option [value]="s">{{ s }}</option> }
+        </select>
+      </label>
+      <label class="tender-filter">Type
+        <input type="text" name="tenderType" placeholder="Any type" [ngModel]="tenderType()" (ngModelChange)="tenderType.set($event)" />
+      </label>
+      <label class="tender-filter">Customer
+        <input type="text" name="tenderCustomer" placeholder="Any customer" [ngModel]="tenderCustomer()" (ngModelChange)="tenderCustomer.set($event)" />
+      </label>
+      <button type="button" class="primary" (click)="loadTenders()">Apply</button>
+      <span class="muted">
+        Read-only Alvys tender search. Accept fires the sandbox-gated tender-accept write &mdash;
+        <strong>never production</strong>. Reject has no confirmed Alvys endpoint yet, so it is disabled.
+      </span>
+    </div>
+
+    @if (tendersLoading()) {
+      <div class="state">Loading tenders…</div>
+    } @else if (tendersError()) {
+      <div class="state state-error">{{ tendersError() }}<button type="button" (click)="loadTenders()">Retry</button></div>
+    } @else if ((tenders()?.length ?? 0) === 0) {
+      <div class="state state-empty"><strong>No tenders match this filter.</strong><span>Adjust the status/type/customer filter above.</span></div>
+    } @else {
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Type</th>
+              <th>Age</th>
+              <th>Respond within</th>
+              <th>Status</th>
+              <th>Lane</th>
+              <th>Equipment</th>
+              <th>Rate</th>
+              <th>Company links</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of tenders(); track t.Id) {
+              <tr>
+                <td>
+                  <strong>{{ t.Entities?.[0]?.CompanyName || t.Entities?.[0]?.Name || '—' }}</strong>
+                  <div class="muted">{{ t.Id }} @if (t.SCAC) { &middot; {{ t.SCAC }} }</div>
+                </td>
+                <td>{{ t.TransportationMethodTypeCode || '—' }}</td>
+                <td [title]="t.DateImported?.DateTime || ''">{{ relativeAge(t.DateImported?.DateTime) }}</td>
+                <td [title]="t.ExpirationDate?.DateTime || ''">{{ relativeRemaining(t.ExpirationDate?.DateTime) }}</td>
+                <td><span [class]="statusClass(t.Status)">{{ t.Status || 'Unknown' }}</span></td>
+                <td>
+                  @if (tenderLane(t); as lane) {
+                    {{ lane.origin }} <span aria-hidden="true">&rarr;</span> {{ lane.destination }}
+                  }
+                  <div class="muted">{{ (t.Stops?.length) || 0 }} stop(s)</div>
+                </td>
+                <td>{{ t.Equipment?.Type || '—' }}<div class="muted">{{ t.Equipment?.Length ? (t.Equipment?.Length + "'") : '' }}</div></td>
+                <td>@if (t.Rate !== null && t.Rate !== undefined) { &#36;{{ t.Rate | number: '1.0-0' }} } @else { <span class="missing">missing</span> }</td>
+                <td>
+                  <div class="tender-links">
+                    @for (stop of t.Stops; track stop.StopId) {
+                      <label class="tender-link-row" [title]="stop.Entity?.Name || stop.StopId">
+                        <span class="tender-link-stop">{{ stop.Type }}</span>
+                        <input
+                          type="text"
+                          class="tender-link-input"
+                          placeholder="Company ID"
+                          [ngModel]="companyLinkValue(t.Id, stop)"
+                          (ngModelChange)="setCompanyLinkValue(t.Id, stop.StopId, $event)"
+                          [name]="'link-' + t.Id + '-' + stop.StopId"
+                        />
+                      </label>
+                    }
+                  </div>
+                </td>
+                <td class="tender-actions">
+                  <button
+                    type="button"
+                    class="primary"
+                    [disabled]="!canAcceptTender(t) || (tenderAction(t.Id)?.loading ?? false)"
+                    (click)="acceptTender(t)"
+                  >
+                    {{ tenderAction(t.Id)?.loading ? 'Accepting…' : 'Accept' }}
+                  </button>
+                  <button type="button" disabled title="No confirmed Alvys reject endpoint in this phase">Reject</button>
+                  @if (tenderAction(t.Id); as action) {
+                    @if (!action.loading && action.message) {
+                      <div [class]="'tender-outcome tender-outcome-' + (action.tone || 'warn')">{{ action.message }}</div>
+                    }
                   }
                 </td>
               </tr>

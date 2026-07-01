@@ -1,9 +1,10 @@
 /**
  * TypeScript projections of the sandbox-gated Alvys writeback boundary
  * (see src/LtlTool.Api/Features/Integrations/Alvys/Writeback/*). Enums are modeled as string
- * unions because the API serializes enums by name (JsonStringEnumConverter). Nothing here ever
- * mutates Alvys in this phase: every disposition is audit-only, simulated or unsupported and
- * `executed` is always false.
+ * unions because the API serializes enums by name (JsonStringEnumConverter). Every operation is
+ * config-gated: `AuditOnly`/`Simulated`/`Unsupported` never reach Alvys, and `SandboxExecuted`/
+ * `SandboxFailed` only occur when Mode=Sandbox is fully configured against a non-production host
+ * — never a production tenant (see docs/ltl-tool.md).
  */
 
 export type AlvysWritebackMode = 'Disabled' | 'Simulation' | 'Sandbox';
@@ -13,7 +14,8 @@ export type AlvysOperationDisposition =
   | 'AuditOnly'
   | 'Simulated'
   | 'Unsupported'
-  | 'SandboxExecuted';
+  | 'SandboxExecuted'
+  | 'SandboxFailed';
 
 export type AlvysOperationEligibility =
   | 'AuditOnly'
@@ -63,14 +65,27 @@ export interface AlvysReadinessStatus {
   operations: AlvysOperationReadiness[];
 }
 
+/** Maps a tender stop to the Alvys company linked to it on acceptance (tender-accept). */
+export interface TenderStopCompanyLink {
+  stopId: string;
+  companyId: string;
+}
+
 /** Inputs for a write-oriented operation. Only fields relevant to the operation are read. */
 export interface AlvysOperationRequest {
   loadNumber?: string;
   tenderId?: string;
   tripId?: string;
   stopId?: string;
+  carrierId?: string;
+  driverId?: string;
+  truckId?: string;
+  trailerId?: string;
+  status?: string;
   noteText?: string;
   noteType?: string;
+  stopCompanyLinks?: TenderStopCompanyLink[];
+  fleetId?: string;
   arrivedAt?: string;
   departedAt?: string;
   etag?: string;
