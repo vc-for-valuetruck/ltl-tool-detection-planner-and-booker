@@ -336,6 +336,23 @@ export class LtlSearch {
     this.runSearch();
   }
 
+  protected changePageSize(size: number): void {
+    if (size === this.pageSize()) return;
+    this.pageSize.set(size);
+    this.page.set(1);
+    this.runSearch();
+  }
+
+  /** First row number shown on the current page, for the "X–Y of Z" pager label. */
+  protected readonly rangeStart = computed(() =>
+    this.total() === 0 ? 0 : (this.page() - 1) * this.pageSize() + 1,
+  );
+
+  /** Last row number shown on the current page. */
+  protected readonly rangeEnd = computed(() =>
+    Math.min(this.page() * this.pageSize(), this.total()),
+  );
+
   protected runSearch(): void {
     this.loading.set(true);
     this.error.set(null);
@@ -582,6 +599,23 @@ export class LtlSearch {
 
   protected badgeText(badge: string): string {
     return badge.replace(/([a-z])([A-Z])/g, '$1 $2');
+  }
+
+  /**
+   * Classifies a free-text Alvys load status into a pill variant. Alvys statuses are open text
+   * (not a fixed enum), so this matches on keyword families rather than an exact list — an
+   * unrecognised status falls back to a neutral pill rather than guessing a meaning for it.
+   */
+  protected statusClass(status: string | null | undefined): string {
+    const s = (status ?? '').toLowerCase();
+    if (!s) return 'status-pill status-default';
+    if (/cancel|void|reject/.test(s)) return 'status-pill status-cancelled';
+    if (/transit|en-route|en route/.test(s)) return 'status-pill status-transit';
+    if (/deliver|trip completed|^completed$/.test(s)) return 'status-pill status-delivered';
+    if (/invoic|financ|paid/.test(s)) return 'status-pill status-billed';
+    if (/dispatch|covered|release/.test(s)) return 'status-pill status-dispatched';
+    if (/open|quote|reserv|review|admin|queue/.test(s)) return 'status-pill status-open';
+    return 'status-pill status-default';
   }
 
   protected stageClass(stage: WorkflowStage, blocked: boolean): string {
