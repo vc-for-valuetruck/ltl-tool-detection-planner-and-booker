@@ -88,7 +88,7 @@
   font-size: 0.82rem;
   color: var(--text-muted);
 }
-.filters button {
+.filters button:not(.primary) {
   padding: 0.45rem 0.95rem;
   border-radius: 6px;
   border: 1px solid var(--border-strong);
@@ -96,17 +96,29 @@
   cursor: pointer;
   font-size: 0.85rem;
 }
-.filters button:hover {
+.filters button:not(.primary):hover {
   border-color: var(--accent);
 }
-/* Declared after `.filters button` so equal-specificity primary styling wins the cascade. */
+/*
+ * Fully self-contained so it never depends on cascade order against any container-scoped
+ * `button` rule (e.g. `.filters button`, `.tender-actions button`) — those rules exclude
+ * `.primary` via :not() rather than relying on declaration order to "win".
+ */
 button.primary {
+  padding: 0.45rem 0.95rem;
+  border-radius: 6px;
   background: var(--accent);
   color: #fff;
   border: 1px solid var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
 }
 button.primary:hover {
   background: var(--accent-dark);
+}
+button.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* States */
@@ -479,13 +491,82 @@ button.primary:hover {
   flex-wrap: wrap;
 }
 .worklist-bar select,
-.worklist-bar button {
+.worklist-bar button:not(.primary) {
   padding: 0.4rem 0.6rem;
-  border: 1px solid #ccd;
-  border-radius: 4px;
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
   cursor: pointer;
 }
+
+/* Tenders board */
+.tender-filter {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.tender-filter select,
+.tender-filter input {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+.tender-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 11rem;
+}
+.tender-link-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+}
+.tender-link-stop {
+  width: 3.5rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 0.66rem;
+}
+.tender-link-input {
+  flex: 1;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+.tender-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  min-width: 8rem;
+}
+.tender-actions button:not(.primary) {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.tender-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tender-outcome {
+  font-size: 0.72rem;
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+}
+.tender-outcome-ok { background: #dcfce7; color: #15803d; }
+.tender-outcome-warn { background: #fff3d6; color: #8a5a00; }
+.tender-outcome-danger { background: #fdecef; color: #b00020; }
 
 /* Risks / exception lists */
 .risks {
@@ -623,7 +704,7 @@ button.primary:hover {
   gap: 0.5rem;
   margin-top: 0.6rem;
 }
-.assign-actions button {
+.assign-actions button:not(.primary) {
   padding: 0.4rem 0.85rem;
   border: 1px solid #ccd;
   border-radius: 4px;

@@ -588,28 +588,34 @@ All under `src/LtlTool.Api/Features/Integrations/Alvys/Writeback/` (+ the
 | --- | --- | --- |
 | `Disabled` (default) | `AuditOnly` | Payload is built/recorded for audit only; never sent. Safe default for a fresh clone, CI and production. |
 | `Simulation` | `Simulated` | Dry-run: payload built and validated for preview; never sent. |
-| `Sandbox` | `Unsupported` (this phase) | Eligible for non-production sandbox execution **only** when fully configured (recognised sandbox environment + non-production sandbox base URL + credentials). Even fully configured, every operation stays `Unsupported` until a documented Alvys mutating endpoint is wired. |
+| `Sandbox` | `SandboxExecuted` / `SandboxFailed` | Eligible for non-production sandbox execution when fully configured (recognised sandbox environment + non-production sandbox base URL + credentials). All eight operations below are wired to real Alvys endpoints; a non-2xx/transport response surfaces as `SandboxFailed` (HTTP 502), never a false success. |
 
 `Sandbox` is refused unless `Environment` is one of `sandbox`/`uat`/`staging`/`test` and
 `SandboxBaseUrl` is set to a non-production host (it explicitly rejects `integrations.alvys.com`),
-so flipping the mode alone can never reach a production tenant.
+so flipping the mode alone can never reach a production tenant. Production execution is tracked
+separately in `docs/ltl-tool.md` — it requires a per-operation contract sign-off, not just a config
+change, and today's sandbox client cannot reach `integrations.alvys.com` even if `Mode=Sandbox`.
 
 ### Operations (catalogue)
 
-Every operation is currently `Unsupported` for live execution: **the Alvys docs captured in this
-repo cover read endpoints only, so we deliberately do not invent mutating routes.** Each records
-exactly what is required to turn live sandbox execution on.
+All eight operations are `Supported` for sandbox execution — each is wired to a real Alvys
+endpoint confirmed against the Alvys API docs (`AlvysWriteClient.ResolveEndpoint`), not invented.
+Live execution still requires `Mode=Sandbox` fully configured; until then every attempt resolves
+to `AuditOnly`/`Simulated`.
 
-| Code | Stage | ETag | Live support | Required to enable |
+| Code | Stage | ETag | Live support | Endpoint |
 | --- | --- | --- | --- | --- |
-| `create-load-note` | Assign/Bill | no | Unsupported | A documented `POST loads/{loadNumber}/notes` (verb + path + body). Repo documents the read-only GET notes listing only. |
-| `tender-accept` | Match/Assign | yes | Unsupported | A documented tender-accept endpoint + ETag/concurrency contract. Repo documents tender search + get-by-id only. |
-| `trip-stop-arrival` | Assign | no | Unsupported | A documented trip-stop arrival endpoint. Repo documents the read-only GET trip stops listing only. |
-| `trip-stop-departure` | Assign | no | Unsupported | A documented trip-stop departure endpoint. Repo documents the read-only GET trip stops listing only. |
-| `load-update` | Assign/Bill | yes | Unsupported | A documented load-update endpoint, the safely-editable field set, and the ETag/concurrency contract. Repo documents read-only load search/detail only. |
+| `create-load-note` | Assign/Bill | no | Supported | `POST loads/{loadNumber}/notes` |
+| `tender-accept` | Match/Assign | yes | Supported | `POST tenders/{tenderId}/accept` — body `{ StopCompanyLinks, FleetId? }` |
+| `trip-stop-arrival` | Assign | no | Supported | `PUT trips/{tripId}/stops/{stopId}/arrival` |
+| `trip-stop-departure` | Assign | no | Supported | `PUT trips/{tripId}/stops/{stopId}/departure` |
+| `load-update` | Assign/Bill | yes | Supported | `PATCH loads/{loadNumber}` — only `OrderNumber` (≤30 chars) is writable today |
+| `trip-assign` | Assign | no | Supported | `POST trips/{tripId}/assign` — carrier required, driver/truck/trailer optional |
+| `trip-dispatch` | Assign | no | Supported | `POST trips/{tripId}/dispatch` — trip must already be covered |
+| `carrier-status-update` | Assign | yes | Supported | `PATCH carriers/{carrierId}/status` |
 
-ETag-gated operations (`tender-accept`, `load-update`) are **blocked** at validation time without an
-ETag, so a concurrent change could never be silently clobbered once live execution is enabled.
+ETag-gated operations (`tender-accept`, `load-update`, `carrier-status-update`) are **blocked** at
+validation time without an ETag, so a concurrent change can never be silently clobbered.
 
 ### Internal endpoints
 
@@ -621,7 +627,7 @@ ETag, so a concurrent change could never be silently clobbered once live executi
 | `GET /api/alvys/ops/status` | The readiness snapshot (mode, per-operation eligibility, blockers, last read sync). No secrets. |
 | `GET /api/alvys/ops/operations` | The operation catalogue + live-support + required-to-enable docs. |
 | `POST /api/alvys/ops/{operation}/dry-run` | Builds + validates the payload and returns the preview. 404 for an unknown operation. Never sent. |
-| `POST /api/alvys/ops/{operation}/execute` | Honours the configured mode; resolves to audit-only/simulated/unsupported in this phase. 404 unknown, 422 when validation blocks. Never sent. |
+| `POST /api/alvys/ops/{operation}/execute` | Honours the configured mode: audit-only/simulated when `Mode` isn't `Sandbox`, otherwise a real sandbox call. 404 unknown, 422 when validation blocks, 502 when the sandbox call fails. |
 | `POST /api/alvys/ops/sync/probe` | Opt-in bounded **read** (`users/search`, page size 1) that records a "last successful read" time. A read, never a mutation. |
 
 ### Configuration
@@ -644,17 +650,16 @@ posture ("Audit only" / "Simulation only" / "Ready for sandbox note/writeback"),
 blockers, per-operation eligibility, and a dry-run payload preview for the load note. It consumes
 `/api/alvys/ops/*` only — it never holds Alvys credentials and never writes to browser storage.
 
-### What is required to enable live sandbox execution
+### What is required to actually see a sandbox execution
 
-1. A documented Alvys mutating endpoint (verb + path + request body) for the operation, plus its
-   ETag/concurrency contract where applicable. Flip the operation's `LiveSupport` to `Supported` in
-   `AlvysWriteOperationRegistry` and wire the upstream call in the single guarded branch of
-   `AlvysWriteGateway` (the only place a live call would ever be issued).
-2. Non-production sandbox credentials and a sandbox base URL, with `ALVYS_WRITEBACK_MODE=Sandbox`
+All eight operations are already wired (`LiveSupport = Supported`); what's still required is
+operator configuration, not more code:
+
+1. Non-production sandbox credentials and a sandbox base URL, with `ALVYS_WRITEBACK_MODE=Sandbox`
    and `ALVYS_WRITEBACK_ENVIRONMENT` set to a recognised sandbox label.
 
-Until both are in place the boundary stays audit/simulation-only and reports `Unsupported` for live
-execution — by design.
+Until that's in place the boundary stays audit/simulation-only. See `docs/ltl-tool.md` for what's
+additionally required before any operation may target a **production** Alvys tenant.
 
 ## Next slice
 
