@@ -14,14 +14,21 @@ After one-time setup (below):
 2. Merge to `main`, or manually run **Deploy LTL Tool UAT** — builds the API and Web Docker images
    into that Container Registry, points both Web Apps at the new images, configures their
    application settings, restarts them, and smoke-tests both.
-3. The workflow prints the public API and Web URLs. The app keeps running in Azure until stopped
-   or redeployed.
+3. **Verify LTL Tool UAT health** runs automatically right after a successful deploy — it checks
+   every Azure resource in the resource group for a `Succeeded` provisioning state, confirms both
+   App Services report `Running`, and hits both containers over HTTP to confirm they're actually
+   serving real content (the API's `/api/health` JSON payload, the Angular shell's `<app-root>`
+   element in the Web response) — not just that the deploy step exited `0`. It can also be run on
+   demand any time to re-check status without a new build.
+4. The deploy workflow's summary prints the public API and Web URLs. The app keeps running in
+   Azure until stopped or redeployed.
 
 Workflow files:
 
 ```text
 .github/workflows/provision-ltl-uat-infra.yml
 .github/workflows/deploy-ltl-uat.yml
+.github/workflows/verify-ltl-uat-health.yml
 ```
 
 Bicep template:
@@ -165,6 +172,24 @@ ALVYS_TENANT_ID
 ALVYS_CLIENT_ID
 ALVYS_CLIENT_SECRET
 ```
+
+## Step 3 — Verify health
+
+**Verify LTL Tool UAT health** runs automatically after every successful deploy (triggered by the
+deploy workflow completing), or on demand via **Actions → Verify LTL Tool UAT health → Run
+workflow**. It does not build or deploy anything — it only checks:
+
+- Every Azure resource in the resource group reports a `Succeeded` provisioning state.
+- Both App Services (`<base>-api`, `<base>-web`) report a `Running` runtime state.
+- The API responds `200` from `/api/health`.
+- The Web app responds `200` and actually serves the Angular shell (`<app-root>` present in the
+  HTML) — catches the case where the container is "Running" per Azure but crash-looping or
+  serving a platform error page instead of the app.
+
+The job fails (red ✗ in the Actions tab) if anything above isn't healthy, and its summary lists
+the Web UI URL to open directly. Use this as the "is it actually safe to look at" signal rather
+than only the deploy workflow's own smoke test, which only runs once per deploy and doesn't check
+Azure resource provisioning states.
 
 ## After the first deploy
 
