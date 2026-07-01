@@ -26,7 +26,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check required Azure UAT configuration
+        id: preflight
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+        run: |
+          missing=()
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID SQL_ADMIN_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "deploy_ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## LTL Tool UAT deployment skipped"
+              echo ""
+              echo "The workflow is healthy, but deployment was skipped because the uat GitHub environment is missing required configuration."
+              echo ""
+              echo "Missing values:"
+              for name in "${missing[@]}"; do
+                echo "- $name"
+              done
+              echo ""
+              echo "Add the missing values to the uat environment, then rerun this workflow to deploy."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "deploy_ready=true" >> "$GITHUB_OUTPUT"
+
       - name: Azure login with ltl-uat-github-deploy
+        if: steps.preflight.outputs.deploy_ready == 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -34,6 +70,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Resolve image tag
+        if: steps.preflight.outputs.deploy_ready == 'true'
         id: vars
         shell: bash
         run: |
@@ -42,6 +79,7 @@ jobs:
           echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Build, push, and configure
+        if: steps.preflight.outputs.deploy_ready == 'true'
         shell: bash
         env:
           RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
@@ -65,6 +103,7 @@ jobs:
         run: ./scripts/deploy-azure-uat.sh
 
       - name: Smoke test deployment
+        if: steps.preflight.outputs.deploy_ready == 'true'
         id: smoke
         shell: bash
         env:
@@ -89,6 +128,7 @@ jobs:
           curl -fsS "${WEB_URL}" >/dev/null
 
       - name: Deployment summary
+        if: steps.preflight.outputs.deploy_ready == 'true'
         shell: bash
         run: |
           {
