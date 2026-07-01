@@ -19,9 +19,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  skip-auto-deploy:
+    name: UAT auto-deploy not enabled
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && vars.LTL_UAT_AUTO_DEPLOY != 'true'
+    steps:
+      - name: Explain skipped UAT deployment
+        shell: bash
+        run: |
+          {
+            echo "## LTL Tool UAT deployment skipped"
+            echo ""
+            echo "Push-triggered UAT deploys are disabled by default so main does not fail while Azure UAT is still being configured."
+            echo ""
+            echo "To deploy now, run this workflow manually. To deploy on every push to main, set repository/environment variable LTL_UAT_AUTO_DEPLOY=true after Azure UAT secrets and infrastructure are ready."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     name: Build, push, and deploy to Azure UAT
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || vars.LTL_UAT_AUTO_DEPLOY == 'true'
     environment: uat
     steps:
       - uses: actions/checkout@v4
@@ -34,9 +51,24 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_API_CLIENT_ID: ${{ secrets.AZURE_AD_API_CLIENT_ID }}
+          AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+          AZURE_AD_WEB_CLIENT_ID: ${{ secrets.AZURE_AD_WEB_CLIENT_ID }}
         run: |
           missing=()
-          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID SQL_ADMIN_PASSWORD; do
+          required=(
+            AZURE_CLIENT_ID
+            AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID
+            SQL_ADMIN_PASSWORD
+            AZURE_AD_TENANT_ID
+            AZURE_AD_API_CLIENT_ID
+            AZURE_AD_CLIENT_SECRET
+            AZURE_AD_WEB_CLIENT_ID
+          )
+
+          for name in "${required[@]}"; do
             if [ -z "${!name}" ]; then
               missing+=("$name")
             fi
