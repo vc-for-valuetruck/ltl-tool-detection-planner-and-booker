@@ -52,13 +52,22 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
     /// Evaluate billing readiness for <paramref name="load"/>. <paramref name="documents"/> is
     /// optional; when supplied it enables POD detection (otherwise POD is not evaluated).
     /// <paramref name="invoices"/> is optional; when supplied (e.g. on the detail path) it
-    /// confirms already-invoiced state and surfaces remaining-balance/invoice-status risks
-    /// from the authoritative invoice records rather than inferring from the load alone.
+    /// confirms already-invoiced state, surfaces remaining-balance/invoice-status risks and
+    /// an aging bucket from the authoritative invoice records rather than inferring from the
+    /// load alone. <paramref name="resolvedRevenue"/> should be the caller's already-resolved
+    /// revenue figure (<c>LtlNormalizationService.ResolveRevenue</c>) — passed in rather than
+    /// recomputed here so the margin risk below always agrees with the revenue the UI displays
+    /// (a load with no CustomerRate but a FuelSurcharge/CustomerAccessorials-derived revenue
+    /// must not silently skip margin evaluation). <paramref name="carrierPayable"/> is optional
+    /// (fetched from the load's trip); when supplied alongside a known revenue it enables a
+    /// gross-margin risk signal.
     /// </summary>
     public BillingReadinessResult Evaluate(
         AlvysLoad load,
         IReadOnlyList<AlvysLoadDocument>? documents = null,
-        IReadOnlyList<AlvysInvoice>? invoices = null)
+        IReadOnlyList<AlvysInvoice>? invoices = null,
+        decimal? resolvedRevenue = null,
+        decimal? carrierPayable = null)
     {
         var badges = new List<BillingBadge>();
         var missing = new List<MissingDataFlag>();
@@ -73,13 +82,31 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
             || invoiceConfirmsInvoiced;
 
         // Invoice-derived revenue-protection signals (only when invoices were supplied).
+        decimal? unpaidBalance = null;
+        InvoiceAgingBucket? agingBucket = null;
+        int? agingDays = null;
         if (invoices is { Count: > 0 })
         {
+            var now = clock.GetUtcNow();
             foreach (var invoice in invoices)
             {
                 if (invoice.RemainingBalance is > 0)
+                {
                     risks.Add(
                         $"Invoice {InvoiceLabel(invoice)} has an unpaid balance of {invoice.RemainingBalance.Value:0.##}.");
+
+                    unpaidBalance = (unpaidBalance ?? 0m) + invoice.RemainingBalance.Value;
+
+                    if (invoice.DueDate is { } dueDate)
+                    {
+                        var days = (int)(now - dueDate).TotalDays;
+                        if (agingDays is null || days > agingDays)
+                        {
+                            agingDays = days;
+                            agingBucket = BucketFor(days);
+                        }
+                    }
+                }
             }
         }
 
@@ -94,6 +121,24 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         {
             missing.Add(MissingDataFlag.Rate);
             risks.Add("No customer rate or linehaul on the load.");
+        }
+
+        // Gross margin — only when both revenue and carrier payable are known; never inferred.
+        // Uses the caller's resolved revenue (not a local recomputation) so this always agrees
+        // with LtlLoadSummary.GrossMargin/GrossMarginPercent shown in the UI.
+        if (resolvedRevenue is > 0 && carrierPayable is not null)
+        {
+            var margin = resolvedRevenue.Value - carrierPayable.Value;
+            var marginPercent = margin / resolvedRevenue.Value * 100m;
+            if (margin < 0)
+            {
+                risks.Add(
+                    $"Negative gross margin: revenue {resolvedRevenue.Value:0.##} vs carrier payable {carrierPayable.Value:0.##}.");
+            }
+            else if ((double)marginPercent <= _options.MarginRiskThresholdPercent)
+            {
+                risks.Add($"Thin gross margin: {marginPercent:0.#}% (revenue {resolvedRevenue.Value:0.##}, carrier payable {carrierPayable.Value:0.##}).");
+            }
         }
 
         // Weight.
@@ -170,8 +215,21 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
             IsReadyToBill = readyToBill,
             IsAlreadyInvoiced = alreadyInvoiced,
             PodEvaluated = podEvaluated,
+            UnpaidBalance = unpaidBalance,
+            AgingBucket = agingBucket,
+            AgingDays = agingDays,
         };
     }
+
+    /// <summary>Buckets days-past-due into the standard Current/30/60/90+ aging convention.</summary>
+    private static InvoiceAgingBucket BucketFor(int daysPastDue) => daysPastDue switch
+    {
+        <= 0 => InvoiceAgingBucket.Current,
+        <= 30 => InvoiceAgingBucket.Days1To30,
+        <= 60 => InvoiceAgingBucket.Days31To60,
+        <= 90 => InvoiceAgingBucket.Days61To90,
+        _ => InvoiceAgingBucket.Over90Days,
+    };
 
     /// <summary>True when an invoice record confirms the load was invoiced (submitted/posted status).</summary>
     private static bool IsPostedInvoice(AlvysInvoice invoice) =>

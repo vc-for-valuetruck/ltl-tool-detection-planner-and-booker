@@ -330,7 +330,7 @@
       <div class="table-wrap">
         <table class="grid">
           <thead>
-            <tr><th>Customer</th><th>Lane</th><th>Delivered</th><th>Revenue</th><th>Billing state</th><th>Blocking</th></tr>
+            <tr><th>Customer</th><th>Lane</th><th>Delivered</th><th>Revenue</th><th>Margin</th><th>Aging</th><th>Billing state</th><th>Blocking</th></tr>
           </thead>
           <tbody>
             @for (load of worklist(); track load.id) {
@@ -341,6 +341,16 @@
                 <td>
                   @if (load.revenue !== null) { &#36;{{ load.revenue | number: '1.0-0' }} }
                   @else { <span class="missing">missing</span> }
+                </td>
+                <td>
+                  @if (load.grossMarginPercent !== null) {
+                    <span [class]="marginClass(load.grossMarginPercent, load.billing.risks)">{{ load.grossMarginPercent | number: '1.0-1' }}%</span>
+                  } @else { <span class="muted">—</span> }
+                </td>
+                <td>
+                  @if (load.billing.agingBucket) {
+                    <span [class]="agingClass(load.billing.agingBucket)">{{ agingLabel(load.billing.agingBucket) }}</span>
+                  } @else { <span class="muted">—</span> }
                 </td>
                 <td>
                   @for (badge of load.billing.badges; track badge) {
@@ -550,6 +560,23 @@
       <dd>@if (load.weightLbs !== null) { {{ load.weightLbs | number: '1.0-0' }} lb } @else { <span class="missing">missing</span> }</dd>
       <dt>Revenue</dt>
       <dd>@if (load.revenue !== null) { &#36;{{ load.revenue | number: '1.0-0' }} } @else { <span class="missing">missing</span> }</dd>
+      <dt>Carrier payable</dt>
+      <dd>@if (load.carrierPayable !== null) { &#36;{{ load.carrierPayable | number: '1.0-0' }} } @else { <span class="muted">not available</span> }</dd>
+      <dt>Gross margin</dt>
+      <dd>
+        @if (load.grossMargin !== null) {
+          <span [class]="marginClass(load.grossMarginPercent, load.billing.risks)">
+            &#36;{{ load.grossMargin | number: '1.0-0' }} ({{ load.grossMarginPercent | number: '1.0-1' }}%)
+          </span>
+        } @else { <span class="muted">not evaluated</span> }
+      </dd>
+      @if (load.billing.agingBucket) {
+        <dt>Unpaid aging</dt>
+        <dd>
+          <span [class]="agingClass(load.billing.agingBucket)">{{ agingLabel(load.billing.agingBucket) }}</span>
+          @if (load.billing.unpaidBalance !== null) { &#36;{{ load.billing.unpaidBalance | number: '1.0-0' }} unpaid }
+        </dd>
+      }
     </dl>
 
     <!-- Billing readiness -->

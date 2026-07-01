@@ -75,6 +75,9 @@ export interface LtlExceptionFlag {
   blocksBilling: boolean;
 }
 
+/** Accounts-receivable aging bucket for an unpaid invoice (Current/30/60/90+). */
+export type InvoiceAgingBucket = 'Current' | 'Days1To30' | 'Days31To60' | 'Days61To90' | 'Over90Days';
+
 export interface BillingReadinessResult {
   badges: BillingBadge[];
   missingFields: MissingDataFlag[];
@@ -82,6 +85,12 @@ export interface BillingReadinessResult {
   isReadyToBill: boolean;
   isAlreadyInvoiced: boolean;
   podEvaluated: boolean;
+  /** Total unpaid balance across the load's invoices. Null when none are unpaid. */
+  unpaidBalance: number | null;
+  /** Aging bucket for the oldest unpaid invoice, by due date. Null when none are unpaid. */
+  agingBucket: InvoiceAgingBucket | null;
+  /** Days past due for the oldest unpaid invoice. Null on the same terms as agingBucket. */
+  agingDays: number | null;
 }
 
 export interface VisibilityEventView {
@@ -121,6 +130,16 @@ export interface LtlLoadSummary {
   revenue: number | null;
   mileage: number | null;
   revenuePerMile: number | null;
+  /**
+   * Carrier's total payable for this load's trip, fetched from Alvys trip data. Null on the
+   * search-grid list path (detail/Billing Worklist only) or when no trip/carrier cost is known —
+   * never inferred as zero cost.
+   */
+  carrierPayable: number | null;
+  /** revenue - carrierPayable. Null unless both are known. */
+  grossMargin: number | null;
+  /** grossMargin as a percent of revenue. Null unless both are known. */
+  grossMarginPercent: number | null;
   isLtl: boolean | null;
   ltlClassification: string | null;
   missingData: MissingDataFlag[];

@@ -879,11 +879,33 @@ public sealed class AlvysPartyPay
     [JsonPropertyName("Name")]
     public string? Name { get; set; }
 
-    [JsonPropertyName("Accessorials")]
-    public List<AlvysAccessorialDetail>? Accessorials { get; set; }
+    /// <summary>
+    /// Itemized accessorial line items. Fixed from a prior mismatch: the itemized list is
+    /// under the JSON key <c>AccessorialsDetails</c>, not <c>Accessorials</c> — <c>Accessorials</c>
+    /// (below) is the aggregate money total, per the Alvys OpenAPI schema
+    /// (<c>TripResponseCarrierResponse</c>/<c>TripResponseDriverResponse</c>).
+    /// </summary>
+    [JsonPropertyName("AccessorialsDetails")]
+    public List<AlvysAccessorialDetail>? AccessorialsDetails { get; set; }
 
     [JsonPropertyName("EChecks")]
     public List<AlvysECheck>? EChecks { get; set; }
+
+    /// <summary>Linehaul amount for this party (carrier-side cost when this is the Carrier party).</summary>
+    [JsonPropertyName("Linehaul")]
+    public AlvysMoney? Linehaul { get; set; }
+
+    /// <summary>Aggregate accessorials total for this party (distinct from the itemized list above).</summary>
+    [JsonPropertyName("Accessorials")]
+    public AlvysMoney? Accessorials { get; set; }
+
+    /// <summary>Total amount payable to this party (Linehaul + Accessorials, Alvys-computed).</summary>
+    [JsonPropertyName("TotalPayable")]
+    public AlvysMoney? TotalPayable { get; set; }
+
+    /// <summary>Carrier-provided invoice number for this trip (Carrier party only).</summary>
+    [JsonPropertyName("CarrierInvoiceNumber")]
+    public string? CarrierInvoiceNumber { get; set; }
 }
 
 /// <summary>An e-check / advance line on a trip party's pay.</summary>

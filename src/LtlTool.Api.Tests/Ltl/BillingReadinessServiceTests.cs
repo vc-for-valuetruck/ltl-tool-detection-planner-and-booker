@@ -151,4 +151,117 @@ public sealed class BillingReadinessServiceTests
         Assert.False(withoutInvoices.IsAlreadyInvoiced);
         Assert.False(withEmptyInvoices.IsAlreadyInvoiced);
     }
+
+    [Fact]
+    public void Negative_gross_margin_is_flagged_regardless_of_threshold()
+    {
+        var load = DeliveredBillable(); // CustomerRate = 1200m
+        var result = LtlTestFactory.Billing().Evaluate(load, [], null, resolvedRevenue: 1200m, carrierPayable: 1500m);
+
+        Assert.Contains(result.Risks, r => r.Contains("Negative gross margin"));
+    }
+
+    [Fact]
+    public void Thin_gross_margin_below_threshold_is_flagged()
+    {
+        var load = DeliveredBillable(); // CustomerRate = 1200m
+        // Margin = 1200 - 1100 = 100 -> 8.33%, below the default 10% threshold.
+        var result = LtlTestFactory.Billing().Evaluate(load, [], null, resolvedRevenue: 1200m, carrierPayable: 1100m);
+
+        Assert.Contains(result.Risks, r => r.Contains("Thin gross margin"));
+    }
+
+    [Fact]
+    public void Healthy_gross_margin_is_not_flagged()
+    {
+        var load = DeliveredBillable(); // CustomerRate = 1200m
+        // Margin = 1200 - 800 = 400 -> 33.3%, comfortably above the default threshold.
+        var result = LtlTestFactory.Billing().Evaluate(load, [], null, resolvedRevenue: 1200m, carrierPayable: 800m);
+
+        Assert.DoesNotContain(result.Risks, r => r.Contains("margin", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Margin_is_not_evaluated_when_carrier_payable_is_unknown()
+    {
+        var load = DeliveredBillable();
+        var result = LtlTestFactory.Billing().Evaluate(load, [], null, resolvedRevenue: 1200m, carrierPayable: null);
+
+        Assert.DoesNotContain(result.Risks, r => r.Contains("margin", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Margin_is_not_evaluated_when_resolved_revenue_is_not_passed_even_with_a_customer_rate()
+    {
+        var load = DeliveredBillable(); // CustomerRate = 1200m, but caller did not resolve/pass revenue
+        var result = LtlTestFactory.Billing().Evaluate(load, [], null, carrierPayable: 1500m);
+
+        Assert.DoesNotContain(result.Risks, r => r.Contains("margin", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Unpaid_invoice_ages_from_due_date_into_the_correct_bucket()
+    {
+        var load = DeliveredBillable();
+        // Fixed clock is 2026-06-30; due 2026-05-15 is 46 days past due -> Days31To60.
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-200", Status = "Invoiced",
+                RemainingBalance = 500m,
+                DueDate = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero),
+            },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices);
+
+        Assert.Equal(InvoiceAgingBucket.Days31To60, result.AgingBucket);
+        Assert.Equal(46, result.AgingDays);
+        Assert.Equal(500m, result.UnpaidBalance);
+    }
+
+    [Fact]
+    public void Multiple_unpaid_invoices_sum_balance_and_use_the_oldest_for_aging()
+    {
+        var load = DeliveredBillable();
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-1", Status = "Invoiced", RemainingBalance = 200m,
+                DueDate = new DateTimeOffset(2026, 6, 25, 0, 0, 0, TimeSpan.Zero), // 5 days -> Days1To30
+            },
+            new()
+            {
+                Id = "I2", Number = "INV-2", Status = "Invoiced", RemainingBalance = 300m,
+                DueDate = new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero), // >90 days -> Over90Days
+            },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices);
+
+        Assert.Equal(500m, result.UnpaidBalance);
+        Assert.Equal(InvoiceAgingBucket.Over90Days, result.AgingBucket);
+    }
+
+    [Fact]
+    public void Fully_paid_invoice_does_not_contribute_to_aging_or_unpaid_balance()
+    {
+        var load = DeliveredBillable();
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-1", Status = "Paid", RemainingBalance = 0m,
+                DueDate = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices);
+
+        Assert.Null(result.UnpaidBalance);
+        Assert.Null(result.AgingBucket);
+        Assert.Null(result.AgingDays);
+    }
 }

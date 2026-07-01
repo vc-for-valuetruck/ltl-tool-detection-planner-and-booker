@@ -35,13 +35,16 @@ public sealed class LtlNormalizationService(
     /// billing risks. <paramref name="visibility"/> and <paramref name="extraExceptions"/> let the
     /// caller fold in visibility-history context and any externally-derived exceptions (e.g. failed
     /// visibility shares) without this service taking an Alvys dependency for the per-load fetch.
+    /// <paramref name="carrierPayable"/> is optional (fetched from the load's trip on the detail/
+    /// worklist path) and enables a gross-margin risk signal when a revenue figure is also known.
     /// </summary>
     public LtlLoadSummary Normalize(
         AlvysLoad load,
         IReadOnlyList<AlvysLoadDocument>? documents = null,
         IReadOnlyList<AlvysInvoice>? invoices = null,
         VisibilityContext? visibility = null,
-        IReadOnlyList<LtlExceptionFlag>? extraExceptions = null)
+        IReadOnlyList<LtlExceptionFlag>? extraExceptions = null,
+        decimal? carrierPayable = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -79,7 +82,13 @@ public sealed class LtlNormalizationService(
 
         var (isLtl, classification) = ClassifyLtl(load, equipment);
 
-        var billingResult = billing.Evaluate(load, documents, invoices);
+        var billingResult = billing.Evaluate(load, documents, invoices, revenue, carrierPayable);
+        var grossMargin = revenue is not null && carrierPayable is not null
+            ? revenue.Value - carrierPayable.Value
+            : (decimal?)null;
+        var grossMarginPercent = grossMargin is not null && revenue is > 0
+            ? Math.Round(grossMargin.Value / revenue.Value * 100m, 1)
+            : (decimal?)null;
         if (!billingResult.PodEvaluated || billingResult.IsAlreadyInvoiced)
         {
             // InvoiceStatus is known; nothing to flag. (Kept explicit for readability.)
@@ -122,6 +131,9 @@ public sealed class LtlNormalizationService(
             Revenue = revenue,
             Mileage = mileage,
             RevenuePerMile = revenuePerMile,
+            CarrierPayable = carrierPayable,
+            GrossMargin = grossMargin,
+            GrossMarginPercent = grossMarginPercent,
             IsLtl = isLtl,
             LtlClassification = classification,
             MissingData = missing,

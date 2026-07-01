@@ -190,6 +190,23 @@ public sealed class LtlLoadSummary
     public decimal? Mileage { get; init; }
 
     /// <summary>
+    /// Total amount payable to the carrier for this load's trip (Linehaul + Accessorials, from
+    /// Alvys trip data). Null when no trip was fetched (list/search path) or the trip carries no
+    /// carrier payable — never inferred. Detail-path and Billing Worklist only; see
+    /// <see cref="MissingDataFlag"/> precedent for other detail-path-only fields.
+    /// </summary>
+    public decimal? CarrierPayable { get; init; }
+
+    /// <summary>
+    /// Revenue − <see cref="CarrierPayable"/>. Null unless both are present — a missing carrier
+    /// payable is never treated as zero cost.
+    /// </summary>
+    public decimal? GrossMargin { get; init; }
+
+    /// <summary>GrossMargin as a percent of Revenue. Null unless both Revenue (&gt; 0) and GrossMargin are known.</summary>
+    public decimal? GrossMarginPercent { get; init; }
+
+    /// <summary>
     /// Revenue per mile when both revenue and mileage are present; a cheap "complexity/quality"
     /// proxy for the High-Revenue/Low-Complexity saved view. Null when either input is missing.
     /// </summary>
@@ -268,6 +285,20 @@ public sealed class VisibilityEventView
     public bool IsFailure { get; init; }
 }
 
+/// <summary>
+/// Accounts-receivable aging bucket for an unpaid invoice, mirroring the standard
+/// Current/30/60/90+ convention. Computed from invoice <c>DueDate</c> vs now — never asserted
+/// when no unpaid invoice was found.
+/// </summary>
+public enum InvoiceAgingBucket
+{
+    Current,
+    Days1To30,
+    Days31To60,
+    Days61To90,
+    Over90Days,
+}
+
 /// <summary>Result of inspecting a load for billing readiness (no silent defaulting).</summary>
 public sealed class BillingReadinessResult
 {
@@ -286,6 +317,21 @@ public sealed class BillingReadinessResult
     /// listing; when that was not supplied, POD is reported as not-evaluated rather than missing.
     /// </summary>
     public bool PodEvaluated { get; init; }
+
+    /// <summary>
+    /// Total unpaid balance across the load's invoices (sum of positive <c>RemainingBalance</c>).
+    /// Null when no invoices were supplied or none carry an unpaid balance.
+    /// </summary>
+    public decimal? UnpaidBalance { get; init; }
+
+    /// <summary>
+    /// Aging bucket for the oldest unpaid invoice on this load, by due date. Null when no
+    /// invoices were supplied or none are unpaid — never defaulted to "Current".
+    /// </summary>
+    public InvoiceAgingBucket? AgingBucket { get; init; }
+
+    /// <summary>Days past due for the oldest unpaid invoice. Null on the same terms as <see cref="AgingBucket"/>.</summary>
+    public int? AgingDays { get; init; }
 }
 
 /// <summary>
