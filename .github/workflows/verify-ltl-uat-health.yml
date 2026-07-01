@@ -4,14 +4,10 @@ name: Verify LTL Tool UAT health
 # every Azure resource in the resource group reports a Succeeded provisioning state, both App
 # Services report a Running runtime state, and both containers respond over HTTP with real
 # content (the API's health payload, the Angular shell's <app-root> element) rather than a
-# platform error page. Runs automatically after a successful Deploy LTL Tool UAT run, and can
-# also be run on demand to re-check status without triggering a new build/deploy.
+# platform error page. Run this on demand after Azure UAT has been provisioned and deployed.
 
 on:
   workflow_dispatch: {}
-  workflow_run:
-    workflows: ["Deploy LTL Tool UAT"]
-    types: [completed]
 
 permissions:
   contents: read
@@ -25,10 +21,44 @@ jobs:
   verify:
     name: Check Azure resource + container health
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     environment: uat
     steps:
+      - name: Check required Azure UAT configuration
+        id: preflight
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          missing=()
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "verify_ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "## LTL Tool UAT health check skipped"
+              echo ""
+              echo "The workflow is healthy, but the uat GitHub environment is missing required Azure login configuration."
+              echo ""
+              echo "Missing values:"
+              for name in "${missing[@]}"; do
+                echo "- $name"
+              done
+              echo ""
+              echo "Add the missing values to the uat environment, then rerun this workflow."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "verify_ready=true" >> "$GITHUB_OUTPUT"
+
       - name: Azure login with ltl-uat-github-deploy
+        if: steps.preflight.outputs.verify_ready == 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -36,6 +66,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Check Azure resource provisioning states
+        if: steps.preflight.outputs.verify_ready == 'true'
         id: resources
         shell: bash
         env:
@@ -54,6 +85,7 @@ jobs:
           fi
 
       - name: Check App Service running state
+        if: steps.preflight.outputs.verify_ready == 'true'
         id: webapp_state
         shell: bash
         env:
@@ -70,6 +102,7 @@ jobs:
           echo "web_state=${WEB_STATE}" >> "$GITHUB_OUTPUT"
 
       - name: Check containers respond over HTTP
+        if: steps.preflight.outputs.verify_ready == 'true'
         id: http
         shell: bash
         env:
@@ -90,7 +123,7 @@ jobs:
             API_HTTP=$(curl -s -o /tmp/api-health.json -w "%{http_code}" "${API_URL}/api/health" || echo 000)
             WEB_HTTP=$(curl -s -o /tmp/web-index.html -w "%{http_code}" "${WEB_URL}" || echo 000)
             if [ "$API_HTTP" = "200" ] && [ "$WEB_HTTP" = "200" ]; then break; fi
-            echo "Attempt $i: API=$API_HTTP Web=$WEB_HTTP — retrying..."
+            echo "Attempt $i: API=$API_HTTP Web=$WEB_HTTP - retrying..."
             sleep 10
           done
           echo "api_http=${API_HTTP}" >> "$GITHUB_OUTPUT"
@@ -110,7 +143,7 @@ jobs:
           fi
 
       - name: Summary
-        if: always()
+        if: steps.preflight.outputs.verify_ready == 'true'
         shell: bash
         run: |
           {
@@ -130,6 +163,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail if anything is unhealthy
+        if: steps.preflight.outputs.verify_ready == 'true'
         shell: bash
         run: |
           if [ "${{ steps.resources.outputs.failed_count }}" != "0" ] || \
