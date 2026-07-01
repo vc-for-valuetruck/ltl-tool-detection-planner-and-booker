@@ -1,0 +1,100 @@
+name: Deploy LTL Tool UAT
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Container image tag to build/deploy. Leave blank to use the current commit SHA.'
+        required: false
+        default: ''
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-ltl-uat-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build, push, and deploy to Azure UAT
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login with ltl-uat-github-deploy
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve image tag
+        id: vars
+        shell: bash
+        run: |
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          if [ -z "$IMAGE_TAG" ]; then IMAGE_TAG="${GITHUB_SHA}"; fi
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build, push, and configure
+        shell: bash
+        env:
+          RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
+          BASE_NAME: ${{ vars.LTL_UAT_BASE_NAME || 'ltl-uat' }}
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+          SQL_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_API_CLIENT_ID: ${{ secrets.AZURE_AD_API_CLIENT_ID }}
+          AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+          AZURE_AD_WEB_CLIENT_ID: ${{ secrets.AZURE_AD_WEB_CLIENT_ID }}
+          ALLOWED_EMAIL_DOMAIN: ${{ vars.ALLOWED_EMAIL_DOMAIN || 'valuetruck.com' }}
+          ALVYS_PROVIDER: ${{ vars.ALVYS_PROVIDER || 'Fallback' }}
+          ALVYS_API_BASE_URL: ${{ vars.ALVYS_API_BASE_URL || 'https://integrations.alvys.com' }}
+          ALVYS_API_VERSION: ${{ vars.ALVYS_API_VERSION || 'v1' }}
+          ALVYS_TENANT_ID: ${{ secrets.ALVYS_TENANT_ID }}
+          ALVYS_CLIENT_ID: ${{ secrets.ALVYS_CLIENT_ID }}
+          ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}
+          ALVYS_WRITEBACK_MODE: ${{ vars.ALVYS_WRITEBACK_MODE || 'Disabled' }}
+          LTL_DETECTION_ENABLED: ${{ vars.LTL_DETECTION_ENABLED || 'false' }}
+          LTL_DEFAULT_TIMEZONE: ${{ vars.LTL_DEFAULT_TIMEZONE || 'America/Chicago' }}
+        run: ./scripts/deploy-azure-uat.sh
+
+      - name: Smoke test deployment
+        id: smoke
+        shell: bash
+        env:
+          RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
+          BASE_NAME: ${{ vars.LTL_UAT_BASE_NAME || 'ltl-uat' }}
+        run: |
+          API_APP="${BASE_NAME}-api"
+          WEB_APP="${BASE_NAME}-web"
+          API_URL="https://$(az webapp show --name "$API_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
+          WEB_URL="https://$(az webapp show --name "$WEB_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
+          echo "api_url=${API_URL}" >> "$GITHUB_OUTPUT"
+          echo "web_url=${WEB_URL}" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -fsS "${API_URL}/api/health" >/dev/null; then
+              echo "API health check passed."
+              break
+            fi
+            echo "Waiting for API health... ($i)"
+            sleep 10
+          done
+          curl -fsS "${API_URL}/api/health" >/dev/null
+          curl -fsS "${WEB_URL}" >/dev/null
+
+      - name: Deployment summary
+        shell: bash
+        run: |
+          {
+            echo "## LTL Tool UAT deployment"
+            echo "- API URL: ${{ steps.smoke.outputs.api_url }}"
+            echo "- Web URL: ${{ steps.smoke.outputs.web_url }}"
+            echo ""
+            echo "Add the Web URL as an Entra SPA redirect URI if Microsoft sign-in reports a redirect mismatch."
+          } >> "$GITHUB_STEP_SUMMARY"

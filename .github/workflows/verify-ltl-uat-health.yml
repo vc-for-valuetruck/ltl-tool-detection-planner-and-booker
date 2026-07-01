@@ -1,0 +1,144 @@
+name: Verify LTL Tool UAT health
+
+# Confirms the UAT environment is actually usable, not just that a deploy step exited 0:
+# every Azure resource in the resource group reports a Succeeded provisioning state, both App
+# Services report a Running runtime state, and both containers respond over HTTP with real
+# content (the API's health payload, the Angular shell's <app-root> element) rather than a
+# platform error page. Runs automatically after a successful Deploy LTL Tool UAT run, and can
+# also be run on demand to re-check status without triggering a new build/deploy.
+
+on:
+  workflow_dispatch: {}
+  workflow_run:
+    workflows: ["Deploy LTL Tool UAT"]
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: verify-ltl-uat-health
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Check Azure resource + container health
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    environment: uat
+    steps:
+      - name: Azure login with ltl-uat-github-deploy
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check Azure resource provisioning states
+        id: resources
+        shell: bash
+        env:
+          RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
+        run: |
+          echo "Checking resource provisioning states in $RG..."
+          az resource list --resource-group "$RG" \
+            --query "[].{name:name, type:type, state:properties.provisioningState}" \
+            -o json > resources.json
+          cat resources.json
+          FAILED=$(jq -r '[.[] | select(.state != null and .state != "Succeeded")] | length' resources.json)
+          echo "failed_count=${FAILED}" >> "$GITHUB_OUTPUT"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::${FAILED} resource(s) in $RG are not in a Succeeded provisioning state."
+            jq -r '.[] | select(.state != null and .state != "Succeeded") | "  - \(.name) (\(.type)): \(.state)"' resources.json
+          fi
+
+      - name: Check App Service running state
+        id: webapp_state
+        shell: bash
+        env:
+          RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
+          BASE_NAME: ${{ vars.LTL_UAT_BASE_NAME || 'ltl-uat' }}
+        run: |
+          API_APP="${BASE_NAME}-api"
+          WEB_APP="${BASE_NAME}-web"
+          API_STATE=$(az webapp show --name "$API_APP" --resource-group "$RG" --query state -o tsv)
+          WEB_STATE=$(az webapp show --name "$WEB_APP" --resource-group "$RG" --query state -o tsv)
+          echo "API app ($API_APP) state: $API_STATE"
+          echo "Web app ($WEB_APP) state: $WEB_STATE"
+          echo "api_state=${API_STATE}" >> "$GITHUB_OUTPUT"
+          echo "web_state=${WEB_STATE}" >> "$GITHUB_OUTPUT"
+
+      - name: Check containers respond over HTTP
+        id: http
+        shell: bash
+        env:
+          RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
+          BASE_NAME: ${{ vars.LTL_UAT_BASE_NAME || 'ltl-uat' }}
+        run: |
+          API_APP="${BASE_NAME}-api"
+          WEB_APP="${BASE_NAME}-web"
+          API_URL="https://$(az webapp show --name "$API_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
+          WEB_URL="https://$(az webapp show --name "$WEB_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
+          echo "api_url=${API_URL}" >> "$GITHUB_OUTPUT"
+          echo "web_url=${WEB_URL}" >> "$GITHUB_OUTPUT"
+
+          API_HTTP=000
+          WEB_HTTP=000
+          WEB_HAS_APP_ROOT=false
+          for i in $(seq 1 12); do
+            API_HTTP=$(curl -s -o /tmp/api-health.json -w "%{http_code}" "${API_URL}/api/health" || echo 000)
+            WEB_HTTP=$(curl -s -o /tmp/web-index.html -w "%{http_code}" "${WEB_URL}" || echo 000)
+            if [ "$API_HTTP" = "200" ] && [ "$WEB_HTTP" = "200" ]; then break; fi
+            echo "Attempt $i: API=$API_HTTP Web=$WEB_HTTP — retrying..."
+            sleep 10
+          done
+          echo "api_http=${API_HTTP}" >> "$GITHUB_OUTPUT"
+          echo "web_http=${WEB_HTTP}" >> "$GITHUB_OUTPUT"
+          [ "$API_HTTP" = "200" ] && cat /tmp/api-health.json
+
+          if [ "$WEB_HTTP" = "200" ] && grep -q "<app-root" /tmp/web-index.html; then
+            WEB_HAS_APP_ROOT=true
+          fi
+          echo "web_has_app_root=${WEB_HAS_APP_ROOT}" >> "$GITHUB_OUTPUT"
+
+          if [ "$API_HTTP" != "200" ]; then
+            echo "::error::API container did not return HTTP 200 from /api/health (got $API_HTTP)."
+          fi
+          if [ "$WEB_HTTP" != "200" ] || [ "$WEB_HAS_APP_ROOT" != "true" ]; then
+            echo "::error::Web container did not serve the Angular shell (HTTP $WEB_HTTP, <app-root> present: $WEB_HAS_APP_ROOT)."
+          fi
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## LTL Tool UAT health check"
+            echo ""
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| Azure resources not Succeeded | ${{ steps.resources.outputs.failed_count }} |"
+            echo "| API app state | ${{ steps.webapp_state.outputs.api_state }} |"
+            echo "| Web app state | ${{ steps.webapp_state.outputs.web_state }} |"
+            echo "| API /api/health HTTP | ${{ steps.http.outputs.api_http }} |"
+            echo "| Web root HTTP | ${{ steps.http.outputs.web_http }} |"
+            echo "| Web served Angular shell | ${{ steps.http.outputs.web_has_app_root }} |"
+            echo ""
+            echo "- **Web UI:** ${{ steps.http.outputs.web_url }}"
+            echo "- API health: ${{ steps.http.outputs.api_url }}/api/health"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if anything is unhealthy
+        shell: bash
+        run: |
+          if [ "${{ steps.resources.outputs.failed_count }}" != "0" ] || \
+             [ "${{ steps.webapp_state.outputs.api_state }}" != "Running" ] || \
+             [ "${{ steps.webapp_state.outputs.web_state }}" != "Running" ] || \
+             [ "${{ steps.http.outputs.api_http }}" != "200" ] || \
+             [ "${{ steps.http.outputs.web_http }}" != "200" ] || \
+             [ "${{ steps.http.outputs.web_has_app_root }}" != "true" ]; then
+            echo "One or more health checks failed. See the job summary above for details."
+            exit 1
+          fi
+          echo "All Azure resources and both containers are healthy."
