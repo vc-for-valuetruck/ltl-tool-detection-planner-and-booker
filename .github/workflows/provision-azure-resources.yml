@@ -1,0 +1,185 @@
+name: Provision Azure UAT Resources
+
+# Manual-trigger only. This workflow creates real Azure resources and real Microsoft Entra
+# app registrations — it must never run on push/PR. Re-running is safe for the ARM-managed
+# resources (infra/main.bicep is idempotent) and for the Entra app registrations (skipped if
+# an app with the same display name already exists), but it does NOT rotate an existing API
+# client secret on repeat runs, so a secret is only ever generated once per app.
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: 'GitHub environment to provision into'
+        required: true
+        default: 'uat'
+        type: choice
+        options:
+          - uat
+      location:
+        description: 'Azure region'
+        required: false
+        default: 'centralus'
+      sql_database_sku:
+        description: 'Azure SQL Database SKU (e.g. Basic, S0, S1)'
+        required: false
+        default: 'S0'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  provision:
+    name: Provision Azure resources + Entra app registrations
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group
+        shell: bash
+        run: |
+          az group create \
+            --name "${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}" \
+            --location "${{ github.event.inputs.location }}"
+
+      - name: Deploy shared infrastructure (Bicep)
+        id: bicep
+        shell: bash
+        run: |
+          az deployment group create \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}" \
+            --template-file infra/main.bicep \
+            --parameters \
+              environmentName="${{ github.event.inputs.environment_name }}" \
+              location="${{ github.event.inputs.location }}" \
+              sqlAdminPassword="${{ secrets.SQL_ADMIN_PASSWORD }}" \
+              sqlDatabaseSkuName="${{ github.event.inputs.sql_database_sku }}" \
+              containerAppsEnvironmentName="${{ vars.AZURE_CONTAINERAPPS_ENVIRONMENT || 'ltl-uat-cae' }}" \
+            --query "properties.outputs" -o json > bicep-outputs.json
+          cat bicep-outputs.json
+
+      - name: Ensure Entra API app registration
+        id: api_app
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME="ltl-uat-api"
+          APP_ID=$(az ad app list --display-name "$NAME" --query "[0].appId" -o tsv)
+          if [ -z "$APP_ID" ]; then
+            echo "Creating Entra app registration: $NAME"
+            APP_ID=$(az ad app create --display-name "$NAME" --sign-in-audience AzureADMyOrg --query appId -o tsv)
+            az ad app update --id "$APP_ID" --identifier-uris "api://$APP_ID"
+
+            # Expose the access_as_user delegated scope the API expects (AzureAd__Audience =
+            # api://{appId} — see src/LtlTool.Api/appsettings.json).
+            SCOPE_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
+            az rest --method PATCH \
+              --uri "https://graph.microsoft.com/v1.0/applications(appId='$APP_ID')" \
+              --body "{\"api\":{\"oauth2PermissionScopes\":[{\"id\":\"$SCOPE_ID\",\"adminConsentDescription\":\"Allow the SPA to call the LTL API as the signed-in user.\",\"adminConsentDisplayName\":\"Access LTL API\",\"userConsentDescription\":\"Allow the app to call the LTL API on your behalf.\",\"userConsentDisplayName\":\"Access LTL API\",\"value\":\"access_as_user\",\"type\":\"User\",\"isEnabled\":true}]}}"
+
+            az ad sp create --id "$APP_ID" >/dev/null
+
+            SECRET=$(az ad app credential reset --id "$APP_ID" --display-name "provisioned-$(date +%Y%m%d)" --years 1 --query password -o tsv)
+            echo "::add-mask::$SECRET"
+            echo "api_secret_generated=true" >> "$GITHUB_OUTPUT"
+            echo "$SECRET" > api-client-secret.txt
+          else
+            echo "Entra app registration $NAME already exists (appId=$APP_ID) — skipping create/secret rotation."
+            echo "api_secret_generated=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "app_id=$APP_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure Entra SPA app registration
+        id: spa_app
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME="ltl-uat-web"
+          APP_ID=$(az ad app list --display-name "$NAME" --query "[0].appId" -o tsv)
+          if [ -z "$APP_ID" ]; then
+            echo "Creating Entra app registration: $NAME"
+            APP_ID=$(az ad app create --display-name "$NAME" --sign-in-audience AzureADMyOrg --query appId -o tsv)
+            az ad sp create --id "$APP_ID" >/dev/null
+
+            # Placeholder SPA redirect URI — must be updated to the real Web Container App URL
+            # after the first deploy (same manual step already documented for the existing
+            # deploy workflow: Entra ID -> App registrations -> Web/SPA app -> Authentication).
+            az rest --method PATCH \
+              --uri "https://graph.microsoft.com/v1.0/applications(appId='$APP_ID')" \
+              --body '{"spa":{"redirectUris":["https://localhost"]}}'
+
+            # Microsoft Graph User.Read (delegated) — well-known Graph resource appId + scope id.
+            az ad app permission add --id "$APP_ID" \
+              --api 00000003-0000-0000-c000-000000000000 \
+              --api-permissions e1fe6dd8-ba31-4d61-89e7-88639da4683d=Scope
+          else
+            echo "Entra app registration $NAME already exists (appId=$APP_ID) — skipping create."
+          fi
+          echo "app_id=$APP_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Attempt admin consent for Microsoft Graph permissions
+        id: consent
+        continue-on-error: true
+        shell: bash
+        run: |
+          az ad app permission admin-consent --id "${{ steps.spa_app.outputs.app_id }}"
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "## Azure UAT resources provisioned"
+            echo ""
+            echo "Resource group: \`${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}\`"
+            echo ""
+            echo "| Output | Value |"
+            echo "| --- | --- |"
+            jq -r 'to_entries[] | "| \(.key) | \(.value.value) |"' bicep-outputs.json
+            echo ""
+            echo "### Entra app registrations"
+            echo "- API app registration client ID: \`${{ steps.api_app.outputs.app_id }}\`"
+            echo "- SPA app registration client ID: \`${{ steps.spa_app.outputs.app_id }}\`"
+            if [ "${{ steps.api_app.outputs.api_secret_generated }}" = "true" ]; then
+              echo "- A new API client secret was generated (masked in logs) — see the"
+              echo "  \`api-client-secret.txt\` artifact from this run. **It will not be shown again;**"
+              echo "  re-running this workflow will not regenerate it."
+            else
+              echo "- API app registration already existed; no new secret was generated."
+            fi
+            if [ "${{ steps.consent.outcome }}" != "success" ]; then
+              echo "- ⚠️ Admin consent for the Microsoft Graph User.Read permission could not be"
+              echo "  granted automatically (the pipeline's service principal likely lacks Entra"
+              echo "  admin rights). Grant it manually: Entra ID → App registrations → ltl-uat-web →"
+              echo "  API permissions → Grant admin consent."
+            else
+              echo "- Microsoft Graph User.Read admin consent granted."
+            fi
+            echo ""
+            echo "### Next steps (manual — this workflow never writes GitHub secrets)"
+            echo "1. Download the \`api-client-secret\` artifact and store it as the"
+            echo "   \`AZURE_AD_CLIENT_SECRET\` secret in the \`${{ github.event.inputs.environment_name }}\`"
+            echo "   GitHub environment, then delete the artifact."
+            echo "2. Set \`AZURE_AD_API_CLIENT_ID\`, \`AZURE_AD_WEB_CLIENT_ID\`, \`AZURE_AD_TENANT_ID\` from"
+            echo "   the values above."
+            echo "3. Set \`SQL_CONNECTION_STRING\` using the SQL server FQDN above plus the admin"
+            echo "   login/password used for \`SQL_ADMIN_PASSWORD\`."
+            echo "4. After the first Container App deploy, update the SPA redirect URI (currently a"
+            echo "   placeholder) to the real Web URL, same as documented in"
+            echo "   docs/GHCR_AZURE_CONTAINER_APPS_DEPLOY.md."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload API client secret artifact
+        if: steps.api_app.outputs.api_secret_generated == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-client-secret
+          path: api-client-secret.txt
+          retention-days: 1
