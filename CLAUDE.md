@@ -25,6 +25,16 @@ defensible recommendations, and revenue protection.
 
 ## Safety principles (do not violate)
 
+- **Alvys is the ONLY source of truth for operational data.** The LTL tool must never
+  ingest load, driver, truck, trailer, customer, invoice, tender, dispatch, visibility,
+  or accessorial context from any other system. The only permitted additional inputs
+  are **DOT-tier public regulatory APIs** (FMCSA, SAFER, DOT registry, ELD provider APIs
+  when a real provider is wired) — and only when absolutely necessary for a specific
+  compliance signal. No open-web scraping. No cross-database joins with partner TMSes
+  (McLeod, Sage/Pecan stay adjacent, never ingested). No fabricated demo or seed data
+  masquerading as live. This rule ranks equal to "credentials are server-side only" and
+  "missing data is surfaced not invented" — a PR that introduces a non-Alvys / non-DOT
+  data path is blocked regardless of value.
 - **Never** expose Alvys credentials to the SPA. Alvys credentials are server-side only.
 - **Never** invent missing operational or billing values. Missing data must be
   surfaced as `missing` / `—`, never coerced to `0`, `false`, or "good".

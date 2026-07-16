@@ -66,13 +66,14 @@ This roadmap keeps every capability already shipped on `main` (through PR #34) a
 
 These are non-negotiable and copied straight from `CLAUDE.md`:
 
-1. Alvys credentials are **server-side only**. Never expose to the SPA, `runtime-config.json`, or any `RUNTIME_*` env.
-2. Missing data is surfaced, never invented. Source labels stay honest: **Live Alvys / Derived / Planned / Unavailable**.
-3. Writeback is gated and explicit. `Mode` alone can never reach a production tenant — `Environment` must be a recognised non-production label **and** `SandboxBaseUrl` must be a non-production host. Production writeback requires a filled-in row in `docs/ltl-tool.md`.
-4. No fake booking path. No fake HOS / GPS / POD / accessorials / revenue.
-5. Auditability is preserved on every assignment and billing decision.
-6. Deterministic business rules over vague "AI" wording. AI is a signal-extraction layer, not a decision layer.
-7. Every PR runs CI before it is treated as stable. UAT workflows stay manual until secrets are confirmed.
+1. **Alvys is the ONLY source of truth for operational data.** The tool must never ingest load, driver, truck, trailer, customer, invoice, tender, dispatch, visibility, or accessorial context from any other system. The only permitted additional inputs are **DOT-tier public regulatory APIs** (FMCSA, SAFER, DOT registry, ELD provider APIs when a real provider is wired) — and only when absolutely necessary for a specific compliance signal. No open-web scraping. No partner-TMS reads. No fabricated demo data.
+2. Alvys credentials are **server-side only**. Never expose to the SPA, `runtime-config.json`, or any `RUNTIME_*` env.
+3. Missing data is surfaced, never invented. Source labels stay honest: **Live Alvys / Derived / Planned / Unavailable**.
+4. Writeback is gated and explicit. `Mode` alone can never reach a production tenant — `Environment` must be a recognised non-production label **and** `SandboxBaseUrl` must be a non-production host. Production writeback requires a filled-in row in `docs/ltl-tool.md`.
+5. No fake booking path. No fake HOS / GPS / POD / accessorials / revenue.
+6. Auditability is preserved on every assignment and billing decision.
+7. Deterministic business rules over vague "AI" wording. AI is a signal-extraction layer, not a decision layer.
+8. Every PR runs CI before it is treated as stable. UAT workflows stay manual until secrets are confirmed.
 
 ---
 
