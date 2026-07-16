@@ -142,6 +142,22 @@ jobs:
             echo "::error::Web container did not serve the Angular shell (HTTP $WEB_HTTP, <app-root> present: $WEB_HAS_APP_ROOT)."
           fi
 
+          # Phase 0 stability guard: protected LTL and Alvys-ops routes must be mapped AND
+          # behind AllowedEmailDomain in UAT. An unauthenticated request returns 401 when the
+          # route exists and is protected; a 404 here would mean the route was renamed or
+          # dropped in a deploy — catch it before UAT users do.
+          LTL_SEARCH_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/api/ltl/search" || echo 000)
+          OPS_STATUS_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}/api/alvys/ops/status" || echo 000)
+          echo "ltl_search_http=${LTL_SEARCH_HTTP}" >> "$GITHUB_OUTPUT"
+          echo "ops_status_http=${OPS_STATUS_HTTP}" >> "$GITHUB_OUTPUT"
+
+          if [ "$LTL_SEARCH_HTTP" != "401" ]; then
+            echo "::error::/api/ltl/search returned HTTP $LTL_SEARCH_HTTP unauthenticated — expected 401 (route mapped + protected). 404 means the route was renamed or dropped."
+          fi
+          if [ "$OPS_STATUS_HTTP" != "401" ]; then
+            echo "::error::/api/alvys/ops/status returned HTTP $OPS_STATUS_HTTP unauthenticated — expected 401 (route mapped + protected). 404 means the route was renamed or dropped."
+          fi
+
       - name: Summary
         if: steps.preflight.outputs.verify_ready == 'true'
         shell: bash
@@ -157,6 +173,8 @@ jobs:
             echo "| API /api/health HTTP | ${{ steps.http.outputs.api_http }} |"
             echo "| Web root HTTP | ${{ steps.http.outputs.web_http }} |"
             echo "| Web served Angular shell | ${{ steps.http.outputs.web_has_app_root }} |"
+            echo "| /api/ltl/search unauth (expect 401) | ${{ steps.http.outputs.ltl_search_http }} |"
+            echo "| /api/alvys/ops/status unauth (expect 401) | ${{ steps.http.outputs.ops_status_http }} |"
             echo ""
             echo "- **Web UI:** ${{ steps.http.outputs.web_url }}"
             echo "- API health: ${{ steps.http.outputs.api_url }}/api/health"
@@ -171,7 +189,9 @@ jobs:
              [ "${{ steps.webapp_state.outputs.web_state }}" != "Running" ] || \
              [ "${{ steps.http.outputs.api_http }}" != "200" ] || \
              [ "${{ steps.http.outputs.web_http }}" != "200" ] || \
-             [ "${{ steps.http.outputs.web_has_app_root }}" != "true" ]; then
+             [ "${{ steps.http.outputs.web_has_app_root }}" != "true" ] || \
+             [ "${{ steps.http.outputs.ltl_search_http }}" != "401" ] || \
+             [ "${{ steps.http.outputs.ops_status_http }}" != "401" ]; then
             echo "One or more health checks failed. See the job summary above for details."
             exit 1
           fi
