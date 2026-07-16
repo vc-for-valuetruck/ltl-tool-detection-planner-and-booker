@@ -94,7 +94,7 @@ az ad app federated-credential create \
   --parameters '{
     "name": "github-uat-main",
     "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:valuetruck-vc/ltl-tool-detection-planner-and-booker:environment:uat",
+    "subject": "repo:vc-for-valuetruck/ltl-tool-detection-planner-and-booker:environment:uat",
     "description": "GitHub Actions deploy to LTL Tool UAT",
     "audiences": ["api://AzureADTokenExchange"]
   }'
