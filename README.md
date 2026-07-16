@@ -1,5 +1,9 @@
 # LTL Tool Detection, Planner, and Booker
 
+[![CI](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/actions/workflows/ci.yml)
+[![UAT deploy](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/actions/workflows/deploy-ltl-uat.yml/badge.svg?branch=main)](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/actions/workflows/deploy-ltl-uat.yml)
+[![UAT health](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/actions/workflows/verify-ltl-uat-health.yml/badge.svg?branch=main)](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/actions/workflows/verify-ltl-uat-health.yml)
+
 Internal app for Value Truck dispatchers, built from the Value Truck UAT template.
 On top of the renamed template plumbing it now ships the first **LTL
 decision-support slice**: a normalized read model over live Alvys data, explainable
