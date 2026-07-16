@@ -145,11 +145,10 @@ npm run build -- --configuration production
 npm test -- --watch=false
 ```
 
-CI (`.github/workflows/ci.yml`) runs three jobs: **Build & Test API**
+CI (`.github/workflows/ci.yml`) runs four jobs: **Build & Test API**
 (`dotnet test -c Release`), **Verify EF Migrations on SQL Server**
-(`Category=SqlServerMigration`), and **Build Web** (`npm run build` production).
-Note: CI currently builds the web app but does **not** run `npm test`; run web unit
-tests locally when changing the frontend.
+(`Category=SqlServerMigration`), **Build Web** (`npm run build` production), and
+**Test Web** (`npm test`, i.e. `ng test --watch=false --browsers=ChromeHeadless`).
 
 If the local environment lacks the .NET SDK or Node, say so in the PR body and rely on
 CI. Do not mark API testing complete unless it actually ran.

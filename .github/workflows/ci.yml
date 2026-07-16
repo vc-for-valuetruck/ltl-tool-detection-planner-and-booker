@@ -75,3 +75,27 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run build -- --configuration production
+
+  web-test:
+    name: Test Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      # ubuntu-latest ships Chrome preinstalled; setup-chrome is a belt-and-suspenders
+      # guard so the job keeps working if the runner image ever drops it.
+      - name: Ensure Chrome is available for ChromeHeadless
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+      - run: npm ci
+      # `npm test` runs `ng test --watch=false --browsers=ChromeHeadless` (see web/package.json).
+      # Angular's @angular/build:karma builder picks up the Chrome binary automatically.
+      - run: npm test
