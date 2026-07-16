@@ -235,11 +235,15 @@ The demo does **not** require a live tenant. If creds or sandbox data are missin
 
 - **Web (Angular 20):** `npm ci && npm run build -- --configuration production` →
   **succeeds** (one non-blocking CSS budget warning on `ltl-search.css`).
-- **API (.NET 10):** xUnit suite (~300 test methods) + SQL Server migration verification
-  run in CI (`.github/workflows/ci.yml`: `api`, `migration-sqlserver`, `web` jobs). The
-  .NET SDK was **not available in the runbook authoring environment**, so `dotnet test`
-  was not re-run locally — rely on the green CI on `main` (through PR #18) for API/test
-  and migration verification.
+- **API (.NET 10):** xUnit suite + SQL Server migration verification runs in CI
+  (`.github/workflows/ci.yml`). As of the Phase 0 Stability slice, CI runs **four jobs**:
+  `api` (`dotnet test -c Release`), `migration-sqlserver` (`Category=SqlServerMigration`),
+  `web` (`npm run build` production), and `web-test` (`npm test`,
+  `ng test --watch=false --browsers=ChromeHeadless`). Phase 0 also added a contract-
+  preserving test that asserts every LTL endpoint in `CLAUDE.md` § "Current API surface
+  (preserve)" stays mapped and behind `AllowedEmailDomain`. The .NET SDK was **not
+  available in the runbook authoring environment**, so `dotnet test` was not re-run
+  locally — rely on the green CI on `main` for API/test and migration verification.
 
 ---
 
@@ -253,3 +257,43 @@ The demo does **not** require a live tenant. If creds or sandbox data are missin
   blocker, a warning, and a ready-to-bill state, so the match/assign/bill story lands.
 - If remote: demo against the **Azure-hosted** environment so testers get a stable URL
   (see [`AZURE_HOSTING.md`](AZURE_HOSTING.md)); optionally map a custom domain.
+
+---
+
+## 12. Phase 0 Stability checklist (Search → Match → Assign → Bill)
+
+Mirrors the Phase 0 exit criteria in [`ROADMAP.md`](../ROADMAP.md). Every net-new LTL
+feature (Phase 1+) is deferred until every box below is checked on `main`.
+
+**Search stable**
+- [ ] `/ltl` Search renders in both `Fallback` and `Live` provider modes without console errors.
+- [ ] Saved views: create / rename / delete / reload survives across app restart (locked by `EfSavedViewStoreTests`).
+- [x] Sort keeps missing/null values last in both directions (locked by `LtlLoadServiceSortTests`).
+- [ ] Billing badge filter uses signal-safe binding (Angular spec pending in the next Phase 0 PR).
+- [ ] Bounded-sweep truncation message reflects `Ltl:MaxLoadsScanned` honestly.
+- [ ] Loading / empty / error / paginated states render cleanly under real Alvys 401 / 429 / 500 responses.
+
+**Match stable**
+- [x] Exclude-when-Unavailable denominator is locked (`MatchScoringServiceTests`).
+- [x] Hard-disqualifier caps produce `Not Recommended` (`MatchScoringServiceTests`).
+- [x] Equipment availability factor reads `Unavailable` when events not fetched, `Weak` on OOS overlap.
+
+**Assign stable**
+- [x] Every blocker returns 422 and never records (`AssignmentValidationServiceTests`).
+- [x] Every warning records and persists `overrideReason`.
+- [x] Every assignment audit entry carries `AlvysWriteback = NotPerformed` in this phase.
+- [ ] SPA panel label reads "Not pushed to Alvys" on every path (verified in template `ltl-search.html`; Angular assertion pending in the next Phase 0 PR).
+
+**Bill stable**
+- [x] POD-aware readiness: POD absence blocks Ready-to-Bill when documents supplied; not-evaluated when absent (`BillingReadinessServiceTests`).
+- [x] Invoice aging + carrier-payable margin render on load detail (PR #30 tests).
+- [ ] `Ltl:MaxVisibilityEnriched` bounded-enrichment banner shows on the Exceptions tab.
+
+**Cross-cutting**
+- [x] CI matrix is four jobs (api / migration-sqlserver / web / web-test).
+- [x] LTL API surface is contract-locked (`LtlApiSurfaceContractTests`).
+- [x] `AlvysWriteOptions` production-host rejection is locked (`AlvysWriteOptionsTests`).
+- [x] UAT health workflow probes `/api/ltl/search` and `/api/alvys/ops/status` (expect 401 on unauth).
+- [x] Alvys is the sole source of truth per `CLAUDE.md` Safety principles (no non-Alvys / non-DOT data paths).
+- [ ] One clean end-to-end deploy has completed to Azure UAT App Service (blocked on Azure/Entra secrets landing in the `uat` environment).
+- [x] No open TODO/FIXME/HACK in `src/LtlTool.Api/Features/Ltl/*` or `web/src/app/features/ltl/*` (swept 2026-07-15).
