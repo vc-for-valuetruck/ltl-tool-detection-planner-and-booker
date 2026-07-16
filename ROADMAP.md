@@ -80,40 +80,104 @@ These are non-negotiable and copied straight from `CLAUDE.md`:
 
 Phases are ordered by dependency and by dispatcher/billing value, not by calendar. Each phase names the files to inspect/edit, the API/UI surface it touches, UAT-ready scope, what to defer, and risks.
 
-### Phase 0 — Get the runway green (foundation)
+### Phase 0 — Stability (Search → Match → Assign → Bill locked down)
 
-**Goal.** Make sure a fresh clone and every PR path lands stable, deployable, and demonstrable before piling on features.
+**Goal.** Freeze net-new LTL feature work until **Search → Match → Assign → Bill** is stable end-to-end: green CI on every PR, a clean UAT deploy, no known regressions on the four workflow stages, and guardrail tests around the areas most likely to silently break. Nothing in Phase 1+ starts until this phase lands.
+
+**Why this is now Phase 0.** Direction from Josh (2026-07-15): stability over scope. The tool is only useful when the four-stage workflow runs cleanly on the current merged surface — adding a Consolidation Planner or a Match factor on top of a shaky base makes the tool worse, not better.
+
+**Success criteria (all four stages must clear)**
+
+1. **Search stable.**
+   - `/ltl` Search renders in both `Fallback` and `Live` provider modes without console errors.
+   - Saved views: create / rename / delete / reload survives; the migration is verified in the `migration-sqlserver` CI job.
+   - Sort keeps missing/null values last in both directions (PR #24 behavior — add a regression test in `src/LtlTool.Api.Tests/Ltl/` if one does not exist).
+   - Billing badge filter uses signal-safe binding (PR #24 behavior — covered by an Angular spec, not just observed manually).
+   - Bounded-sweep truncation message reflects `Ltl:MaxLoadsScanned` honestly.
+   - Loading / empty / error / paginated states all render cleanly, including with real Alvys 401 / 429 / 500 responses (already handled server-side; verify the SPA does not crash on the shape).
+
+2. **Match stable.**
+   - `GET /api/ltl/loads/{idOrNumber}/matches` returns a deterministic ranking for a fixed input; snapshot-style test locks the ordering and per-factor breakdown.
+   - Score formula (`earned / availableMax × 100`) is unit-tested for the exclude-when-Unavailable contract — factors with no data must not appear in the denominator.
+   - Hard-disqualifier caps (expired license/medical, terminated driver, over capacity) always produce **Not Recommended** with a stated reason.
+   - Equipment availability factor reads `Unavailable` (excluded) when equipment events were not fetched and `Weak` when a maintenance/OOS event overlaps the load window — both paths covered by tests.
+
+3. **Assign stable.**
+   - `POST /api/ltl/loads/{idOrNumber}/assign/validate` and `POST /api/ltl/loads/{idOrNumber}/assign` behave identically for the same input; blockers return 422 and never record; warnings record and persist `overrideReason`.
+   - Every assignment audit entry carries `AlvysWriteback = NotPerformed` in this phase (nothing else is allowed until Phase 5 sandbox arms).
+   - `GET /api/ltl/loads/{idOrNumber}/assignments` returns full history including override reasons.
+   - SPA panel label reads **"Not pushed to Alvys"** on every path (assign, validate, drawer, history) — covered by an Angular assertion.
+
+4. **Bill stable.**
+   - `GET /api/ltl/billing/worklist?badge=` returns readiness-first ordering; every badge from the current set (Ready to Bill / Missing Rate / Missing POD / Missing Accessorial Review / Missing Weight / Customer Review Needed / Exception Blocking Billing / Already Invoiced) renders and filters correctly.
+   - Invoice aging + carrier-payable margin (PR #30) render on load detail and are covered by a test.
+   - `Ltl:MaxVisibilityEnriched` bounded-enrichment banner shows on the Exceptions tab so `NotEvaluated` visibility is explained, not silent.
 
 **What repo currently has**
-- CI (`.github/workflows/ci.yml`) with api / migration-sqlserver / web jobs.
-- UAT workflows (`deploy-ltl-uat.yml`, `provision-ltl-uat-infra.yml`, `verify-ltl-uat-health.yml`) set to manual until secrets exist.
-- `docs/LTL_DEMO_RUNBOOK.md` documenting the Fallback vs Live behaviour.
+- CI (`.github/workflows/ci.yml`) with **api / migration-sqlserver / web** jobs. Web builds but does not test — documented gap in `CLAUDE.md`.
+- UAT workflows (`deploy-ltl-uat.yml`, `provision-ltl-uat-infra.yml`, `verify-ltl-uat-health.yml`) set to **manual** until secrets exist (PR #34).
+- App Service UAT pattern rebuilt from freight-dna (PR #31 — replaced the earlier Container Apps path).
+- Alvys write boundary architecturally unreachable for production (`AlvysWriteOptions.HasSandboxBaseUrl` rejects the production host).
+- Full offline Alvys test doubles (`AlvysTestDoubles.cs`); Alvys tests run with no network.
 
 **What needs to change**
-- Fill in Azure UAT secrets (subscription, resource group, app service, GHCR, Key Vault) and flip the UAT workflows off manual once they pass on `main` once.
-- Add a **web unit-test job** to `ci.yml` (`npm test -- --watch=false`); today CI builds the web app but does not run web tests — this is documented in `CLAUDE.md` as a known gap.
-- Add a lightweight **build badge + last-deploy badge** to the README so the state of `main` is visible at a glance.
-- Confirm one Entra app registration + redirect URI for the deployed Web URL and record it in `docs/AZURE_UAT_DEPLOY.md`.
-- Decide provider posture per environment (`Fallback` for shared demo, `Live` for dispatch UAT) and document it next to the workflow.
+
+*CI & deploy*
+- Add a **web unit-test job** to `ci.yml`: `npm ci && npm test -- --watch=false --browsers=ChromeHeadless`. This closes the known `CLAUDE.md` gap and prevents Angular regressions on `ltl-search.ts` / `saved-views.ts` from slipping in on green PRs.
+- Add a **contract-preserving-tests** step that asserts the current LTL API surface still exists exactly as documented in `CLAUDE.md` § "Current API surface (preserve)". Any accidental route/verb rename fails CI.
+- Fill in Azure UAT secrets (subscription, resource group, App Service, GHCR, Key Vault, Entra client ids / secret / redirect URI). Flip UAT workflows off manual **only after** one clean end-to-end deploy on `main`.
+- Extend `verify-ltl-uat-health.yml` to hit `GET /api/health`, `GET /api/ltl/search` (expect 401 without auth — proves route is mapped + protected), and `GET /api/alvys/ops/status` (same 401 assertion).
+- Add a build badge + last-deploy badge to `README.md`.
+
+*Regression guard tests (targeted at silent-failure surfaces)*
+- `LtlLoadServiceTests` — lock the null-last sort in both directions.
+- `LtlSearchAngularTests` (component spec) — lock the signal-safe billing-badge binding, saved-view chip round-trip, and applied-filter chip removal.
+- `MatchScoringServiceTests` — lock the exclude-when-Unavailable denominator contract, hard-disqualifier cap, and label boundaries.
+- `AssignmentValidationServiceTests` — every blocker returns 422 and does not record; every warning records and persists override reason.
+- `BillingReadinessServiceTests` — every badge path has a test; POD absence blocks Ready-to-Bill.
+- `AlvysWriteOptionsTests` — assert that the production host is rejected by `HasSandboxBaseUrl`. This is the writeback safety guarantee and should never regress silently.
+- `SavedViewsMigrationTests` — already runs under `Category=SqlServerMigration`; add a round-trip persistence test that survives an app restart.
+
+*Docs*
+- Update `docs/LTL_DEMO_RUNBOOK.md` — add a §12 "Stability checklist" section mirroring the four-stage success criteria above.
+- Update `README.md` §10 "UAT guidance" to reference the stability checklist.
+- Update `CLAUDE.md` — remove the note that CI does not run web tests once the web-test job lands.
+
+*Housekeeping*
+- Sweep for any TODO/FIXME/HACK comments in `src/LtlTool.Api/Features/Ltl/*` and `web/src/app/features/ltl/*`; each one is either closed with a linked issue or resolved before Phase 0 exits.
+- Confirm no dead code paths remain from the cancelled outbox/idempotency slice (per `docs/LTL_DEMO_RUNBOOK.md` §8).
+- Bump dependencies once, run full CI, freeze. Do not bump again mid-phase.
 
 **Exact files to inspect/edit**
 - `.github/workflows/ci.yml`, `deploy-ltl-uat.yml`, `provision-ltl-uat-infra.yml`, `verify-ltl-uat-health.yml`.
-- `docs/AZURE_HOSTING.md`, `docs/AZURE_UAT_DEPLOY.md`, `README.md`, `.env.example`.
+- `docs/AZURE_HOSTING.md`, `docs/AZURE_UAT_DEPLOY.md`, `docs/LTL_DEMO_RUNBOOK.md`, `README.md`, `CLAUDE.md`, `.env.example`.
+- `src/LtlTool.Api/Features/Ltl/*` (targeted test additions only; no behavior changes).
+- `src/LtlTool.Api.Tests/Ltl/*` and `src/LtlTool.Api.Tests/Alvys/*` (new tests).
+- `web/src/app/features/ltl/*.spec.ts` (new + expanded specs).
 
-**Backend/API impact.** None functional; wiring only.
-**Frontend impact.** None; a web test job is a CI addition.
+**Backend/API impact.** None functional. No new endpoints, no behavior changes. Tests + one new CI job only.
+**Frontend impact.** None functional. Specs added; UI untouched.
 
-**UAT-ready scope**
-- One dispatcher can reach the deployed Web URL, sign in via Entra, land on `/ltl`, and see Search render (empty in Fallback, live in Live).
-- CI badge is green on `main`; UAT deploy has run at least once end-to-end.
+**UAT-ready scope (definition of "stable")**
+- `main` is green on every PR through the full four-job CI matrix (api / migration-sqlserver / web-build / web-test).
+- One clean end-to-end deploy has completed to Azure UAT App Service.
+- A dispatcher can execute **Search → Match → Assign → Bill** on the deployed URL without hitting a known bug.
+- Every guardrail test above is committed and passing.
+- No open TODO/FIXME/HACK in the LTL feature paths.
+- Alvys posture is provably read-only in every environment (writeback tests pass; production host still architecturally rejected).
 
-**Defer**
-- Multi-environment matrix (staging + prod) — one working UAT first.
-- Automated smoke tests against the deployed URL beyond the existing `verify-ltl-uat-health.yml`.
+**Defer (explicitly)**
+- Phase 1 Search hardening.
+- Phase 2 Match depth (window feasibility, dispatch preferences).
+- Phase 2.5 Consolidation Planner.
+- Phase 3 Assign hardening, Phase 3.5 Accessorial Review, Phase 4 Bill leakage.
+- Phase 5 sandbox writeback and everything downstream.
+- Any dependency bumps beyond the single sweep noted above.
 
 **Risks / dependencies**
-- Requires Azure subscription + GitHub environment secrets + Entra app registration decisions.
-- If secrets remain unavailable, keep workflows manual and lean on local `make build` for demos.
+- Requires Azure UAT secrets and Entra app registration values. If those are blocked, freeze the deploy portion of this phase and land only the CI + tests + docs portion — do not let "we can't deploy yet" delay the stability tests.
+- Adding a web-test job may reveal existing failures. That is the point — they get fixed here, not deferred.
+- Do not use this phase as cover for silent refactors. Behavior stays identical; only tests, CI, and docs move.
 
 ---
 
@@ -534,7 +598,7 @@ These run in parallel, not on their own timeline.
 
 Re-ordered after the Phoenix yard visit — Junior/Holly/Brian are the actual users, and their workflow is consolidation, not just search. Order matters more than timing.
 
-1. **Phase 0** — CI web test job, Azure UAT secrets, one clean deploy on `main`. Nothing else ships smoothly until this is done.
+1. **Phase 0 — Stability.** Search → Match → Assign → Bill locked down: green CI (with the new web-test job), one clean UAT deploy, guardrail tests around every silent-failure surface, no open TODO/FIXME in the LTL feature paths. **Nothing else starts until this phase lands.**
 2. **Phase 1** — Search hardening (workflow-stage filter parity, truncation banner, keyboard nav, column persistence). Highest daily-use return per hour of dev.
 3. **Phase 2.5** — **Consolidation Planner.** This is now the top product priority. It is the workflow Junior actually runs; the tool becomes real to him the day this ships. Uses only read-only Alvys signals + internal audit — no writeback risk.
 4. **Phase 2** — Match engine depth (window feasibility + dispatch preferences). Feeds Phase 2.5 and sharpens the "explainable" claim.
@@ -558,6 +622,7 @@ A short changelog so future readers know why the sequence looks the way it does:
 - Added **per-customer `AllowConsolidation` policy store**. Not a global flag; not invented. Ships empty and defaults to `Unknown → confirm with account owner`.
 - Added **consolidation opportunity, accessorial evidence, and customer-visibility posture** as first-class Phase 6 signal types.
 - Reframed the demo audience: it is Junior + Holly + Brian + Jason, not just Jason. The `docs/LTL_DEMO_RUNBOOK.md` should get a Consolidate walkthrough before the next demo.
+- **Phase 0 rewritten as Stability** per Josh's direction (2026-07-15, "stable Search → Match → Assign → Bill"). Freezes net-new work until the current four-stage workflow is provably stable on `main` and deployed UAT.
 
 Anything that would violate the guardrails in section 2 is not on the roadmap regardless of value.
 
