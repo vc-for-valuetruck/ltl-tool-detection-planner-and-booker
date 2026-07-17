@@ -7,6 +7,60 @@ Newest at top. When a decision is superseded, mark it and link forward.
 
 ---
 
+## 2026-07-17 (later) · MCP proven live for Value Truck (`org_id=org_4C3HR7pSPWcXWkuo`, `org_name=va336`)
+
+**Source.** Live `tools/list` call against `https://mcp.alvys.com/mcp` using the LTL tool's
+existing `ALVYS_CLIENT_ID` + `ALVYS_CLIENT_SECRET`. HTTP 200, 40 tools returned.
+
+**Decision.** MCP is proven working end-to-end for our tenant. Reuben's portal-activation
+cleared and the Auth0 organization on the M2M app resolves cleanly. Client configs (Claude
+Desktop, Cursor, Claude Code CLI) are ready to receive the bearer token.
+
+**Key claim from the token JWT (for the record):**
+- `iss=https://auth.alvys.com/`, `aud=https://api.alvys.com/public/` (with trailing `/public/`)
+- `client_name=public-api-va336-freightdnaprod` (prod, not sandbox)
+- `org_id=org_4C3HR7pSPWcXWkuo`, `org_name=va336`
+- 69 scopes on the token, including all 14 required MCP read scopes plus every write scope
+- 1-hour TTL
+
+**Tool catalog surprise.** The live server returns **40 tools** vs. the ~30 the docs page
+listed at the time this decision was written. Includes a real `trips_update_stop_appointment`
+split out from the generic `trips_update_stop_status`, plus `trips_record_arrival` and
+`trips_record_departure` as separate tools. Alvys is iterating on the server; treat the docs
+page as approximately-current, not authoritative.
+
+---
+
+## 2026-07-17 (later) · `trips_assign` IS on the MCP surface — partial correction to "internal API only"
+
+**Source.** Same live `tools/list` call above.
+
+**Decision.** The earlier decision "Public API is read-only forever; writes go through the
+internal API" was **partially wrong**. Corrected picture:
+
+| Phase 5 write | Public API via MCP? | Internal API only? |
+| --- | --- | --- |
+| Waypoint creation (`add-extended-stop`) | ❌ | ✅ (per Reuben) |
+| Zero `dispatch_miles` on child load | ❌ (no `load-update` on MCP) | ✅ |
+| `LTL` boolean + `main_load_id` trip references | ❌ (no reference-write tool on MCP) | ✅ |
+| `trips_assign` (driver / truck / trailer) | ✅ **exists** — gated by `Mcp:EnableWriteTools` (off during beta) | Reuben-sanctioned path also works |
+| Stop arrival/departure (`trips_record_arrival`, `trips_record_departure`) | ✅ **exists** — same gate | — |
+| Stop appointment update (`trips_update_stop_appointment`) | ✅ **exists** — same gate | — |
+
+**Consequence.** Phase 5 has a **branching strategy**:
+- Waypoint, mileage zeroing, and reference writes still route through the internal API
+  (`AlvysInternalWriteClient` per the previous decision, unchanged).
+- `trip-assign` and stop status recording can route through MCP once Alvys lifts
+  `Mcp:EnableWriteTools`. In the meantime, the Reuben-sanctioned internal path is the fallback.
+- The `IAlvysWriteClient` abstraction stays useful — it just gains a second implementation
+  (`AlvysMcpWriteClient`) alongside the Reuben-internal one. Selection happens per operation.
+
+**Follow-up.** Update the Phase 5 section of `ROADMAP.md` when we actually start Phase 5
+coding, not now — the beta gate on `Mcp:EnableWriteTools` may lift before we ship, and the
+selection logic depends on which is available when we're actually cutting code.
+
+---
+
 ## 2026-07-17 · Public API is read-only forever; writes go through the internal API
 
 **Source.** [Reuben sync transcript, 2026-07-17](transcripts/2026-07-17-reuben-sync.md), 00:00 and 01:11.
