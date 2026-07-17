@@ -256,6 +256,8 @@ Phases are ordered by dependency and by dispatcher/billing value, not by calenda
 
 **Goal.** Give Junior, Holly, and Brian a screen that identifies consolidation candidates from live Alvys orders, lets them merge into a parent trip with zeroed-out child miles and an LTL trip reference, and captures the revenue picture across the combined move — the exact workflow they run today by hand.
 
+**Phase 1 pilot status (Laredo → Dallas) — delivered.** The pilot slice landed across PRs #46 (spec + mockups), #47 (candidate service + endpoint), #48 (plan service + endpoint), #49 (audit store + endpoints), #50 (Angular Consolidate tab), and this doc PR (runbook §13). Read-only end-to-end; the click card is text the dispatcher pastes into Alvys manually. Corridor is scoped to `LAREDO_TO_DALLAS`, warehouses are Laredo + Dallas 154-door, per-customer policy defaults to `Unknown → confirm with account owner`. See `docs/PILOT_LAREDO_DALLAS.md` and `docs/LTL_DEMO_RUNBOOK.md` §13.
+
 **Field context (from the yard visit).**
 - Junior physically does this today: 2 Verdef loads to Goodyear + a partial to Phoenix on one trailer, delivered by one linehaul driver and two local hourly drivers. One trailer earned $8,000+ instead of $4,000 per load individually.
 - The current Alvys workaround is dummy loads (W1/W2, W1 = asset, W2 = flatbed), all-miles-on-parent, zero-miles-on-children, revenue captured on the main trip. Poornima walked Holly through the intended path: an LTL trip reference (boolean + main-load id), assign the same driver/truck/trailer across sibling trips, zero out `loaded miles` on children, and use a report filter to see the combined RPM.
@@ -304,11 +306,13 @@ Phases are ordered by dependency and by dispatcher/billing value, not by calenda
 **Frontend impact.** New Consolidate tab; new per-customer allow-flag chips on Search rows.
 
 **UAT-ready scope**
-- Junior picks a Verdef load, sees a ranked list of sibling candidates that share Laredo consolidation and a Goodyear-area delivery.
-- The plan preview shows: parent trip carries all miles, children zero out, combined RPM projection is visible, trip-reference value is generated and copyable.
-- Customer allow-flag shows honestly: green for Masonite/Irving with `AllowConsolidation=true`, yellow "confirm with account owner" for `Unknown`, red for customers flagged as never-consolidate.
-- Missing pallet/weight is surfaced as "unknown — visual verify at warehouse" rather than blocking the plan.
-- The plan is auditable as an internal decision (same posture as assignment). No Alvys mutation yet.
+- [x] Junior picks a load, sees a ranked list of sibling candidates along the pilot corridor with per-factor chips (Lane / Timing / Customer).
+- [x] The plan preview shows: parent trip carries all miles, children zero out (dispatcher does this manually in Alvys per the click card), combined RPM projection is visible, trip-reference and Main-Load-Id values are generated and copyable.
+- [x] Customer allow-flag shows honestly: `Allowed` (green), `NotifyRequired` (amber "confirm with account owner"), `Never` (red, blocks selection), `Unknown` (grey — defaults to confirm, never silent-allow).
+- [x] Missing pallet/weight is surfaced as "visual verify" rather than blocking the plan.
+- [x] The plan is auditable as an internal decision (in-memory audit store, `POST /api/ltl/consolidation/plan/audit`, `GET /api/ltl/consolidation/plan/audits`). No Alvys mutation.
+- [ ] Extend beyond the pilot corridor once Phoenix/LA warehouses are configured (Phase 3 corridor expansion).
+- [ ] EF-backed audit persistence (swap `InMemoryConsolidationAuditStore` → `EfConsolidationAuditStore` alongside Phase 2 writeback).
 
 **Defer**
 - Auto-generating the Alvys trip-reference field via writeback — this rides on Phase 5 sandbox writeback (specifically `load-update` or a `trip-reference` operation once contract is confirmed).

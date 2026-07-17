@@ -297,3 +297,81 @@ feature (Phase 1+) is deferred until every box below is checked on `main`.
 - [x] Alvys is the sole source of truth per `CLAUDE.md` Safety principles (no non-Alvys / non-DOT data paths).
 - [ ] One clean end-to-end deploy has completed to Azure UAT App Service (blocked on Azure/Entra secrets landing in the `uat` environment).
 - [x] No open TODO/FIXME/HACK in `src/LtlTool.Api/Features/Ltl/*` or `web/src/app/features/ltl/*` (swept 2026-07-15).
+
+## 13. Consolidate walkthrough (Phase 1 pilot: Laredo → Dallas)
+
+The Consolidate tab at `/ltl/consolidate` is the Phase 1 pilot deliverable Jason asked for during the LTL expert session. It is intentionally narrow: **one corridor** (`LAREDO_TO_DALLAS`), **one workflow** (find sibling → build preview → hand a click card to the dispatcher), and **zero writes to Alvys**. If any of those three shift during the demo, stop and re-read `docs/PILOT_LAREDO_DALLAS.md`.
+
+### 13.1 What to say up front
+
+> "This is the Laredo → Dallas pilot. Everything you see is either directly from Alvys or from a policy file Jose Skoog and I control together. The tool never writes to Alvys — the last screen is a click card the dispatcher pastes manually, exactly like Poornima demonstrated on the yard visit."
+
+That framing does three jobs:
+1. Sets the corridor scope so nobody asks about Phoenix or LA today.
+2. Sets the read-only posture so leadership does not confuse this for a "does everything" upgrade.
+3. Anchors the click card as the sanctioned Alvys walkthrough — not a shortcut.
+
+### 13.2 Pre-flight (5 minutes before you demo)
+
+1. Web app is up at `/ltl/consolidate` and responds with the Consolidate header (not a router fallback).
+2. `/api/ltl/consolidation/candidates?loadId=<any Laredo-origin load>&corridor=LAREDO_TO_DALLAS` returns a `corridorCode` of `LAREDO_TO_DALLAS`. If it does not resolve the seed, pick a different seed load id.
+3. Pick your seed once, before the demo. Do not scroll a list on stage looking for one.
+4. If Alvys is degraded, note it up front and skip to §13.6 (Failure modes) rather than pretending the sweep is comprehensive.
+
+### 13.3 Screen 1 — Find candidates
+
+Enter the seed load id, click **Find candidates**. What the audience should see (and what to point at):
+
+- **Corridor banner** — "Laredo → Dallas pilot corridor · Phase 1 · Pilot · Read-only". Call it out. This is the scope contract.
+- **Seed summary panel** (green) — parent customer, origin → destination, pickup date, revenue. Confirm out loud that this is the live Alvys record.
+- **Candidate table** with per-row **Lane fit / Timing fit / Customer** chips:
+  - `Good` (green) — no cautions.
+  - `Tight` (amber) — allowed but flagged; hover the cell to see the rationale.
+  - `Blocked` (red) — the row is dim, the checkbox is disabled, and the customer chip usually reads `Never`.
+  - `Unknown` (grey) — Alvys did not return enough to judge. **Never silent-allow.**
+
+Speak the pattern once: **"The chips are a three-factor read of the row — lane geometry, timing fit, and customer policy. There is no numeric score. Blocked candidates cannot be selected."**
+
+If the sweep truncated (an amber banner appears), say so. Do not claim the list is exhaustive when it is not.
+
+### 13.4 Screen 2 — Plan preview
+
+Select one or two non-blocked siblings and click **Build plan preview →**.
+
+- **Siblings panel** — each sibling row shows load number, customer, tier tag, and per-sibling cautions (⚠). If a sibling is a `NotifyRequired` customer (e.g. Masonite, Irving), the cautions list will say so; that is the moment to add the "we tell the account owner before we consolidate" narrative from the yard visit.
+- **Economics panel (right column)** — parent revenue, per-sibling revenue, combined revenue, parent linehaul miles, combined RPM. The combined-RPM row is the single number leadership will ask about. If the plan is clean, that number is the whole business outcome of the pilot in one line.
+- **Blockers banner** (red) — if any policy or corridor gate fails after preview, the plan renders with a blockers list and no audit-record button. Show one at least once (pick a Kroger sibling if the data allows) so leadership sees the tool refusing a bad plan out loud.
+
+Say it: **"This is a preview — nothing has moved in Alvys. We are looking at the projected value of doing this consolidation."**
+
+### 13.5 Screen 3 — Click card + audit
+
+- **Click card (dark panel)** — plain-text, monospaced. The exact steps Poornima walked us through: parent gets **Add stop → Waypoint** for the sibling delivery, sibling loaded miles zeroed, both loads get the `LTL=<parent number>` trip reference and the `Main Load Id = <parent>` reference, combined RPM is viewed in the Trips report AND filter. Read at least the trip-reference and Main-Load-Id lines out loud so the audience knows the tool is not inventing an Alvys workflow.
+- **Copy to clipboard** — one click; confirmation appears next to the button. In production this is what the dispatcher pastes into a note.
+- **Record plan as audit entry** — POSTs to `/api/ltl/consolidation/plan/audit`. Returns an id, projected combined revenue, projected combined RPM, and `Alvys writeback: NotPerformed`. This is the leadership-facing counter-signal to commission politics (anti-failure map 3h) — the running record of value the tool caught.
+
+Say it: **"The tool never mutated Alvys. What we recorded is our own audit trail — leadership can review it any time via `GET /api/ltl/consolidation/plan/audits`, and this is what we point at when the incentive plan pushes back on consolidating."**
+
+### 13.6 Failure modes and how to talk about them
+
+- **Seed does not resolve** — "Alvys did not return that load id. Not our tool inventing something; Alvys said no." Pick a different seed.
+- **Empty candidate list** — "Alvys has no corridor-matching siblings open right now. That is the correct answer, not a bug — the tool refuses to guess."
+- **Plan builds with blockers** — "The tool caught a customer or corridor gate. We show the plan so the dispatcher sees why it is refused, not just that it is refused."
+- **Audit POST returns 400** — the server rejected the plan (usually corridor or parent mismatch discovered on rebuild). Re-run **Build plan preview** and check the blockers list.
+- **API 401** — auth expired. Reload and sign in, exactly as with Search.
+
+### 13.7 Do-not-demo items (Phase 1 pilot only)
+
+- Do not click into Alvys and execute the plan on stage. The dispatcher does that after the meeting, following the click card. Phase 2 is where the tool executes on their behalf — that requires the Alvys API-permission conversation with Poornima and Justin.
+- Do not extend the corridor on stage. If Ben, Junior, or Holly asks about Phoenix or LA, answer: **"That is Phase 3 corridor expansion. It slots into the same UI once we have completed the Alvys write conversation for Phase 2. We stay on Laredo → Dallas today."**
+- Do not describe the fit chips as a "score". They are policy signals, not a ranking model. Anti-failure map 3b: the artifact the operator holds has to survive scrutiny; a scoring number invites scrutiny the pilot is not ready to defend.
+
+### 13.8 Files that back this walkthrough
+
+- Route: `web/src/app/app.routes.ts` — `/ltl/consolidate` lazy-loaded.
+- Component: `web/src/app/features/ltl/consolidate.ts` / `.html` / `.css`.
+- Client: `web/src/app/features/ltl/consolidation.service.ts`, `consolidation.models.ts`.
+- Backend feature slice: `src/LtlTool.Api/Features/Ltl/Consolidation/` — `ConsolidationOptions.cs`, `ConsolidationModels.cs`, `ConsolidationCandidateService.cs`, `ConsolidationPlanService.cs`, `ConsolidationAuditStore.cs`, `ConsolidationController.cs`.
+- Pilot spec: `docs/PILOT_LAREDO_DALLAS.md`.
+- Mockups (design intent): `docs/pilot-mockups/screen-{1,2,3}-*.png`.
+- API surface contract lock: `CLAUDE.md` § "Current API surface (preserve)" and `LtlApiSurfaceContractTests`.
