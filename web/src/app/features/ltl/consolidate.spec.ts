@@ -8,6 +8,14 @@ import { ConsolidationService } from './consolidation.service';
 import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
+import { RUNTIME_CONFIG, RuntimeConfig } from '../../runtime-config';
+
+const TEST_RUNTIME_CONFIG: RuntimeConfig = {
+  tenantId: 'test-tenant',
+  clientId: 'test-client',
+  apiScope: 'api://test/.default',
+  apiBaseUrl: '/api',
+};
 
 /**
  * Focused component tests for the Consolidate tab. We construct the component with a stubbed
@@ -38,7 +46,10 @@ describe('Consolidate component', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [HttpClientTestingModule],
-      providers: [provideRouter([])],
+      providers: [
+        provideRouter([]),
+        { provide: RUNTIME_CONFIG, useValue: TEST_RUNTIME_CONFIG },
+      ],
     });
   });
 
