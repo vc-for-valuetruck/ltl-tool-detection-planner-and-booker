@@ -92,17 +92,33 @@ defensible recommendations, and revenue protection.
 Angular `/ltl` provides Search, Billing Worklist, Exceptions, detail drawer,
 recommended matches, assignment validation, billing readiness, visibility, saved views.
 
-### Alvys sandbox writeback boundary
+### Alvys writeback boundary
 
 The Alvys write boundary (`src/LtlTool.Api/Features/Integrations/Alvys/Writeback/*`)
-exposes sandbox-gated write operations through `/api/alvys/ops`. Operations:
+exposes gated write operations through `/api/alvys/ops`. Operations:
 `create-load-note`, `tender-accept`, `trip-stop-arrival`, `trip-stop-departure`,
 `load-update` (only `OrderNumber` writable today), `trip-assign`, `trip-dispatch`,
 `carrier-status-update`. Every write is gateway-validated, idempotency-keyed
 (resource identity + payload), recorded to a durable outbox storing **no secrets**, and
-executed only when sandbox config is fully present. Failed sandbox writes surface as
-`SandboxFailed` → HTTP 502, never a false success. Endpoint paths/verbs/bodies are
-grounded in the official Alvys API docs — do not invent routes.
+executed only when writeback config is fully present. Failed writes surface as
+`InternalFailed` → HTTP 502, never a false success. Endpoint paths/verbs/bodies are
+grounded in the Alvys API docs (for Public-API operations) or in the observed
+endpoint table in `docs/ALVYS_API_DECISIONS.md` (for internal-API operations) — do
+not invent routes.
+
+**Public API vs. internal API (2026-07-17 pivot).** The Alvys Public API is
+read-only for the LTL tool's Phase 2 consolidation writes (Waypoint creation,
+`dispatch_miles` zeroing, `LTL` + `main_load_id` references, `trip-assign`).
+Confirmed by Alvys lead engineer Reuben Sheyko — see
+[`docs/ALVYS_API_DECISIONS.md`](docs/ALVYS_API_DECISIONS.md) and the transcript
+at [`docs/transcripts/2026-07-17-reuben-sync.md`](docs/transcripts/2026-07-17-reuben-sync.md).
+All Phase 5 writeback runs through the **Alvys internal API** (the endpoints
+the Alvys web UI itself calls), authenticated with an active user's Auth0
+session token rather than the client-credentials token the Public API + MCP
+use. Internal-API endpoints are **observed, not contracted** — they can change
+on Alvys' side without notice. Every internal-endpoint call site needs a
+regression test that fails loudly (not silently) when the endpoint returns a
+differently-shaped response than the recorded snapshot.
 
 ## Write targets
 
