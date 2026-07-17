@@ -88,6 +88,101 @@ public sealed class ConsolidationCandidate
 }
 
 /// <summary>
+/// Client request for a consolidation plan preview: a parent load plus one or more sibling
+/// loads on the same pilot corridor. The server verifies every id resolves against live
+/// Alvys, applies the same corridor + customer-policy gates as the candidate service, and
+/// returns the plan preview + click-card content. Nothing writes upstream.
+/// </summary>
+public sealed class ConsolidationPlanRequest
+{
+    public string ParentLoadId { get; set; } = "";
+    public List<string> SiblingLoadIds { get; set; } = [];
+    public string? CorridorCode { get; set; }
+}
+
+/// <summary>
+/// One sibling row inside a plan preview: the load's identifier, its origin/destination
+/// labels, its revenue (when Alvys carries a rate), and any operational cautions the
+/// planner surfaced (missing pallet count, unknown customer policy, etc). No fabricated
+/// values.
+/// </summary>
+public sealed class ConsolidationPlanSibling
+{
+    public required string LoadId { get; init; }
+    public string? LoadNumber { get; init; }
+    public string? CustomerName { get; init; }
+    public string? OriginLabel { get; init; }
+    public string? DestinationLabel { get; init; }
+    public DateTimeOffset? ScheduledPickupAt { get; init; }
+    public DateTimeOffset? ScheduledDeliveryAt { get; init; }
+    public decimal? Revenue { get; init; }
+    public decimal? WeightLbs { get; init; }
+    public CustomerConsolidationTier CustomerTier { get; init; }
+
+    /// <summary>
+    /// Plain-language cautions the dispatcher must resolve before executing this plan.
+    /// Examples: "L-100237 pallet count is missing — visual verify at Laredo dock",
+    /// "Masonite requires customer notification before consolidation".
+    /// </summary>
+    public IReadOnlyList<string> Cautions { get; init; } = [];
+}
+
+/// <summary>
+/// Server-generated content of the copy-pasteable Alvys click card. The service produces
+/// this deterministically so the dispatcher pastes the exact text into Alvys — no
+/// hand-editing of trip-reference values or waypoint instructions.
+/// </summary>
+public sealed class ConsolidationClickCard
+{
+    /// <summary>The full click card as one multi-line string, ready to copy.</summary>
+    public required string PlainText { get; init; }
+
+    /// <summary>The Alvys trip-reference value the dispatcher pastes on parent + siblings.</summary>
+    public required string TripReferenceValue { get; init; }
+
+    /// <summary>The main-load id the dispatcher pastes on siblings pointing at the parent.</summary>
+    public required string MainLoadIdReferenceValue { get; init; }
+}
+
+/// <summary>
+/// Full plan preview response. The service treats plan generation as a preview action —
+/// even the audit store is a separate call (see follow-up PR) — because Phase 1 is
+/// explicitly read-only and each step is legible.
+/// </summary>
+public sealed class ConsolidationPlanResponse
+{
+    /// <summary>Unique preview id, useful for auditing and support. Not persisted at this step.</summary>
+    public required string PreviewId { get; init; }
+
+    public required string CorridorCode { get; init; }
+
+    /// <summary>Parent load, normalized.</summary>
+    public required LtlLoadSummary Parent { get; init; }
+
+    /// <summary>Siblings that will be zeroed-out and reference the parent.</summary>
+    public required IReadOnlyList<ConsolidationPlanSibling> Siblings { get; init; }
+
+    /// <summary>Sum of Parent.Revenue + all sibling Revenue values (null-safe).</summary>
+    public decimal? CombinedRevenue { get; init; }
+
+    /// <summary>Parent's linehaul mileage — the miles the driver actually gets paid on.</summary>
+    public decimal? LinehaulMiles { get; init; }
+
+    /// <summary>Combined revenue divided by linehaul miles. Null unless both are known.</summary>
+    public decimal? CombinedRevenuePerMile { get; init; }
+
+    /// <summary>The click card the dispatcher pastes into Alvys.</summary>
+    public required ConsolidationClickCard ClickCard { get; init; }
+
+    /// <summary>
+    /// Blockers that make this plan illegal even as a preview: the parent isn't a load, a
+    /// sibling isn't on the corridor, a sibling belongs to a Never-consolidate customer.
+    /// When non-empty, the SPA must not offer the copy-card action.
+    /// </summary>
+    public IReadOnlyList<string> Blockers { get; init; } = [];
+}
+
+/// <summary>
 /// The full candidate-list response for a seed load. Includes the seed itself (echoed so the
 /// SPA can render the parent row without a second fetch) plus the ranked candidate siblings.
 /// </summary>
