@@ -7,6 +7,111 @@ Newest at top. When a decision is superseded, mark it and link forward.
 
 ---
 
+## 2026-07-17 (evening) · Empirical findings from live MCP calls
+
+**Source.** Three tool calls executed via the Perplexity Alvys MCP connector against the live
+va336 tenant on 2026-07-17. Real payload shapes captured from real load / trip / customer
+records, not documentation.
+
+### Finding 1 — Load reference shape (answers pending row in decision #8)
+
+**Schema of load references:** `Load.References[]` on the loads endpoint, one entry per reference:
+
+```jsonc
+{
+  "Id":  "<guid>",           // record id of this reference row
+  "ReferenceId": "<guid>",   // reference-type id (optional; present for managed types)
+  "Name": "Method of Payment",   // reference type name
+  "Value": "Prepaid (by Seller)",
+  "Type": "Text",            // seen values: "", "Text", "List"
+  "Access": "Public",
+  "Origin": "EDI"            // seen: "Manual", "EDI", "Unknown"
+}
+```
+
+**Where each reference kind actually lives (Reuben was unsure at 18:18 in the transcript):**
+- **Load-level references** — `Load.References[]` on `loads_search` / `loads_get_by_id`.
+- **Stop-level references** — `Load.Stops[].References[]` (nested per stop on the load).
+- **Trip-level references** — `Trip.References[]` on `trips_search` / `trips_get_by_id`, and
+  `Trip.Stops[].References[]` for stop references seen from the trip side.
+
+**Consequence for Phase 5.** The `LTL` boolean on the parent goes on `Trip.References[]`
+(not `Load.References[]`). The `Main Load Id` string on each child goes on the child
+trip's `Trip.References[]`. Both are written the same way once the internal endpoint that
+adds a reference to a trip is discovered.
+
+### Finding 2 — The "loaded miles" field is `Trip.LoadedMileage.Distance.Value`
+
+Zeroing dispatch miles on a child (Reuben, 15:55 in the transcript) writes to the trip, not
+the load:
+
+```jsonc
+"LoadedMileage": {
+  "Distance": { "Value": 1059.0, "UnitOfMeasure": "Miles" },
+  "Source": "Engine",
+  "ProfileName": "PCMiler"
+}
+```
+
+Also present on the trip:
+- `Trip.TotalMileage.Distance.Value` (parent stays populated; this is what Reuben meant by
+  "the driver gets paid based off those miles because they auto-calculate once you add the
+  waypoints").
+- `Trip.EmptyMileage.Distance.Value`.
+
+**Consequence for Phase 5.** When executing a consolidation plan, the internal-API write
+for "zero out child miles" sets `Trip.LoadedMileage.Distance.Value = 0` on each child trip.
+`Load.CustomerMileage` is untouched — that's the billing number and stays accurate for the
+customer, matching Reuben's guidance.
+
+### Finding 3 — Driver RPM = `Trip.TripValue.Amount / Trip.LoadedMileage.Distance.Value`
+
+Confirms decision #12 formula but names the exact fields:
+
+```jsonc
+"TripValue": { "Amount": 5632.5, "Currency": 840 },
+"LoadedMileage": { "Distance": { "Value": 1059.0, "UnitOfMeasure": "Miles" }, ... }
+```
+
+So for that live load (Vertiv Mexico → Olive Branch): `5632.5 / 1059 = $5.32/mi` driver RPM.
+
+**Consequence.** The `ConsolidationPlanService`'s combined-RPM computation:
+
+```csharp
+combinedRpm = (parentTripValue + sum(siblingTripValues))
+            / parentLoadedMileage;
+```
+
+Where sibling `LoadedMileage` values are 0 after Phase 5 zeroing.
+
+### Finding 4 — `Customer.Notes[]` is a real field on `customers_get_by_id`
+
+Confirms decision #10 empirically:
+
+```jsonc
+{
+  "Id": "...",
+  "Name": "Value Logistics",
+  "Status": "Active",
+  ...,
+  "Notes": []           // empty here, but the field is on the response schema
+}
+```
+
+The schema slot is present regardless of whether the customer has notes. The
+`CustomerNotesLtlPolicyReader` proposed in decision #10 will parse this array
+for `LTL_ALLOW=true`, `LTL_TIER=Allowed|NotifyRequired|Never`, `LTL_NOTIFY=<email>`
+lines when it's built in Phase 3.
+
+### Finding 5 — Value Truck currently has 492 open loads in production
+
+For reference / scale-check when reasoning about Phase 5 rate limits. `loads_search` with
+`status=Open` returned `Total: 492` across paging. Corridor scoping (Laredo→Dallas) will
+filter this down to a much smaller candidate set client-side; the API doesn't offer
+server-side corridor filtering (decision #11).
+
+---
+
 ## 2026-07-17 (later) · MCP proven live for Value Truck (`org_id=org_4C3HR7pSPWcXWkuo`, `org_name=va336`)
 
 **Source.** Live `tools/list` call against `https://mcp.alvys.com/mcp` using the LTL tool's
