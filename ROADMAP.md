@@ -1,10 +1,21 @@
 # LTL Tool — Roadmap
 
 **Repo:** `vc-for-valuetruck/ltl-tool-detection-planner-and-booker`
-**Framing:** decision-support workbench on top of read-only Alvys, moving toward controlled sandbox writeback and eventually approved production writeback.
+**Framing:** decision-support workbench on top of read-only Alvys, moving toward controlled writeback and eventually approved production execution.
+
+> **2026-07-17 architectural update.** The Alvys **Public API** (and the MCP server that sits
+> in front of it) is read-only for the LTL tool's use cases — confirmed by Alvys lead engineer
+> Reuben Sheyko in the [2026-07-17 sync](docs/transcripts/2026-07-17-reuben-sync.md). All
+> Phase 2–5 writes (Waypoint creation, `dispatch_miles` zeroing, references, `trip-assign`)
+> must go through the **Alvys internal API** — the endpoints the Alvys web UI itself calls,
+> authenticated with an active user's Auth0 session token rather than a client-credentials
+> token. Read [`docs/ALVYS_API_DECISIONS.md`](docs/ALVYS_API_DECISIONS.md) before touching
+> any writeback code. The existing `AlvysWriteGateway` slice is aimed at the Public API and
+> cannot fulfill Phase 2 writes; Phase 5 now covers its replacement.
+
 **Workflow spine:** Search → Match → Assign → Bill → Billed.
 **Author:** Joshua Davis · Value Truck + Value Logistics
-**Last update:** 2026-07-15
+**Last update:** 2026-07-17 (Reuben sync — Public API is read-only; writes pivot to internal API; anti-failure map row 3p added)
 
 > **Field input incorporated (2026-07-15 Phoenix visit, Junior + Holly + Poornima).** The transcript from the yard visit changes the emphasis: consolidation planning is the actual product, not a match factor. Junior already runs LTL by hand (Verdef cross-border → Laredo → Dallas/Phoenix → local delivery) using dummy loads (W1/W2), zeroed-out child miles, and a manually-maintained trip reference. Bre is the political blocker, not tech. Accessorials are where the money lives. Poornima confirmed the intended Alvys path: **trip reference + LTL boolean flag + zero-out miles on child trips + main-load identifier + filterable report**. The roadmap below reflects that.
 
@@ -100,6 +111,7 @@ Based on the analyst-grade research compiled 2026-07-16 (`ltl-expansion-failure-
 | 3m | **Culture and process — dispatchers think in atoms, LTL requires shipment-planning atoms.** Single-load vs multi-order mental model. | Research report interview data + Reddit r/logistics practitioner threads. | The Consolidate tab **is** the mental-model shift. It exists explicitly as a shipment-planning surface (multiple orders → one movement → multiple deliveries), not a load list. Copy and UI reinforce this: "share trailer," "one linehaul + local delivery," not "combined load." | **Phase 2.5** |
 | 3n | **Pricing sophistication gap.** Tariffs, FAK, discount agreements, minimums, dimensional divisors, base rates by lane. FTL is spot/contract-lane; LTL is priced. | SMC3 RateWare / CarrierConnect is paid, proprietary data. Standing up an internal LTL tariff engine is a multi-year build. | **Explicitly out of scope for Phases 0–7.** Value Truck relies on Alvys-carried rate per load. The tool never priced-quotes LTL; it plans consolidations of loads that already have rates. If pricing becomes a business requirement, that is a separate initiative on its own timeline. | **Not planned. Explicit non-goal.** |
 | 3o | **Regulatory exposure — reweigh/reclass audits, freight fraud (fictitious pickup), NMFTA membership.** | Research report on fictitious pickup and freight fraud patterns. | (i) Assignment validation (Phase 3) blocks assignments to drivers with expired credentials, terminated status, or missing equipment class — the same guardrails that reduce fictitious-pickup exposure. (ii) Audit trail on every assignment/consolidation decision (Phase 0 exit criterion) provides the paper trail for a real audit. (iii) Post-tender vs pre-tender automation boundary (Phase 6) keeps humans on the fraud-critical relationship interfaces. | **Phase 3 + Phase 6** |
+| 3p | **Half-executed writeback plan.** Undocumented internal APIs authenticated with a short-lived user session token can expire mid-plan; a consolidation execution that lands the Waypoint + zero-miles but 401s on `trip-assign` leaves the load in an inconsistent state neither Alvys nor the tool can auto-recover. | 2026-07-17 Reuben sync: session tokens expire, no documented refresh path yet, and the internal API is not contracted. Every internal endpoint is observed behavior that can shift on Alvys' side. | (i) Every Phase 5 plan-execution PR requires a **token-expired failure test** that verifies the tool halts the plan and surfaces a legible error rather than retrying blind. (ii) Post-write reconciliation via Public-API read-back after every internal-API write; mismatch = human review, not retry loop. (iii) Reuben-sanctioned + observed-endpoint discipline logged in `docs/ALVYS_API_DECISIONS.md`. (iv) Consolidation plan-execute is transactional at the plan level: partial success is treated as failure and the audit entry shows exactly which of the 4 writes landed. | **Phase 5** |
 
 ### Two failure modes the tool cannot defeat alone
 
@@ -315,7 +327,13 @@ Phases are ordered by dependency and by dispatcher/billing value, not by calenda
 - [ ] EF-backed audit persistence (swap `InMemoryConsolidationAuditStore` → `EfConsolidationAuditStore` alongside Phase 2 writeback).
 
 **Defer**
-- Auto-generating the Alvys trip-reference field via writeback — this rides on Phase 5 sandbox writeback (specifically `load-update` or a `trip-reference` operation once contract is confirmed).
+- Auto-generating the Alvys trip-reference field via writeback — this rides on Phase 5
+  internal-API writeback (specifically the Reuben-sanctioned `add-extended-stop` endpoint
+  for Waypoints and the still-to-discover reference-write endpoints; see
+  [`docs/ALVYS_API_DECISIONS.md`](docs/ALVYS_API_DECISIONS.md)).
+- The current customer-tier check reads a static config file. Replacing it with a
+  `CustomerNotesLtlPolicyReader` that parses the Alvys customer's `notes` field (per Reuben
+  2026-07-17 sync) is a Phase 3 follow-up, not Phase 1 pilot scope.
 - ML-driven lane inference. Start with a config-driven lane list; add history-driven inference only once Phase 7 snapshots exist.
 - Cross-border customs sensitivity beyond a boolean flag — the transcript is explicit that consolidation stays USA-side.
 - Automated pallet/weight prediction. Never invent capacity numbers.
@@ -325,7 +343,13 @@ Phases are ordered by dependency and by dispatcher/billing value, not by calenda
 - **Seal integrity is the real physical risk.** Junior: "once you break a seal, you will not money." DOT can legitimately break a seal at inspection (and the driver carries a replacement); a *carrier*-broken seal kills customer trust. The Consolidation Planner must never propose a plan that would require breaking a customer's seal mid-route — consolidation happens at yard hand-off points (Laredo, Dallas, Phoenix), not in transit. Add a `SealBreakRequired` red flag to any candidate whose route would need it, and block the plan.
 - **US-side only for cross-border consolidation.** The customs body / bond / union side is off-limits. Any candidate whose consolidation point sits south of the border is disqualified. Config: `Ltl:Consolidation:AllowedRegions = [US]` (default) with an explicit disqualifier reason on candidates that fail this check.
 - Per-customer allow-flag data has to be sourced from someone (Junior + Jason + account owners), not made up. Ship the store empty and default `Unknown` if there's no signed-off value.
-- The Alvys trip-reference approach depends on Poornima's guidance being stable. Verify the field, verify the report filter, and keep the writeback path off until Phase 5.
+- The Alvys trip-reference approach depends on Poornima's guidance being stable. Verify the
+  field, verify the report filter, and keep the writeback path off until Phase 5.
+- Reuben confirmed 2026-07-17 that references are stringly-typed (`LTL="true"`, not native
+  bool). The click-card generator currently formats them as text; keep that shape when the
+  writeback lands.
+- Combined-RPM computation must use **driver rate ÷ dispatch_miles**, not customer rate. If
+  the current `ConsolidationPlanService` uses customer rate, that's a follow-up fix.
 
 ---
 
@@ -492,48 +516,113 @@ Phases are ordered by dependency and by dispatcher/billing value, not by calenda
 
 ---
 
-### Phase 5 — Sandbox writeback, then approved production writeback
+### Phase 5 — Alvys writeback via the internal API (Reuben-sanctioned pattern)
 
-**Goal.** Move the Alvys write boundary from **Disabled** in every real environment to **Sandbox** in a recognised non-production tenant, then gate production per-operation via the sign-off log in `docs/ltl-tool.md`.
+**Goal.** Execute the four writes Phase 2 consolidation needs — `add-extended-stop` (Waypoint
+creation), `dispatch_miles = 0` on child loads, `LTL` + `main_load_id` trip references,
+`trip-assign` — through the Alvys internal API rather than the Public API, following the
+discovery + auth pattern Reuben walked through in the [2026-07-17 sync](docs/transcripts/2026-07-17-reuben-sync.md).
+
+> **Pivot from prior plan.** Earlier drafts of this phase framed the work as "turn on
+> sandbox writeback via Public API operations." The Public API does not expose any of these
+> writes and never will (Reuben, 2026-07-17). The plan below replaces that framing. The
+> existing `AlvysWriteGateway` slice under `src/LtlTool.Api/Features/Integrations/Alvys/Writeback/`
+> stays on `main` because its safety scaffolding (outbox, idempotency, gateway validation)
+> is reusable — only the transport underneath (`AlvysHttpWriteClient`) is replaced.
+
+**Prerequisites (2026-07-17 findings from the Reuben sync).**
+- All decisions in this phase must cite [`docs/ALVYS_API_DECISIONS.md`](docs/ALVYS_API_DECISIONS.md). Do not invent behavior; if it isn't in the decisions log, discover it via the Network-tab pattern and add it.
+- Value Truck tenant must have the "one driver per trip" setting **OFF**. Confirm before the first `trip-assign` PR.
+- A dedicated Alvys user account ("valuetruck-ltl-tool") should back the tool's session token so writes don't attribute to a real dispatcher. Requires Alvys account rep to provision.
 
 **What repo currently has**
-- `src/LtlTool.Api/Features/Integrations/Alvys/Writeback/*` — all eight operations, `AlvysHttpWriteClient` with real HTTP + bearer + `If-Match` + status-only logging.
+- `src/LtlTool.Api/Features/Integrations/Alvys/Writeback/*` — outbox, idempotency, gateway
+  validation, and `AlvysHttpWriteClient` (targets the Public API — the transport this phase
+  replaces, though the surrounding scaffolding is reused).
 - `AlvysWriteOptions` — mode requires recognised `Environment` and non-production `SandboxBaseUrl`; the production host is architecturally rejected.
 - Outbox + idempotency keys + `AlvysOperationRecorder`.
 - `/api/alvys/ops` posture endpoints + Angular writeback-readiness panel.
 - `docs/ltl-tool.md` — production sign-off table (empty).
+- `docs/ALVYS_API_DECISIONS.md` — Reuben-sanctioned internal-API pattern, discovered
+  endpoint table (starts with `add-extended-stop`), auth model, guardrails.
 
-**What needs to change (sandbox first)**
-- Provision a recognised sandbox tenant and set `ALVYS_WRITEBACK_MODE=Sandbox`, `ALVYS_WRITEBACK_ENVIRONMENT=sandbox|uat|staging|test`, `ALVYS_WRITEBACK_SANDBOX_BASE_URL=<non-prod host>` in the UAT environment only.
-- Implement **post-write reconciliation** (already scoped in `docs/ltl-tool.md`): after every write, re-fetch the resource and compare against the outbox expected state; surface mismatches as reconciliation exceptions, never silent passes.
-- Track reconciliation state on `AlvysOperationOutbox` (pushed / pushed-but-unconfirmed / confirmed) and expose it in the ops panel.
-- Wire the internal assignment path to optionally emit a sandbox `trip-assign` / `trip-dispatch` when the sandbox is armed; the audit entry then shows `AlvysWriteback = SandboxPushed` (or `SandboxFailed → 502`).
+**What needs to change (internal-API transport, first).**
+- Add a new `AlvysInternalTokenProvider` that acquires and refreshes an Alvys user session
+  token. Not the same Auth0 client-credentials flow the Public API uses — requires an
+  Alvys user login. First-pass implementation may be a manual token-paste for pilot; the
+  headless-login helper is a follow-up.
+- Add a new `AlvysInternalWriteClient` behind the existing `IAlvysWriteClient` interface,
+  targeting endpoints discovered via the Network-tab pattern (starting with
+  `add-extended-stop`; add rows to the discovered-endpoints table in
+  `docs/ALVYS_API_DECISIONS.md` for each new one).
+- Keep the existing `AlvysHttpWriteClient` (Public API) as `AlvysHttpWriteClient_Legacy`
+  — do not delete; the safety scaffolding around it is still valid, and it may be useful
+  for any future Public-API write operations Alvys releases.
+- Implement **post-write reconciliation**: after every internal-API write, re-fetch the
+  affected load/trip via the Public API (which is authoritative for reads) and compare
+  against the outbox expected state; surface mismatches as reconciliation exceptions,
+  never silent passes.
+- Track reconciliation state on `AlvysOperationOutbox` (pushed / pushed-but-unconfirmed /
+  confirmed) and expose it in the ops panel.
+- Wire the consolidation plan-execution path to optionally emit internal-API writes when
+  writeback is armed; the audit entry then shows `AlvysWriteback = InternalPushed` (or
+  `InternalFailed → <status>`).
 
-**What needs to change (production, gated)**
-- Add an independent `AllowProduction` flag whose truthiness requires `SandboxBaseUrl` to equal the real production host (inverting today's rejection). Never a side-effect of relaxing sandbox checks.
-- For each production-approved operation, fill in the sign-off row in `docs/ltl-tool.md` (contract link, approver, date, gate implemented). No production execution for any operation without a filled row.
+**What needs to change (production, gated).**
+- Add an independent `AllowInternalApiProduction` flag. Default off. Enable per-operation
+  via signed-off rows in `docs/ltl-tool.md`.
+- For each production-approved operation, fill in the sign-off row in `docs/ltl-tool.md`
+  (Alvys engineer contact = Reuben, contract note = "Reuben-sanctioned internal endpoint,
+  captured 2026-07-17", approver, date). Approach cannot be silently promoted; every row
+  is an explicit act.
 - Add rollback playbooks per operation to `docs/ALVYS_INTEGRATION.md`.
+- Add a **token-expired failure test** that verifies the tool surfaces a clean legible
+  error to the operator rather than silently retrying or half-executing a plan (this is
+  the internal-API's biggest failure surface — anti-failure map **3p**).
 
 **Exact files to inspect/edit**
 - `src/LtlTool.Api/Features/Integrations/Alvys/Writeback/AlvysWriteOptions.cs`, `AlvysWriteClient.cs`, `AlvysWriteOperations.cs`, `AlvysOperationOutbox.cs`, `AlvysOperationRecorder.cs`, `AlvysOperationsController.cs`.
 - `src/LtlTool.Api/Features/Ltl/Assignment/*` — the internal assignment path is where sandbox writeback plugs in.
 - `docs/ltl-tool.md`, `docs/ALVYS_INTEGRATION.md`, `docs/LTL_DEMO_RUNBOOK.md`.
 
-**Backend/API impact.** `POST /api/ltl/loads/{idOrNumber}/assign` may now return `AlvysWriteback = SandboxPushed | SandboxFailed | NotPerformed`. `POST /api/alvys/ops/execute` becomes reachable under sandbox config. Every response continues to state posture honestly.
+**Backend/API impact.** `POST /api/ltl/consolidation/plan/execute` (new) and
+`POST /api/ltl/loads/{idOrNumber}/assign` may now return
+`AlvysWriteback = InternalPushed | InternalFailed | InternalReconciliationPending | NotPerformed`.
+`POST /api/alvys/ops/execute` becomes reachable under the internal-API config. Every
+response continues to state posture honestly.
 
 **Frontend impact.** Ops panel shows reconciliation state; assignment history shows sandbox status per row.
 
 **UAT-ready scope**
-- With sandbox armed on the UAT environment only, a dispatcher can push `trip-assign` and see it land in the sandbox tenant, reconciled, and reflected on the audit entry.
-- Production remains architecturally unreachable until a specific operation is signed off.
+- With the internal-API transport armed on the UAT environment only, a dispatcher can
+  execute a Laredo → Dallas consolidation plan (Waypoint creation on parent, zero
+  `dispatch_miles` on each child, `LTL` + `main_load_id` references, same-driver trip
+  assign) and see it land in Alvys production, reconciled via a Public-API read-back, and
+  reflected on the audit entry.
+- Production remains architecturally unreachable until each operation is signed off in
+  `docs/ltl-tool.md`. Reuben-sanctioned or not, the sign-off is still required — it's
+  what tells us we've done the discovery, reconciliation test, and rollback playbook.
 
 **Defer**
 - Any production writeback until a signed-off row exists per operation.
 - Auto-tender-accept until `tender-accept` has its own signed-off row and rollback plan.
+- Alvys MCP writes. MCP inherits the Public API's read-only ceiling; when Alvys adds write
+  tools that expose the same internal-endpoint capabilities, revisit whether the LTL tool
+  should call them instead of hand-rolled internal-API calls.
 
 **Risks / dependencies**
-- Do not merge a change that lets a write reach `integrations.alvys.com` without both `AllowProduction` and a filled sign-off row. This is the single most sensitive area of the codebase — treat every PR touching Writeback as a two-reviewer PR at minimum.
-- Reconciliation exception handling must not silently retry — a mismatch is a human review, not a loop.
+- Do not merge a change that lets a write reach the Alvys internal API without both
+  `AllowInternalApiProduction` and a filled sign-off row. This is the single most sensitive
+  area of the codebase — treat every PR touching Writeback as a two-reviewer PR at minimum.
+- Reconciliation exception handling must not silently retry — a mismatch is a human
+  review, not a loop.
+- **Internal-API endpoints are observed, not contracted.** They can change on Alvys' side
+  without notice. Every internal-endpoint call site needs a regression test that fails
+  loudly (not silently) when the endpoint returns a differently-shaped response than the
+  recorded snapshot.
+- Session-token expiry is the internal API's biggest operational risk. Every plan
+  execution must check token validity before firing the first call, and abort cleanly if
+  the token is stale rather than half-executing.
 
 ---
 

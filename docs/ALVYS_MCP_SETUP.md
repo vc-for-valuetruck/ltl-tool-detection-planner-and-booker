@@ -164,27 +164,38 @@ Returns the tool catalog if the token is valid and the tenant is enrolled.
 
 ## Should the LTL tool itself call MCP?
 
-**Not today.** The LTL tool's `AlvysClient` calls the Alvys Public API directly.
-MCP sits in front of the same API, so switching to MCP would trade a stable,
-type-safe .NET client for JSON-RPC calls the tool would have to parse — with no
-new capability today (beta is read-only, and every read the LTL tool needs is
-already implemented against the Public API).
+**No, for a stronger reason than beta.** The 2026-07-17 Alvys dev sync confirmed
+that MCP sits in front of the Alvys **Public API**, and the Public API is
+**read-only for the LTL tool's writeback use cases** — not just during beta.
+Waypoint creation, `dispatch_miles` zeroing, references, and `trip-assign` all
+require the Alvys **internal API** (the endpoints the Alvys web UI itself
+calls), which MCP does not expose.
 
-Reconsider when either of these lands:
+See [`docs/ALVYS_API_DECISIONS.md`](ALVYS_API_DECISIONS.md) for the sourced
+record of that pivot; the LTL tool's Phase 5 writeback plan is now built
+against the internal API, not MCP.
 
-1. **MCP write tools exit beta on prod.** If `trips_assign`,
-   `trips_update_stop_status`, and `tenders_accept` become available in prod
-   MCP, the LTL tool's Phase 2 writeback slice
-   (`src/LtlTool.Api/Features/Integrations/Alvys/Writeback/`) has a shorter
-   path via MCP than via the underlying REST endpoints — the tool wouldn't have
-   to implement each write endpoint separately.
-2. **A guided prompt matches an LTL workflow.** `find_and_cover_load_v1` or
-   `dispatch_driver_v1` may be worth calling from the LTL tool's match / assign
-   flow rather than duplicating the ranking. Discuss with the Alvys engineer in
-   the Phase 2 planning call.
+What MCP is good for from the LTL tool's perspective:
 
-Until then, MCP is a personal-productivity + AI-agent tool alongside the LTL
-tool, not a replacement for `AlvysClient`.
+- **Ambient AI queries** for you as a human user via Claude Desktop / Cursor —
+  "how many open Verdef loads to Dallas?", "what's the driver rate on load
+  L-100234?", etc. This is the primary payoff today.
+- **Read-side workflows** the LTL tool doesn't already implement. If a Phase 6
+  signal-extraction task needs read data the tool doesn't fetch, calling MCP
+  from the tool's server side is defensible — but every read the current
+  Search → Match → Assign → Bill workbench needs is already covered by
+  `AlvysClient` and doesn't benefit from re-plumbing.
+- **Guided-prompt reference.** `dispatch_driver_v1` and
+  `settlement_reconciliation_v1` document Alvys' opinion on multi-step
+  workflows. Useful reading when we design Phase 5 internal-API flows, even
+  though we won't call the prompts themselves.
+
+What MCP is not good for (from this tool's perspective):
+
+- **Any Phase 5 writeback.** Handled via the internal API (see
+  [`docs/ALVYS_API_DECISIONS.md`](ALVYS_API_DECISIONS.md)).
+- **Replacing `AlvysClient`.** No new capability today over the type-safe .NET
+  client the tool already has.
 
 ## Troubleshooting
 
