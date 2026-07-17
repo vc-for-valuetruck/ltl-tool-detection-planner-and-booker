@@ -104,6 +104,110 @@ echo "AZURE_TENANT_ID=$TENANT_ID"
 echo "AZURE_SUBSCRIPTION_ID=$SUBSCRIPTION_ID"
 ```
 
+> ⚠️ **The `az role assignment create` line above requires the caller to hold `Owner` or
+> `User Access Administrator` on the subscription (or on the resource group). If you get
+> `AuthorizationFailed` here — that's the entire blocker; keep reading.**
+
+## Step 0 — Grant the deploy service principal the Contributor role
+
+Everything downstream (Bicep, ACR, App Service, SQL) fails with cryptic `AuthorizationFailed`
+errors when the `ltl-uat-github-deploy` service principal does not hold `Contributor` on the
+resource group. This step exists to make that blocker legible and give you three concrete paths
+to unblock it depending on what permission you already have in the tenant.
+
+**Values you'll need in every path below:**
+
+| Name | Value |
+| --- | --- |
+| `SUBSCRIPTION_ID` | `9dfdd151-fd80-4116-8c57-16f1d7156ded` |
+| `TENANT_ID` | `99d7bd71-9046-4915-be1c-3aae2baf1645` |
+| Service principal display name | `ltl-uat-github-deploy` |
+| Service principal `APP_ID` (client id) | `eda7036b-7596-4c2a-836c-599fcd3a5166` |
+| Resource group | `ltl-uat-rg` (in `centralus`) |
+| Assign role | **Contributor** |
+| Assign scope | The resource group `ltl-uat-rg` — **not the whole subscription** |
+
+Always prefer resource-group scope. It's the least-privilege choice and it's the same scope every
+Bicep file in `infra/uat/` deploys to.
+
+### Path A — You have Owner or User Access Administrator (Cloud Shell / az CLI, ~30 seconds)
+
+```bash
+SUBSCRIPTION_ID="9dfdd151-fd80-4116-8c57-16f1d7156ded"
+RG="ltl-uat-rg"
+APP_ID="eda7036b-7596-4c2a-836c-599fcd3a5166"
+
+az account set --subscription "$SUBSCRIPTION_ID"
+
+# Look up the service principal's object id (safer than trusting a stale one).
+OBJECT_ID=$(az ad sp list --filter "appId eq '$APP_ID'" --query "[0].id" -o tsv)
+echo "Service principal object id: $OBJECT_ID"
+
+az role assignment create \
+  --assignee-object-id "$OBJECT_ID" \
+  --assignee-principal-type ServicePrincipal \
+  --role Contributor \
+  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG"
+
+# Verify.
+az role assignment list \
+  --assignee "$APP_ID" \
+  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RG" \
+  --query "[].roleDefinitionName" -o tsv
+```
+
+Expected verify output: `Contributor` on its own line. Done — skip to Step 1.
+
+If you get `AuthorizationFailed` on the `az role assignment create` line, you don't have the
+required role. Use Path B or Path C.
+
+### Path B — You have Owner or User Access Administrator on the resource group only (Portal, ~90 seconds)
+
+This is the recommended path for Value Truck users who are not subscription Owners but have been
+granted Owner or User Access Administrator on `ltl-uat-rg` specifically.
+
+1. Portal → **Resource groups** → `ltl-uat-rg`.
+2. Left nav → **Access control (IAM)**.
+3. **+ Add** → **Add role assignment**.
+4. **Role** tab → pick **Contributor** → **Next**.
+5. **Members** tab → **Assign access to** = *User, group, or service principal*.
+6. **+ Select members** → search **`ltl-uat-github-deploy`** → pick the app-registration entry
+   whose Application (client) id equals `eda7036b-7596-4c2a-836c-599fcd3a5166` → **Select**.
+7. **Review + assign** → **Review + assign**.
+
+Verification (still in Portal): stay on `ltl-uat-rg` → **Access control (IAM)** → **Role
+assignments** tab → filter by *Service principal* → `ltl-uat-github-deploy` should show one
+row with role **Contributor** and scope **This resource**.
+
+### Path C — You don't have either role (delegate the click)
+
+If both Path A and Path B fail with `AuthorizationFailed`, send the following two-line request to
+somebody in Value Truck who holds subscription Owner or User Access Administrator on
+subscription `9dfdd151-fd80-4116-8c57-16f1d7156ded`:
+
+> Please grant the service principal **`ltl-uat-github-deploy`** (app id
+> `eda7036b-7596-4c2a-836c-599fcd3a5166`) the **Contributor** role on resource group
+> **`ltl-uat-rg`** in subscription `9dfdd151-fd80-4116-8c57-16f1d7156ded`. Instructions:
+> [`docs/AZURE_UAT_DEPLOY.md` §Path B](./AZURE_UAT_DEPLOY.md#path-b--you-have-owner-or-user-access-administrator-on-the-resource-group-only-portal-90-seconds).
+
+Once the assignment lands, run the Path A verify command from Cloud Shell (that command only
+reads role assignments; it does not require any write permission) to confirm before moving on.
+
+### Preflight (built into the workflow)
+
+The **Provision LTL Tool UAT infrastructure** workflow runs a preflight step immediately after
+Azure login that fails fast, in one job step, with a clear error message when this role is
+missing. If Step 1 fails with:
+
+```text
+✖ Deploy service principal ltl-uat-github-deploy (eda7036b-...) does not have
+  Contributor on resource group ltl-uat-rg.
+```
+
+then you are in exactly this Step 0 blocker — apply Path A, B, or C, then re-run the workflow.
+The preflight also passes when the role is granted at broader scope (e.g. subscription-scoped
+Contributor also satisfies the RG-scoped check).
+
 Put the printed values in the `uat` GitHub environment as **secrets**, plus a `SQL_ADMIN_PASSWORD`
 secret of your choosing (used by `infra/uat/main.bicep` to create the SQL Server admin login):
 

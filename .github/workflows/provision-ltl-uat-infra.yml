@@ -52,6 +52,50 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Step 0 preflight -- fail fast with a legible error before Bicep tries to create resources
+      # and returns a cryptic AuthorizationFailed. Reading role assignments only requires being
+      # able to log in (which we just did), so this step never adds a new permission requirement.
+      # See docs/AZURE_UAT_DEPLOY.md "Step 0 -- Grant the deploy service principal the Contributor role".
+      - name: Preflight - deploy SP has Contributor on the resource group
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_ID="${{ secrets.AZURE_CLIENT_ID }}"
+          SUB="${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          RG="${{ github.event.inputs.resource_group }}"
+          RG_SCOPE="/subscriptions/$SUB/resourceGroups/$RG"
+          SUB_SCOPE="/subscriptions/$SUB"
+
+          # We include-inherited so a subscription-scoped Contributor satisfies the RG-scoped check.
+          # Role names that satisfy the requirement: Contributor OR Owner (both are supersets of what
+          # Bicep + ACR build + App Service + SQL will need).
+          ROLES=$(az role assignment list \
+            --assignee "$APP_ID" \
+            --scope "$RG_SCOPE" \
+            --include-inherited \
+            --query "[?roleDefinitionName=='Contributor' || roleDefinitionName=='Owner'].[roleDefinitionName, scope]" \
+            -o tsv || true)
+
+          if [ -z "$ROLES" ]; then
+            echo "::error::Deploy service principal ($APP_ID) does not have Contributor on resource group $RG."
+            echo ""
+            echo "This is the Step 0 blocker documented in docs/AZURE_UAT_DEPLOY.md."
+            echo ""
+            echo "Fix (Path B - Portal, ~90 seconds):"
+            echo "  1. Portal -> Resource groups -> $RG"
+            echo "  2. Left nav -> Access control (IAM) -> + Add -> Add role assignment"
+            echo "  3. Role: Contributor"
+            echo "  4. Members: ltl-uat-github-deploy (client id $APP_ID)"
+            echo "  5. Review + assign"
+            echo "  6. Re-run this workflow."
+            echo ""
+            echo "If you cannot grant the role yourself, see docs/AZURE_UAT_DEPLOY.md Path C for how to delegate."
+            exit 1
+          fi
+
+          echo "::notice::Deploy SP has the required role on $RG:"
+          printf '%s\n' "$ROLES"
+
       - name: Ensure resource group exists
         shell: bash
         run: |
