@@ -48,6 +48,7 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [Theory]
     [InlineData("/api/ltl/loads/100/assign/validate")]
     [InlineData("/api/ltl/loads/100/assign")]
+    [InlineData("/api/ltl/consolidation/plan")]
     public async Task Ltl_post_routes_are_mapped_and_protected(string route)
     {
         var client = _factory.CreateClient();

@@ -38,6 +38,7 @@ public static class LtlServiceCollectionExtensions
 
         // Consolidation planner (Phase 1 pilot: Laredo → Dallas, read-only, click-card output).
         services.AddScoped<ConsolidationCandidateService>();
+        services.AddScoped<ConsolidationPlanService>();
 
         // Internal, non-Alvys assignment audit. Singleton in-memory store for this slice;
         // swap for a persistent IAssignmentAuditStore in production.

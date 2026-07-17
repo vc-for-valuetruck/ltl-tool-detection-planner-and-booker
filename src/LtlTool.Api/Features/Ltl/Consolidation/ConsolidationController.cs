@@ -13,8 +13,9 @@ namespace LtlTool.Api.Features.Ltl.Consolidation;
 [Route("api/ltl/consolidation")]
 [Authorize(Policy = AccessPolicies.AllowedEmailDomain)]
 [Produces("application/json")]
-public sealed class ConsolidationController(ConsolidationCandidateService candidates)
-    : ControllerBase
+public sealed class ConsolidationController(
+    ConsolidationCandidateService candidates,
+    ConsolidationPlanService plans) : ControllerBase
 {
     /// <summary>
     /// Returns ranked consolidation candidates for the given seed load along the specified
@@ -39,6 +40,31 @@ public sealed class ConsolidationController(ConsolidationCandidateService candid
         try
         {
             var response = await candidates.GetCandidatesAsync(loadId, corridorCode, ct);
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Builds a plan preview: resolves parent + siblings against Alvys, applies corridor and
+    /// customer-policy gates, and returns the projected combined-RPM plus the copy-pasteable
+    /// Alvys click card. 400 on unknown corridor / missing parent / missing siblings; 200 with
+    /// non-empty <see cref="ConsolidationPlanResponse.Blockers"/> when the plan resolves but
+    /// is illegal (Never-consolidate customer, corridor mismatch, etc.).
+    /// </summary>
+    [HttpPost("plan")]
+    [ProducesResponseType(typeof(ConsolidationPlanResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ConsolidationPlanResponse>> BuildPlan(
+        [FromBody] ConsolidationPlanRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var response = await plans.BuildAsync(request, ct);
             return Ok(response);
         }
         catch (InvalidOperationException ex)

@@ -41,7 +41,7 @@ internal static class LtlTestFactory
 /// Configurable, in-memory <see cref="IAlvysClient"/> for LTL service/controller tests. Only the
 /// read paths exercised by the LTL layer are scripted; the rest throw if unexpectedly called.
 /// </summary>
-internal sealed class FakeAlvysClient : IAlvysClient
+internal class FakeAlvysClient : IAlvysClient
 {
     public List<AlvysLoad> Loads { get; set; } = [];
     public AlvysLoad? LoadDetail { get; set; }
@@ -74,10 +74,10 @@ internal sealed class FakeAlvysClient : IAlvysClient
         });
     }
 
-    public Task<AlvysLoad?> GetLoadByNumberAsync(string loadNumber, CancellationToken ct = default)
+    public virtual Task<AlvysLoad?> GetLoadByNumberAsync(string loadNumber, CancellationToken ct = default)
         => Task.FromResult(LoadDetail);
 
-    public Task<AlvysLoad?> GetLoadAsync(LoadLookup lookup, CancellationToken ct = default)
+    public virtual Task<AlvysLoad?> GetLoadAsync(LoadLookup lookup, CancellationToken ct = default)
         => Task.FromResult(LoadDetail);
 
     public Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(string loadNumber, CancellationToken ct = default)
