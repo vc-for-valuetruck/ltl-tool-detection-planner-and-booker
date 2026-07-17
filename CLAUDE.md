@@ -84,6 +84,7 @@ defensible recommendations, and revenue protection.
 - `GET  /api/ltl/loads/{idOrNumber}/assignments` — assignment history
 - `GET  /api/ltl/billing/worklist` — billing attention list
 - `GET  /api/ltl/exceptions` — exception-bearing loads
+- `GET  /api/ltl/consolidation/candidates?loadId={id}&corridor={code}` — Phase 1 pilot Laredo→Dallas consolidation candidates (read-only)
 
 Angular `/ltl` provides Search, Billing Worklist, Exceptions, detail drawer,
 recommended matches, assignment validation, billing readiness, visibility, saved views.

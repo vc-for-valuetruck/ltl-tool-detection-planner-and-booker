@@ -1,4 +1,5 @@
 using LtlTool.Api.Features.Ltl.Assignment;
+using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -18,6 +19,10 @@ public static class LtlServiceCollectionExtensions
             .AddOptions<LtlOptions>()
             .Bind(configuration.GetSection(LtlOptions.SectionName));
 
+        services
+            .AddOptions<ConsolidationOptions>()
+            .Bind(configuration.GetSection(ConsolidationOptions.SectionName));
+
         // Deterministic clock so scoring/billing are testable; the default system clock in prod.
         services.TryAddSingleton(TimeProvider.System);
 
@@ -30,6 +35,9 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<MatchService>();
         services.AddScoped<LtlLoadService>();
         services.AddScoped<AssignmentValidationService>();
+
+        // Consolidation planner (Phase 1 pilot: Laredo → Dallas, read-only, click-card output).
+        services.AddScoped<ConsolidationCandidateService>();
 
         // Internal, non-Alvys assignment audit. Singleton in-memory store for this slice;
         // swap for a persistent IAssignmentAuditStore in production.
