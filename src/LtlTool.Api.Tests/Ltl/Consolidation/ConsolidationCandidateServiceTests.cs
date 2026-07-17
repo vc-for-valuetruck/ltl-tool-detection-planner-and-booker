@@ -1,7 +1,6 @@
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Consolidation;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace LtlTool.Api.Tests.Ltl.Consolidation;
@@ -31,7 +30,7 @@ public sealed class ConsolidationCandidateServiceTests
 
         return new ConsolidationCandidateService(
             loads,
-            Options.Create(overrides ?? DefaultOptions()),
+            Microsoft.Extensions.Options.Options.Create(overrides ?? DefaultOptions()),
             LtlTestFactory.Options(),
             LtlTestFactory.Clock());
     }
