@@ -34,6 +34,8 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/exceptions")]
     [InlineData("/api/ltl/consolidation/candidates?loadId=100")]
     [InlineData("/api/ltl/consolidation/candidates?loadId=100&corridor=LAREDO_TO_DALLAS")]
+    [InlineData("/api/ltl/consolidation/plan/audits")]
+    [InlineData("/api/ltl/consolidation/plan/audits?parentLoadId=L-100234")]
     public async Task Ltl_get_routes_are_mapped_and_protected(string route)
     {
         var client = _factory.CreateClient();
@@ -49,6 +51,7 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/loads/100/assign/validate")]
     [InlineData("/api/ltl/loads/100/assign")]
     [InlineData("/api/ltl/consolidation/plan")]
+    [InlineData("/api/ltl/consolidation/plan/audit")]
     public async Task Ltl_post_routes_are_mapped_and_protected(string route)
     {
         var client = _factory.CreateClient();

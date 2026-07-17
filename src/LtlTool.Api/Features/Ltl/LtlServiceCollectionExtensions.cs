@@ -40,6 +40,10 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<ConsolidationCandidateService>();
         services.AddScoped<ConsolidationPlanService>();
 
+        // Consolidation audit trail. Singleton in-memory store matching the same posture as
+        // InMemoryAssignmentAuditStore; swap for an EF-backed store alongside Phase 2 writeback.
+        services.AddSingleton<IConsolidationAuditStore, InMemoryConsolidationAuditStore>();
+
         // Internal, non-Alvys assignment audit. Singleton in-memory store for this slice;
         // swap for a persistent IAssignmentAuditStore in production.
         services.AddSingleton<IAssignmentAuditStore, InMemoryAssignmentAuditStore>();

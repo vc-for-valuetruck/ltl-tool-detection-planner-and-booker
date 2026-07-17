@@ -86,6 +86,8 @@ defensible recommendations, and revenue protection.
 - `GET  /api/ltl/exceptions` — exception-bearing loads
 - `GET  /api/ltl/consolidation/candidates?loadId={id}&corridor={code}` — Phase 1 pilot Laredo→Dallas consolidation candidates (read-only)
 - `POST /api/ltl/consolidation/plan` — Phase 1 pilot: build a consolidation plan preview (parent + siblings → click-card content). Read-only; nothing writes to Alvys.
+- `POST /api/ltl/consolidation/plan/audit` — Phase 1 pilot: record a plan as an internal audit entry (leadership visibility). Read-only against Alvys.
+- `GET  /api/ltl/consolidation/plan/audits?parentLoadId={id}` — Phase 1 pilot: audit history for one parent (or all when parentLoadId omitted).
 
 Angular `/ltl` provides Search, Billing Worklist, Exceptions, detail drawer,
 recommended matches, assignment validation, billing readiness, visibility, saved views.
