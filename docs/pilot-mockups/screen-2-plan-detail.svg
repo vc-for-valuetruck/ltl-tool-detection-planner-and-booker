@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" font-family="-apple-system, Segoe UI, Roboto, sans-serif">
+  <rect width="1400" height="900" fill="#f7f8fa"/>
+
+  <!-- Nav (same as screen 1) -->
+  <rect x="0" y="0" width="1400" height="56" fill="#1e293b"/>
+  <text x="24" y="35" font-size="16" font-weight="600" fill="#ffffff">Value Truck · LTL Tool</text>
+  <text x="1280" y="35" font-size="13" fill="#94a3b8">joshua.davis@valuetruck.com</text>
+
+  <rect x="0" y="56" width="1400" height="48" fill="#ffffff"/>
+  <line x1="0" y1="104" x2="1400" y2="104" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="24" y="85" font-size="14" fill="#64748b">Search</text>
+  <text x="100" y="85" font-size="14" fill="#64748b">Billing</text>
+  <text x="180" y="85" font-size="14" fill="#64748b">Exceptions</text>
+  <text x="285" y="85" font-size="14" font-weight="700" fill="#0f172a">Consolidate</text>
+  <rect x="270" y="98" width="110" height="3" fill="#2563eb"/>
+
+  <!-- Breadcrumb + title -->
+  <text x="24" y="140" font-size="12" fill="#94a3b8">Consolidate · </text>
+  <text x="108" y="140" font-size="12" fill="#2563eb">Candidates</text>
+  <text x="180" y="140" font-size="12" fill="#94a3b8"> · Plan detail</text>
+  <text x="24" y="175" font-size="24" font-weight="700" fill="#0f172a">Plan · Laredo → Dallas · 2 loads</text>
+  <text x="24" y="200" font-size="13" fill="#64748b">Draft plan — nothing has been written to Alvys yet.</text>
+
+  <!-- Trailer map (visual capacity guide) -->
+  <rect x="24" y="230" width="880" height="240" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="44" y="258" font-size="14" font-weight="700" fill="#0f172a">Trailer plan (visual only — dims not verified)</text>
+  <text x="44" y="278" font-size="11" fill="#94a3b8">53' trailer · illustrative allocation · dispatchers verify at Laredo dock</text>
+
+  <!-- Trailer outline -->
+  <rect x="60" y="300" width="800" height="140" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" rx="4"/>
+  <text x="55" y="378" font-size="10" fill="#94a3b8" text-anchor="middle" transform="rotate(-90 55 378)">Nose</text>
+  <text x="875" y="378" font-size="10" fill="#94a3b8" text-anchor="middle" transform="rotate(-90 875 378)">Doors</text>
+
+  <!-- Parent freight block -->
+  <rect x="70" y="310" width="360" height="120" fill="#dcfce7" stroke="#16a34a" stroke-width="2" rx="4"/>
+  <text x="250" y="345" font-size="13" font-weight="700" fill="#14532d" text-anchor="middle">L-100234 · Verdef</text>
+  <text x="250" y="365" font-size="11" fill="#166534" text-anchor="middle">Goodyear, AZ</text>
+  <text x="250" y="382" font-size="11" fill="#166534" text-anchor="middle">14,200 lb · 6 pallets</text>
+  <text x="250" y="415" font-size="10" font-weight="600" fill="#166534" text-anchor="middle">PARENT · nose-load</text>
+
+  <!-- Sibling freight block -->
+  <rect x="440" y="310" width="220" height="120" fill="#dbeafe" stroke="#2563eb" stroke-width="2" rx="4"/>
+  <text x="550" y="345" font-size="13" font-weight="700" fill="#1e3a8a" text-anchor="middle">L-100241 · Masonite</text>
+  <text x="550" y="365" font-size="11" fill="#1e40af" text-anchor="middle">Phoenix, AZ</text>
+  <text x="550" y="382" font-size="11" fill="#1e40af" text-anchor="middle">4,100 lb · 4 pallets</text>
+  <text x="550" y="415" font-size="10" font-weight="600" fill="#1e40af" text-anchor="middle">SIBLING · mid</text>
+
+  <!-- Empty space -->
+  <rect x="670" y="310" width="180" height="120" fill="#f1f5f9" stroke="#cbd5e1" stroke-dasharray="4 4" rx="4"/>
+  <text x="760" y="378" font-size="12" fill="#94a3b8" text-anchor="middle">~180 cu ft open</text>
+  <text x="760" y="395" font-size="10" fill="#94a3b8" text-anchor="middle">Add a 3rd sibling if a candidate fits</text>
+
+  <text x="44" y="460" font-size="10" fill="#94a3b8">Total: 18,300 lb · 10 pallets · trailer max ~45,000 lb / 26 pallets — capacity indicator only, not authoritative</text>
+
+  <!-- Right column: economics -->
+  <rect x="920" y="230" width="456" height="240" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="940" y="258" font-size="14" font-weight="700" fill="#0f172a">Economics</text>
+  <line x1="940" y1="275" x2="1356" y2="275" stroke="#e2e8f0"/>
+  <text x="940" y="298" font-size="12" fill="#475569">L-100234 revenue</text>
+  <text x="1340" y="298" font-size="13" fill="#0f172a" text-anchor="end">$4,100</text>
+  <text x="940" y="320" font-size="12" fill="#475569">L-100241 revenue</text>
+  <text x="1340" y="320" font-size="13" fill="#0f172a" text-anchor="end">$4,100</text>
+  <line x1="940" y1="335" x2="1356" y2="335" stroke="#e2e8f0"/>
+  <text x="940" y="358" font-size="13" font-weight="600" fill="#0f172a">Combined revenue</text>
+  <text x="1340" y="358" font-size="15" font-weight="700" fill="#059669" text-anchor="end">$8,200</text>
+
+  <text x="940" y="385" font-size="12" fill="#475569">Linehaul miles (parent trip)</text>
+  <text x="1340" y="385" font-size="13" fill="#0f172a" text-anchor="end">1,072</text>
+  <text x="940" y="405" font-size="12" fill="#475569">Sibling child miles (Alvys)</text>
+  <text x="1340" y="405" font-size="13" fill="#f59e0b" text-anchor="end">0 (manual)</text>
+  <text x="940" y="425" font-size="12" fill="#475569">Combined RPM</text>
+  <text x="1340" y="425" font-size="15" font-weight="700" fill="#059669" text-anchor="end">$7.65 / mi</text>
+  <rect x="940" y="440" width="420" height="24" rx="4" fill="#fef3c7"/>
+  <text x="1150" y="456" font-size="11" fill="#92400e" text-anchor="middle">Phase 1: dispatcher zeros child miles manually in Alvys</text>
+
+  <!-- Assumptions panel -->
+  <rect x="24" y="490" width="880" height="180" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="44" y="518" font-size="14" font-weight="700" fill="#0f172a">Assumptions and honest gaps</text>
+  <line x1="44" y1="530" x2="884" y2="530" stroke="#e2e8f0"/>
+
+  <circle cx="54" cy="555" r="3" fill="#f59e0b"/>
+  <text x="68" y="558" font-size="12" fill="#475569">L-100237 pallet count is missing — visual verify at Laredo dock before dispatch.</text>
+
+  <circle cx="54" cy="580" r="3" fill="#2563eb"/>
+  <text x="68" y="583" font-size="12" fill="#475569">Same driver + truck + trailer assumed across both loads (per Poornima's sanctioned pattern).</text>
+
+  <circle cx="54" cy="605" r="3" fill="#2563eb"/>
+  <text x="68" y="608" font-size="12" fill="#475569">Masonite requires customer notification before consolidation. Account owner confirmation still needed.</text>
+
+  <circle cx="54" cy="630" r="3" fill="#059669"/>
+  <text x="68" y="633" font-size="12" fill="#475569">Both loads cross-dock at Laredo yard, then trailer moves through Dallas 154-door for the AZ re-split. No mid-route seal breaks.</text>
+
+  <circle cx="54" cy="655" r="3" fill="#059669"/>
+  <text x="68" y="658" font-size="12" fill="#475569">US-side consolidation only. Nothing crosses into Mexico with this plan.</text>
+
+  <!-- Right column: action -->
+  <rect x="920" y="490" width="456" height="180" rx="8" fill="#0f172a"/>
+  <text x="940" y="518" font-size="14" font-weight="700" fill="#f8fafc">Ready to dispatch?</text>
+  <text x="940" y="540" font-size="12" fill="#cbd5e1">Generating the click card is safe.</text>
+  <text x="940" y="558" font-size="12" fill="#cbd5e1">It only tells the dispatcher what to click in</text>
+  <text x="940" y="576" font-size="12" fill="#cbd5e1">Alvys. Nothing writes automatically.</text>
+
+  <rect x="940" y="595" width="416" height="52" rx="6" fill="#22c55e"/>
+  <text x="1148" y="627" font-size="15" font-weight="700" fill="#052e16" text-anchor="middle">Generate Alvys click card →</text>
+
+  <!-- Bottom: reviewer signoff strip -->
+  <rect x="24" y="690" width="1352" height="150" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+  <text x="44" y="718" font-size="14" font-weight="700" fill="#0f172a">Audit trail (recorded even if no click card is generated)</text>
+  <line x1="44" y1="730" x2="1356" y2="730" stroke="#e2e8f0"/>
+  <text x="44" y="755" font-size="12" fill="#475569">Plan id · plan-2026-07-16-c14</text>
+  <text x="44" y="775" font-size="12" fill="#475569">Created by · joshua.davis@valuetruck.com · 2026-07-16 10:38 MDT</text>
+  <text x="44" y="795" font-size="12" fill="#475569">Alvys writeback status · Not performed (Phase 1 read-only)</text>
+  <text x="44" y="815" font-size="12" fill="#475569">Projected uplift · +$4,100 combined revenue · +100% RPM vs individual dispatch</text>
+  <rect x="1170" y="770" width="180" height="40" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="1260" y="795" font-size="13" font-weight="600" fill="#334155" text-anchor="middle">Save audit only</text>
+</svg>
