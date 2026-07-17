@@ -1,0 +1,282 @@
+<div class="consolidate">
+  <header class="header">
+    <div class="header-title">
+      <h1>Consolidate</h1>
+      <div class="corridor-banner">
+        <span class="corridor-name">Laredo → Dallas pilot corridor</span>
+        <span class="corridor-tag">Phase 1 · Pilot · Read-only</span>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a routerLink="/ltl">← Back to Search</a>
+    </nav>
+  </header>
+
+  <!-- Screen 1: seed input + candidate list -->
+  <section class="panel">
+    <div class="panel-title">
+      <h2>1. Find candidates for a seed load</h2>
+      <p class="panel-sub">
+        Enter a Laredo-origin load id or load number. We only show sibling loads whose origin sits
+        near the Laredo yard and whose destination sits near the Dallas 154-door yard.
+      </p>
+    </div>
+
+    <form class="seed-form" (ngSubmit)="loadCandidates()">
+      <input
+        type="text"
+        placeholder="Seed load id or load number (e.g. L-100234)"
+        [ngModel]="seedInput()"
+        (ngModelChange)="seedInput.set($event)"
+        name="seed"
+        autocomplete="off"
+      />
+      <button type="submit" class="primary" [disabled]="loadingCandidates() || !seedInput().trim()">
+        {{ loadingCandidates() ? 'Loading…' : 'Find candidates' }}
+      </button>
+    </form>
+
+    @if (candidateError()) {
+      <div class="error">{{ candidateError() }}</div>
+    }
+
+    @if (candidateResponse()?.scanTruncated) {
+      <div class="banner banner-warn">
+        Alvys sweep hit the scan bound — showing candidates from the first pages only.
+      </div>
+    }
+
+    @if (candidateResponse(); as response) {
+      @if (!response.seed) {
+        <div class="banner banner-warn">
+          Seed load could not be resolved in Alvys. Check the id and try again.
+        </div>
+      } @else {
+        <div class="seed-summary">
+          <div class="seed-summary-title">Seed load (parent) · {{ response.seed.loadNumber ?? response.seed.id }}</div>
+          <div class="seed-summary-row">
+            <span>{{ response.seed.customerName ?? '—' }}</span>
+            <span>{{ response.seed.origin?.label ?? '—' }} → {{ response.seed.destination?.label ?? '—' }}</span>
+            <span>{{ formatDate(response.seed.scheduledPickupAt) }}</span>
+            <span>{{ formatCurrency(response.seed.revenue) }}</span>
+          </div>
+        </div>
+
+        <div class="candidates">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Load</th>
+                <th>Customer</th>
+                <th>Origin</th>
+                <th>Destination</th>
+                <th>Pickup</th>
+                <th>Weight / Pallets</th>
+                <th>Lane fit</th>
+                <th>Timing fit</th>
+                <th>Customer</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (candidate of response.candidates; track candidate.loadId) {
+                <tr
+                  [class.blocked]="candidate.isBlocked"
+                  [class.selected]="isSelected(candidate.loadId)"
+                >
+                  <td>
+                    <input
+                      type="checkbox"
+                      [checked]="isSelected(candidate.loadId)"
+                      [disabled]="candidate.isBlocked"
+                      (change)="toggleSibling(candidate)"
+                    />
+                  </td>
+                  <td>
+                    <div class="load-cell">
+                      <strong>{{ candidate.loadNumber ?? candidate.loadId }}</strong>
+                    </div>
+                  </td>
+                  <td>{{ candidate.customerName ?? '—' }}</td>
+                  <td>{{ candidate.originLabel ?? '—' }}</td>
+                  <td>{{ candidate.destinationLabel ?? '—' }}</td>
+                  <td>{{ formatDate(candidate.scheduledPickupAt) }}</td>
+                  <td>
+                    {{ candidate.weightLbs ? (candidate.weightLbs + ' lb') : '— lb · visual verify' }}
+                  </td>
+                  <td [title]="factorFit(candidate, 'Lane fit')?.rationale ?? ''">
+                    <span [class]="chipClass(factorFit(candidate, 'Lane fit')?.fit ?? 'Unknown')">
+                      {{ factorFit(candidate, 'Lane fit')?.fit ?? 'Unknown' }}
+                    </span>
+                  </td>
+                  <td [title]="factorFit(candidate, 'Timing fit')?.rationale ?? ''">
+                    <span [class]="chipClass(factorFit(candidate, 'Timing fit')?.fit ?? 'Unknown')">
+                      {{ factorFit(candidate, 'Timing fit')?.fit ?? 'Unknown' }}
+                    </span>
+                  </td>
+                  <td [title]="factorFit(candidate, 'Customer')?.rationale ?? ''">
+                    <span [class]="chipClass(factorFit(candidate, 'Customer')?.fit ?? 'Unknown')">
+                      {{ candidate.customerTier }}
+                    </span>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="10" class="empty">
+                    No corridor-matching siblings for this seed. Try a different seed or wait for
+                    Alvys to receive more open loads.
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="candidates-footer">
+          <span class="selection-count">
+            {{ selectedSiblingIds().size }} selected
+          </span>
+          <button
+            type="button"
+            class="primary"
+            [disabled]="!canBuildPlan()"
+            (click)="buildPlan()"
+          >
+            {{ loadingPlan() ? 'Building…' : 'Build plan preview →' }}
+          </button>
+        </div>
+      }
+    }
+  </section>
+
+  <!-- Screen 2: plan preview -->
+  @if (plan(); as p) {
+    <section class="panel">
+      <div class="panel-title">
+        <h2>2. Plan preview · {{ p.parent.loadNumber ?? p.parent.id }} + {{ p.siblings.length }} sibling(s)</h2>
+        <p class="panel-sub">
+          Draft plan — nothing has been written to Alvys yet. The click card below tells the
+          dispatcher exactly what to click.
+        </p>
+      </div>
+
+      @if (planError()) {
+        <div class="error">{{ planError() }}</div>
+      }
+
+      @if (p.blockers.length > 0) {
+        <div class="banner banner-danger">
+          <strong>Plan blocked:</strong>
+          <ul>
+            @for (b of p.blockers; track b) {
+              <li>{{ b }}</li>
+            }
+          </ul>
+        </div>
+      }
+
+      <div class="plan-grid">
+        <div class="plan-siblings">
+          <h3>Siblings in plan</h3>
+          <ul>
+            @for (s of p.siblings; track s.loadId) {
+              <li>
+                <div>
+                  <strong>{{ s.loadNumber ?? s.loadId }}</strong> · {{ s.customerName ?? '—' }}
+                  · {{ s.originLabel ?? '—' }} → {{ s.destinationLabel ?? '—' }}
+                </div>
+                <div class="sibling-meta">
+                  <span>{{ formatCurrency(s.revenue) }}</span>
+                  <span>·</span>
+                  <span>{{ s.weightLbs ? (s.weightLbs + ' lb') : '— lb visual verify' }}</span>
+                  <span>·</span>
+                  <span class="tier tier-{{ s.customerTier }}">{{ s.customerTier }}</span>
+                </div>
+                @if (s.cautions.length > 0) {
+                  <ul class="cautions">
+                    @for (c of s.cautions; track c) {
+                      <li>⚠ {{ c }}</li>
+                    }
+                  </ul>
+                }
+              </li>
+            }
+          </ul>
+        </div>
+
+        <div class="plan-economics">
+          <h3>Economics</h3>
+          <div class="econ-row">
+            <span>Parent revenue</span>
+            <strong>{{ formatCurrency(p.parent.revenue) }}</strong>
+          </div>
+          @for (s of p.siblings; track s.loadId) {
+            <div class="econ-row">
+              <span>{{ s.loadNumber ?? s.loadId }} revenue</span>
+              <strong>{{ formatCurrency(s.revenue) }}</strong>
+            </div>
+          }
+          <div class="econ-row econ-total">
+            <span>Combined revenue</span>
+            <strong>{{ formatCurrency(p.combinedRevenue) }}</strong>
+          </div>
+          <div class="econ-row">
+            <span>Linehaul miles (parent)</span>
+            <strong>{{ formatNumber(p.linehaulMiles) }}</strong>
+          </div>
+          <div class="econ-row econ-total">
+            <span>Combined RPM</span>
+            <strong>{{ formatCurrency(p.combinedRevenuePerMile) }} / mi</strong>
+          </div>
+          <div class="econ-note">
+            Phase 1: dispatcher zeros child loaded miles manually in Alvys per the click card.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screen 3: click card + audit -->
+    <section class="panel panel-dark">
+      <div class="panel-title">
+        <h2>3. Alvys click card · {{ p.previewId }}</h2>
+        <p class="panel-sub">
+          Copy this into a note, print it, or dispatch it to the operator. The instructions match
+          Poornima's Alvys walkthrough exactly.
+        </p>
+      </div>
+
+      <pre class="click-card">{{ p.clickCard.plainText }}</pre>
+
+      <div class="click-actions">
+        <button type="button" class="primary" (click)="copyClickCard()">
+          Copy to clipboard
+        </button>
+        <button
+          type="button"
+          class="secondary"
+          [disabled]="!canRecordAudit()"
+          (click)="recordAudit()"
+        >
+          {{ recordingAudit() ? 'Recording…' : 'Record plan as audit entry' }}
+        </button>
+        @if (copyMessage()) {
+          <span class="copy-msg">{{ copyMessage() }}</span>
+        }
+      </div>
+
+      @if (auditError()) {
+        <div class="error">{{ auditError() }}</div>
+      }
+
+      @if (auditRecord(); as record) {
+        <div class="audit-card">
+          <strong>Audit saved</strong> — id <code>{{ record.id }}</code> · recorded by
+          {{ record.recordedBy }} · projected uplift
+          {{ formatCurrency(record.combinedRevenue) }} at
+          {{ formatCurrency(record.combinedRevenuePerMile) }} / mi ·
+          <em>Alvys writeback: {{ record.alvysWriteback }}</em>.
+        </div>
+      }
+    </section>
+  }
+</div>
