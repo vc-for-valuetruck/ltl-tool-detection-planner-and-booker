@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using LtlTool.Api.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,7 +16,8 @@ namespace LtlTool.Api.Features.Ltl.Consolidation;
 [Produces("application/json")]
 public sealed class ConsolidationController(
     ConsolidationCandidateService candidates,
-    ConsolidationPlanService plans) : ControllerBase
+    ConsolidationPlanService plans,
+    IConsolidationAuditStore audits) : ControllerBase
 {
     /// <summary>
     /// Returns ranked consolidation candidates for the given seed load along the specified
@@ -72,4 +74,48 @@ public sealed class ConsolidationController(
             return BadRequest(new { error = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Records a plan preview as an internal audit entry. The dispatcher hits this once
+    /// they've decided to execute the click card manually in Alvys. The audit trail is the
+    /// leadership-facing counter-signal to commission politics (anti-failure map 3h) — the
+    /// running record of consolidation value the tool caught. Nothing writes to Alvys.
+    /// </summary>
+    [HttpPost("plan/audit")]
+    [ProducesResponseType(typeof(ConsolidationAuditRecord), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ConsolidationAuditRecord>> RecordPlanAudit(
+        [FromBody] ConsolidationPlanRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var plan = await plans.BuildAsync(request, ct);
+            var record = audits.Record(plan, CurrentUser());
+            return Ok(record);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Audit history for one parent load, newest first.</summary>
+    [HttpGet("plan/audits")]
+    [ProducesResponseType(typeof(IReadOnlyList<ConsolidationAuditRecord>), StatusCodes.Status200OK)]
+    public ActionResult<IReadOnlyList<ConsolidationAuditRecord>> GetPlanAuditsForParent(
+        [FromQuery] string parentLoadId)
+    {
+        if (string.IsNullOrWhiteSpace(parentLoadId))
+        {
+            return Ok(audits.All());
+        }
+        return Ok(audits.ForParent(parentLoadId));
+    }
+
+    private string CurrentUser() =>
+        User.FindFirstValue("preferred_username")
+        ?? User.FindFirstValue(ClaimTypes.Email)
+        ?? User.Identity?.Name
+        ?? "unknown";
 }
