@@ -22,7 +22,7 @@
       </p>
     </div>
 
-    <form class="seed-form" (ngSubmit)="loadCandidates()">
+    <form class="seed-form" data-testid="consolidate-seed-form" (ngSubmit)="loadCandidates()">
       <input
         type="text"
         placeholder="Seed load id or load number (e.g. L-100234)"
@@ -30,8 +30,9 @@
         (ngModelChange)="seedInput.set($event)"
         name="seed"
         autocomplete="off"
+        data-testid="consolidate-seed-input"
       />
-      <button type="submit" class="primary" [disabled]="loadingCandidates() || !seedInput().trim()">
+      <button type="submit" class="primary" data-testid="consolidate-find-candidates" [disabled]="loadingCandidates() || !seedInput().trim()">
         {{ loadingCandidates() ? 'Loading…' : 'Find candidates' }}
       </button>
     </form>
@@ -81,12 +82,14 @@
             <tbody>
               @for (candidate of response.candidates; track candidate.loadId) {
                 <tr
+                  data-testid="consolidate-candidate-row"
                   [class.blocked]="candidate.isBlocked"
                   [class.selected]="isSelected(candidate.loadId)"
                 >
                   <td>
                     <input
                       type="checkbox"
+                      data-testid="consolidate-candidate-checkbox"
                       [checked]="isSelected(candidate.loadId)"
                       [disabled]="candidate.isBlocked"
                       (change)="toggleSibling(candidate)"
@@ -139,6 +142,7 @@
           <button
             type="button"
             class="primary"
+            data-testid="consolidate-build-plan"
             [disabled]="!canBuildPlan()"
             (click)="buildPlan()"
           >
@@ -225,7 +229,7 @@
             <strong>{{ formatNumber(p.linehaulMiles) }}</strong>
           </div>
 
-          <h3 class="econ-section-header">Driver-side (RPM math)</h3>
+          <h3 class="econ-section-header" data-testid="driver-side-header">Driver-side (RPM math)</h3>
           <div class="econ-row">
             <span>Parent driver trip rate</span>
             <strong>{{ formatCurrency(p.parent.driverTripRate) }}</strong>
@@ -266,7 +270,7 @@
         </p>
       </div>
 
-      <pre class="click-card">{{ p.clickCard.plainText }}</pre>
+      <pre class="click-card" data-testid="click-card-text">{{ p.clickCard.plainText }}</pre>
 
       <div class="click-actions">
         <button type="button" class="primary" (click)="copyClickCard()">
