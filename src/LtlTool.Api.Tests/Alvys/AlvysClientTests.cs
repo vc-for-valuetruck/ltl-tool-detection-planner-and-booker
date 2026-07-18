@@ -117,7 +117,10 @@ public sealed class AlvysClientTests
         var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
-                """{"Page":0,"PageSize":100,"Total":1,"Items":[{"Id":"T1","TripNumber":"500","Status":"In Transit","LoadedMileage":120.5,"Trailer":{"Id":"TR1","EquipmentType":"Reefer"}}]}"""),
+                // LoadedMileage empirical shape (verified 2026-07-18 against va336 via MCP):
+                // { Distance: {Value, UnitOfMeasure}, Source, ProfileName }
+                // TripValue: { Amount, Currency } (Currency = 840 = USD).
+                """{"Page":0,"PageSize":100,"Total":1,"Items":[{"Id":"T1","TripNumber":"500","Status":"In Transit","LoadedMileage":{"Distance":{"Value":120.5,"UnitOfMeasure":"Miles"},"Source":"Engine","ProfileName":"PCMiler"},"TripValue":{"Amount":847.5,"Currency":840},"Trailer":{"Id":"TR1","EquipmentType":"Reefer"}}]}"""),
         });
         var client = Build(handler, new CapturingLogger<AlvysClient>(), version);
 
@@ -126,7 +129,13 @@ public sealed class AlvysClientTests
         var item = Assert.Single(result.Items);
         Assert.Equal("T1", item.Id);
         Assert.Equal("500", item.TripNumber);
-        Assert.Equal(120.5m, item.LoadedMileage);
+        // Empirical shape: LoadedMileage.Distance.Value carries the numeric miles.
+        // The .Value convenience accessor on AlvysDistanceMeasurement flattens the nesting.
+        Assert.Equal(120.5m, item.LoadedMileage?.Value);
+        Assert.Equal("Miles", item.LoadedMileage?.Distance?.UnitOfMeasure);
+        Assert.Equal("Engine", item.LoadedMileage?.Source);
+        Assert.Equal(847.5m, item.TripValue?.Amount);
+        Assert.Equal(840, item.TripValue?.Currency);
         Assert.Equal("Reefer", item.Trailer?.EquipmentType);
         Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
         Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
