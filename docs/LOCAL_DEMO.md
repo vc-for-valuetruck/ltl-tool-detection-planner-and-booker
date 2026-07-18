@@ -85,7 +85,26 @@ npm run test:e2e
 Alternatives:
 
 - `npm run test:e2e:ui` — Playwright's time-travel UI (best for debugging).
-- `npm run test:e2e:ci` — headless, for pipelines.
+- `npm run test:e2e:ci` — headless, used by CI (see below).
+
+## In CI
+
+The `E2E Demo Stack (Playwright)` job in `.github/workflows/ci.yml` boots the same
+`docker-compose` stack, waits for `/api/health` to report `authMode=Demo`, then runs
+`npm run test:e2e:ci`. On failure it uploads two artifacts you can download from the
+Actions run page:
+
+- `playwright-report` — the HTML report with per-spec traces, screenshots, and videos.
+- `compose-logs` — tail of `api`, `web`, and `sqlserver` container logs.
+
+The job is gated on the `ALVYS_CLIENT_SECRET` repository secret. Set it under
+**Settings → Secrets and variables → Actions → New repository secret**; the value is your
+va336 Alvys client secret (same one your MCP token minter uses). Without the secret,
+the job skips gracefully with a warning — fork PRs and first-time contributors don't
+see a red X they can't fix.
+
+The job is currently `continue-on-error: true` so live-Alvys variance can't block main.
+We'll tighten it to hard-block once we've measured the flake rate over a couple weeks.
 
 The suite is intentionally tolerant of live-data variance: if no Laredo→Dallas loads
 are currently open in Alvys, plan-preview specs `test.skip()` rather than fail. Watch
