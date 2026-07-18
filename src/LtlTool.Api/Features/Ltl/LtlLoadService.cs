@@ -130,12 +130,17 @@ public sealed class LtlLoadService(
         var response = await alvys.SearchTripsAsync(
             new TripSearchRequest { Page = 0, PageSize = 5, LoadNumbers = [loadNumber] }, ct);
 
-        // Prefer the first trip carrying any signal. Never mix values from different trips —
-        // that would attribute rate on trip A to miles on trip B.
-        var trip = response.Items.FirstOrDefault(t =>
-            t.Carrier?.TotalPayable?.Amount is not null
-            || t.TripValue?.Amount is not null
-            || t.LoadedMileage?.Value is not null);
+        // Filter to trips actually matching this load number — the SearchTripsAsync backend is
+        // supposed to do that, but some code paths (test fakes, tolerant client-side filters)
+        // may return the full set. Never attribute rate on trip A to miles on trip B by taking
+        // FirstOrDefault blind.
+        var trip = response.Items
+            .Where(t =>
+                string.Equals(t.LoadNumber, loadNumber, StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(t =>
+                t.Carrier?.TotalPayable?.Amount is not null
+                || t.TripValue?.Amount is not null
+                || t.LoadedMileage?.Value is not null);
 
         if (trip is null) return default;
 
