@@ -64,10 +64,15 @@ if ($LASTEXITCODE -ne 0) { Write-Err "docker compose up failed."; exit 1 }
 # ---- Wait for API health ----
 Write-Log "Waiting for API to report healthy on http://localhost:5072/api/health ..."
 $deadline = (Get-Date).AddSeconds(180)
+$healthBody = $null
 while ($true) {
     try {
         $r = Invoke-WebRequest -Uri http://localhost:5072/api/health -UseBasicParsing -TimeoutSec 3
-        if ($r.StatusCode -eq 200) { Write-Log "API is healthy."; break }
+        if ($r.StatusCode -eq 200) {
+            $healthBody = $r.Content
+            Write-Log "API is healthy."
+            break
+        }
     } catch { }
     if ((Get-Date) -gt $deadline) {
         Write-Err "API failed to report healthy within 180s. Check 'docker compose logs api' for details."
@@ -75,6 +80,34 @@ while ($true) {
     }
     Start-Sleep -Seconds 3
 }
+
+# ---- Smoke test: assert authMode=Demo ----
+# The whole point of this runner is to boot the stack in demo mode. If the API is up but
+# came up in EntraId mode (misconfigured .env, config precedence surprise, etc.), fail loud
+# now rather than let the operator hit an MSAL redirect at http://localhost:4200/ltl. This
+# is the second of the two independent demo-mode checks documented in docs/LOCAL_DEMO.md;
+# the first is the startup warning banner in the API logs.
+Write-Log "Smoke test: asserting /api/health reports authMode=Demo ..."
+try {
+    $health = $healthBody | ConvertFrom-Json
+} catch {
+    Write-Err "Smoke test FAILED: /api/health did not return JSON. Body: $healthBody"
+    exit 1
+}
+$authMode = $health.authMode
+if ([string]::IsNullOrWhiteSpace($authMode)) {
+    Write-Err "Smoke test FAILED: /api/health returned no authMode field. Response body: $healthBody"
+    Write-Err "Verify the API image is built from a commit that includes PR #61 (health authMode)"
+    Write-Err "and PR #63 (env parse fixes). Try: docker compose down; .\scripts\demo-up.ps1"
+    exit 1
+}
+if ($authMode -ne 'Demo') {
+    Write-Err "Smoke test FAILED: /api/health reports authMode=$authMode, expected Demo."
+    Write-Err "The API booted in the wrong mode. Check .env (ACCESS_POLICY_MODE=Demo) and rerun:"
+    Write-Err "  docker compose down; .\scripts\demo-up.ps1"
+    exit 1
+}
+Write-Log "Smoke test PASSED: authMode=Demo."
 
 Write-Host @"
 

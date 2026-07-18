@@ -54,8 +54,9 @@ docker compose up -d --build
 # ---- Wait for API health ----
 log "Waiting for API to report healthy on http://localhost:5072/api/health ..."
 DEADLINE=$(( $(date +%s) + 180 ))
+HEALTH_BODY=""
 while true; do
-  if curl -fsS http://localhost:5072/api/health >/dev/null 2>&1; then
+  if HEALTH_BODY=$(curl -fsS http://localhost:5072/api/health 2>/dev/null); then
     log "API is healthy."
     break
   fi
@@ -65,6 +66,30 @@ while true; do
   fi
   sleep 3
 done
+
+# ---- Smoke test: assert authMode=Demo ----
+# The whole point of this runner is to boot the stack in demo mode. If the API is up but
+# came up in EntraId mode (misconfigured .env, config precedence surprise, etc.), fail loud
+# now rather than let the operator hit an MSAL redirect at http://localhost:4200/ltl. This
+# is the second of the two independent demo-mode checks documented in docs/LOCAL_DEMO.md;
+# the first is the startup warning banner in the API logs.
+log "Smoke test: asserting /api/health reports authMode=Demo ..."
+# Parse authMode without a JSON tool dependency. jq isn't guaranteed on macOS/WSL; the
+# health payload is small enough that a regex is fine.
+AUTH_MODE=$(printf '%s' "$HEALTH_BODY" | sed -n 's/.*"authMode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+if [[ -z "$AUTH_MODE" ]]; then
+  err "Smoke test FAILED: /api/health returned no authMode field. Response body: $HEALTH_BODY"
+  err "Verify the API image is built from a commit that includes PR #61 (health authMode)"
+  err "and PR #63 (env parse fixes). Try: docker compose down && ./scripts/demo-up.sh"
+  exit 1
+fi
+if [[ "$AUTH_MODE" != "Demo" ]]; then
+  err "Smoke test FAILED: /api/health reports authMode=$AUTH_MODE, expected Demo."
+  err "The API booted in the wrong mode. Check .env (ACCESS_POLICY_MODE=Demo) and rerun:"
+  err "  docker compose down && ./scripts/demo-up.sh"
+  exit 1
+fi
+log "Smoke test PASSED: authMode=Demo."
 
 # ---- Print URLs and demo script ----
 cat <<'EOF'
