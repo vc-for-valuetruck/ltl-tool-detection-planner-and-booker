@@ -161,7 +161,7 @@ public sealed class CustomerNotesLtlPolicyReader(
     /// LTL_ALLOW=false \u2192 Never when only the shorthand is present. Returns null when no
     /// LTL_* line is present (caller then falls back to static config).
     /// </summary>
-    internal static CustomerConsolidationTier? ParseTierFromNotes(IReadOnlyList<AlvysContextNote> notes)
+    public static CustomerConsolidationTier? ParseTierFromNotes(IReadOnlyList<AlvysContextNote> notes)
     {
         foreach (var note in notes)
         {

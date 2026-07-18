@@ -127,7 +127,7 @@ public class CustomerNotesLtlPolicyReaderTests
 
         var reader = new CustomerNotesLtlPolicyReader(
             client,
-            Options.Create(options),
+            Microsoft.Extensions.Options.Options.Create(options),
             NullLogger<CustomerNotesLtlPolicyReader>.Instance);
 
         var tier = await reader.ResolveAsync("CUST-1", "Kroger", default);
@@ -154,7 +154,7 @@ public class CustomerNotesLtlPolicyReaderTests
         };
 
         var reader = new CustomerNotesLtlPolicyReader(
-            client, Options.Create(options),
+            client, Microsoft.Extensions.Options.Options.Create(options),
             NullLogger<CustomerNotesLtlPolicyReader>.Instance);
 
         var tier = await reader.ResolveAsync("CUST-2", "Masonite", default);
@@ -168,7 +168,7 @@ public class CustomerNotesLtlPolicyReaderTests
         // No customers seeded. No static policy.
 
         var reader = new CustomerNotesLtlPolicyReader(
-            client, Options.Create(new ConsolidationOptions()),
+            client, Microsoft.Extensions.Options.Options.Create(new ConsolidationOptions()),
             NullLogger<CustomerNotesLtlPolicyReader>.Instance);
 
         var tier = await reader.ResolveAsync("nope", "Unknown Customer", default);
@@ -180,7 +180,7 @@ public class CustomerNotesLtlPolicyReaderTests
     {
         var client = new FakeAlvysClient();
         var reader = new CustomerNotesLtlPolicyReader(
-            client, Options.Create(new ConsolidationOptions()),
+            client, Microsoft.Extensions.Options.Options.Create(new ConsolidationOptions()),
             NullLogger<CustomerNotesLtlPolicyReader>.Instance);
 
         var tier = await reader.ResolveAsync(null, null, default);
@@ -201,7 +201,7 @@ public class CustomerNotesLtlPolicyReaderTests
         });
 
         var reader = new CustomerNotesLtlPolicyReader(
-            client, Options.Create(new ConsolidationOptions()),
+            client, Microsoft.Extensions.Options.Options.Create(new ConsolidationOptions()),
             NullLogger<CustomerNotesLtlPolicyReader>.Instance);
 
         _ = await reader.ResolveAsync("CUST-3", "AcmeShipCo", default);
