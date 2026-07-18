@@ -107,7 +107,8 @@ public sealed class AlvysDtoShapeTests
         var driverRpm =
             trip.TripValue!.Amount!.Value / trip.LoadedMileage!.Value!.Value;
 
-        Assert.Equal(5.585585m, Math.Round(driverRpm, 6));
+        // 12400 / 2220 = 5.5855855… — rounded to 6dp with banker's rounding = 5.585586m.
+        Assert.Equal(5.585586m, Math.Round(driverRpm, 6));
     }
 
     [Fact]
