@@ -32,10 +32,27 @@ public sealed class ConsolidationAuditRecord
     /// <summary>Projected combined revenue at record time. Null-safe.</summary>
     public decimal? CombinedRevenue { get; init; }
 
-    /// <summary>Parent's linehaul miles at record time.</summary>
+    /// <summary>
+    /// Parent's customer-facing linehaul miles at record time. Kept for context; NOT the
+    /// denominator of <see cref="CombinedRevenuePerMile"/>.
+    /// </summary>
     public decimal? LinehaulMiles { get; init; }
 
-    /// <summary>Projected combined RPM at record time.</summary>
+    /// <summary>
+    /// Parent's driver-facing loaded miles at record time. The actual denominator of
+    /// <see cref="CombinedRevenuePerMile"/>.
+    /// </summary>
+    public decimal? DriverLoadedMiles { get; init; }
+
+    /// <summary>Combined driver trip value at record time — the numerator of the RPM.</summary>
+    public decimal? CombinedDriverTripValue { get; init; }
+
+    /// <summary>
+    /// Projected combined driver RPM at record time. Corrected 2026-07-18 to use
+    /// driver-facing inputs (see <c>docs/ALVYS_API_DECISIONS.md</c>); prior audit entries
+    /// pre-dating that PR were inflated billing RPM. Leadership dashboards should treat
+    /// audit rows recorded before 2026-07-18 as billing RPM, after as driver RPM.
+    /// </summary>
     public decimal? CombinedRevenuePerMile { get; init; }
 
     /// <summary>Blockers present at recording time. Non-empty audit rows are still recorded
@@ -99,6 +116,8 @@ public sealed class InMemoryConsolidationAuditStore(TimeProvider clock) : IConso
             SiblingLoadNumbers = plan.Siblings.Select(s => s.LoadNumber ?? s.LoadId).ToArray(),
             CombinedRevenue = plan.CombinedRevenue,
             LinehaulMiles = plan.LinehaulMiles,
+            DriverLoadedMiles = plan.DriverLoadedMiles,
+            CombinedDriverTripValue = plan.CombinedDriverTripValue,
             CombinedRevenuePerMile = plan.CombinedRevenuePerMile,
             Blockers = plan.Blockers.ToArray(),
             RecordedBy = recordedBy,

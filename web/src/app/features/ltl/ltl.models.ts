@@ -136,6 +136,19 @@ export interface LtlLoadSummary {
    * never inferred as zero cost.
    */
   carrierPayable: number | null;
+  /**
+   * Driver-facing trip rate (Trip.TripValue.Amount). Null on the search-grid list path or
+   * when no trip/rate is known. Distinct from `revenue` (customer-billing rate) and
+   * `carrierPayable` (Linehaul + Accessorials on the carrier row) — this is the number the
+   * Consolidation Planner divides by `loadedMiles` to get driver RPM.
+   */
+  driverTripRate: number | null;
+  /**
+   * Driver-facing loaded miles (Trip.LoadedMileage.Distance.Value). Null on the search-grid
+   * list path. Distinct from `mileage` (customer-billing mileage). This is the field Phase 5
+   * zeroes on consolidation children in Alvys.
+   */
+  loadedMiles: number | null;
   /** revenue - carrierPayable. Null unless both are known. */
   grossMargin: number | null;
   /** grossMargin as a percent of revenue. Null unless both are known. */

@@ -59,6 +59,10 @@ export interface ConsolidationPlanSibling {
   scheduledDeliveryAt?: string;
   revenue?: number;
   weightLbs?: number;
+  /** Driver-facing trip rate (Trip.TripValue.Amount). Null when no trip is fetched. */
+  driverTripRate?: number;
+  /** Driver-facing loaded miles (Trip.LoadedMileage.Distance.Value). */
+  loadedMiles?: number;
   customerTier: CustomerConsolidationTier;
   cautions: string[];
 }
@@ -74,8 +78,15 @@ export interface ConsolidationPlanResponse {
   corridorCode: string;
   parent: LtlLoadSummary;
   siblings: ConsolidationPlanSibling[];
+  /** Customer-billing total (kept for context; not the RPM numerator). */
   combinedRevenue?: number;
+  /** Parent's customer-billing miles (kept for context; not the RPM denominator). */
   linehaulMiles?: number;
+  /** Parent's driver-facing loaded miles — the actual RPM denominator. */
+  driverLoadedMiles?: number;
+  /** Combined driver trip value — the RPM numerator. */
+  combinedDriverTripValue?: number;
+  /** Combined driver RPM = combinedDriverTripValue / driverLoadedMiles. */
   combinedRevenuePerMile?: number;
   clickCard: ConsolidationClickCard;
   blockers: string[];
@@ -91,6 +102,8 @@ export interface ConsolidationAuditRecord {
   siblingLoadNumbers: string[];
   combinedRevenue?: number;
   linehaulMiles?: number;
+  driverLoadedMiles?: number;
+  combinedDriverTripValue?: number;
   combinedRevenuePerMile?: number;
   blockers: string[];
   alvysWriteback: string;

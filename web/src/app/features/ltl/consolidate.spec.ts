@@ -105,6 +105,8 @@ describe('Consolidate component', () => {
       siblings: [],
       combinedRevenue: 0,
       linehaulMiles: 0,
+      driverLoadedMiles: 0,
+      combinedDriverTripValue: 0,
       combinedRevenuePerMile: 0,
       clickCard: {
         plainText: 'x',
@@ -126,6 +128,8 @@ describe('Consolidate component', () => {
       siblings: [],
       combinedRevenue: 8200,
       linehaulMiles: 1072,
+      driverLoadedMiles: 1050,
+      combinedDriverTripValue: 7900,
       combinedRevenuePerMile: 7.65,
       clickCard: {
         plainText: 'x',
