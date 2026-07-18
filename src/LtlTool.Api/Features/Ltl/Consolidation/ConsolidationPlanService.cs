@@ -144,6 +144,8 @@ public sealed class ConsolidationPlanService(
                 ScheduledDeliveryAt = sibling.ScheduledDeliveryAt,
                 Revenue = sibling.Revenue,
                 WeightLbs = sibling.WeightLbs,
+                DriverTripRate = sibling.DriverTripRate,
+                LoadedMiles = sibling.LoadedMiles,
                 CustomerTier = tier,
                 Cautions = cautions,
             });
@@ -163,13 +165,32 @@ public sealed class ConsolidationPlanService(
                 $"{corridor.Code} corridor.");
         }
 
+        // Combined revenue = customer-facing money on the plan (parent + siblings), still shown
+        // to the operator because it's the total the customer owes for the moves being combined.
         var combinedRevenue = ComputeCombinedRevenue(parent, siblings);
+
+        // Combined RPM math — corrected 2026-07-18 per Reuben transcript (15:55, 33:06) and
+        // empirical findings (see docs/ALVYS_API_DECISIONS.md).
+        //
+        //  * Prior (bug): CombinedRpm = combinedRevenue / parent.Mileage. That mixed
+        //    customer-rate money with customer-billing miles — an inflated billing RPM that
+        //    didn't match the driver-facing number Junior/Holly/Brian actually care about.
+        //
+        //  * Fixed: CombinedRpm = combinedDriverTripValue / parent.LoadedMiles.
+        //    Both inputs are driver-facing, per Reuben: "take the driver's rate and divide it
+        //    by the mileage." Empirically verified: Trip.TripValue.Amount and
+        //    Trip.LoadedMileage.Distance.Value on the trip response.
+        //
+        // Consolidation Planner economics panel now names both LinehaulMiles (informational,
+        // preserves the customer-billing miles for context) AND DriverLoadedMiles (the number
+        // the RPM was actually computed against).
         var linehaulMiles = parent.Mileage;
+        var driverLoadedMiles = parent.LoadedMiles;
+        var combinedDriverTripValue = ComputeCombinedDriverTripValue(parent, siblings);
         var combinedRpm =
-            combinedRevenue is not null
-            && linehaulMiles is not null
-            && linehaulMiles > 0
-                ? Math.Round(combinedRevenue.Value / linehaulMiles.Value, 2)
+            combinedDriverTripValue is not null
+            && driverLoadedMiles is > 0
+                ? Math.Round(combinedDriverTripValue.Value / driverLoadedMiles.Value, 2)
                 : (decimal?)null;
 
         var previewId = $"plan-{_clock.GetUtcNow():yyyy-MM-dd-HHmmss}-{Random.Shared.Next(1000, 9999)}";
@@ -179,7 +200,9 @@ public sealed class ConsolidationPlanService(
         var clickCard = new ConsolidationClickCard
         {
             PlainText = BuildClickCardText(
-                parent, siblings, combinedRevenue, linehaulMiles, combinedRpm,
+                parent, siblings,
+                combinedRevenue, linehaulMiles,
+                combinedDriverTripValue, driverLoadedMiles, combinedRpm,
                 corridor.Code, tripReferenceValue, mainLoadIdReferenceValue),
             TripReferenceValue = tripReferenceValue,
             MainLoadIdReferenceValue = mainLoadIdReferenceValue,
@@ -193,6 +216,8 @@ public sealed class ConsolidationPlanService(
             Siblings = siblings,
             CombinedRevenue = combinedRevenue,
             LinehaulMiles = linehaulMiles,
+            DriverLoadedMiles = driverLoadedMiles,
+            CombinedDriverTripValue = combinedDriverTripValue,
             CombinedRevenuePerMile = combinedRpm,
             ClickCard = clickCard,
             Blockers = blockers,
@@ -207,6 +232,22 @@ public sealed class ConsolidationPlanService(
         if (!anyRevenue) return null;
         var total = parent.Revenue ?? 0m;
         foreach (var s in siblings) total += s.Revenue ?? 0m;
+        return total;
+    }
+
+    /// <summary>
+    /// Sums driver trip rate (<c>Trip.TripValue.Amount</c>) across parent + siblings. Returns
+    /// null when nobody has a driver rate on file — the combined-RPM math must then also
+    /// stay null instead of guessing.
+    /// </summary>
+    private static decimal? ComputeCombinedDriverTripValue(
+        LtlLoadSummary parent,
+        IReadOnlyList<ConsolidationPlanSibling> siblings)
+    {
+        var anyRate = parent.DriverTripRate is not null || siblings.Any(s => s.DriverTripRate is not null);
+        if (!anyRate) return null;
+        var total = parent.DriverTripRate ?? 0m;
+        foreach (var s in siblings) total += s.DriverTripRate ?? 0m;
         return total;
     }
 
@@ -274,6 +315,8 @@ public sealed class ConsolidationPlanService(
         IReadOnlyList<ConsolidationPlanSibling> siblings,
         decimal? combinedRevenue,
         decimal? linehaulMiles,
+        decimal? combinedDriverTripValue,
+        decimal? driverLoadedMiles,
         decimal? combinedRpm,
         string corridorCode,
         string tripReferenceValue,
@@ -331,29 +374,53 @@ public sealed class ConsolidationPlanService(
         sb.AppendLine();
 
         sb.AppendLine("─────────────────────────────────────────");
+        // Customer-side (billing) totals — shown for operator context so leadership can also
+        // see the customer money on the plan, but NOT the numbers RPM is computed against.
         if (combinedRevenue is not null)
         {
-            sb.Append("Projected combined revenue: $").AppendLine(combinedRevenue.Value.ToString("N2", us));
+            sb.Append("Combined customer revenue:  $").AppendLine(combinedRevenue.Value.ToString("N2", us));
         }
         else
         {
-            sb.AppendLine("Projected combined revenue: — (revenue missing on one or more loads)");
+            sb.AppendLine("Combined customer revenue:  — (revenue missing on one or more loads)");
         }
         if (linehaulMiles is not null)
         {
-            sb.Append("Projected linehaul miles:   ").AppendLine(linehaulMiles.Value.ToString("N0", us));
+            sb.Append("Customer linehaul miles:    ").AppendLine(linehaulMiles.Value.ToString("N0", us));
         }
         else
         {
-            sb.AppendLine("Projected linehaul miles:   — (parent mileage missing)");
+            sb.AppendLine("Customer linehaul miles:    — (parent customer mileage missing)");
+        }
+
+        sb.AppendLine();
+        // Driver-side (dispatch) totals — the numbers RPM is actually computed against.
+        // Per Reuben 2026-07-17 sync (33:06): driver RPM is driver rate ÷ loaded miles.
+        if (combinedDriverTripValue is not null)
+        {
+            sb.Append("Combined driver trip value: $").AppendLine(combinedDriverTripValue.Value.ToString("N2", us));
+        }
+        else
+        {
+            sb.AppendLine("Combined driver trip value: — (Trip.TripValue missing on one or more loads)");
+        }
+        if (driverLoadedMiles is not null)
+        {
+            sb.Append("Parent loaded miles:        ").AppendLine(driverLoadedMiles.Value.ToString("N0", us));
+        }
+        else
+        {
+            sb.AppendLine("Parent loaded miles:        — (Trip.LoadedMileage missing on parent)");
         }
         if (combinedRpm is not null)
         {
-            sb.Append("Projected combined RPM:     $").Append(combinedRpm.Value.ToString("N2", us)).AppendLine(" / mi");
+            sb.Append("Combined driver RPM:        $")
+              .Append(combinedRpm.Value.ToString("N2", us))
+              .AppendLine(" / mi");
         }
         else
         {
-            sb.AppendLine("Projected combined RPM:     — (needs both revenue and mileage)");
+            sb.AppendLine("Combined driver RPM:        — (needs both combined driver trip value and parent loaded miles)");
         }
 
         return sb.ToString();

@@ -148,11 +148,13 @@ public sealed class ConsolidationPlanServiceTests
     }
 
     [Fact]
-    public async Task Happy_path_computes_combined_revenue_and_rpm()
+    public async Task Happy_path_computes_driver_rpm_from_trip_value_and_loaded_miles()
     {
-        // Because FakeAlvysClient's LoadDetail is a single field, the LtlLoadService detail
-        // lookups all return the same load. To exercise the plan service's combined-revenue
-        // path with two distinct loads, we build a minimal stateful client here.
+        // Corrected 2026-07-18 per Reuben transcript + empirical MCP verification (see
+        // docs/ALVYS_API_DECISIONS.md "Empirical findings, Finding 3"). RPM is the driver-
+        // facing number: Trip.TripValue.Amount / Trip.LoadedMileage.Distance.Value. The
+        // customer-side (revenue, customer mileage) is retained for operator context but is
+        // NOT the RPM math.
         var parent = Load(
             "L-100234", "Verdef",
             "Laredo", "TX", "Dallas", "TX", ParentPickup,
@@ -163,6 +165,32 @@ public sealed class ConsolidationPlanServiceTests
             rate: 4100m, mileage: 500m, weight: 4100m);
 
         var client = new StatefulAlvysClient(parent, sibling);
+
+        // Seed trips with the driver-facing shape that lives on Trip.TripValue and
+        // Trip.LoadedMileage. LtlLoadService.FetchTripEconomicsForLoadAsync pulls these via
+        // SearchTripsAsync -> the FakeAlvysClient default returns the seeded Trips list
+        // filtered by LoadNumber caller-side.
+        client.Trips.Add(new AlvysTrip
+        {
+            Id = "T-100234",
+            LoadNumber = "L-100234",
+            TripValue = new AlvysMoney { Amount = 4200m, Currency = "USD" },
+            LoadedMileage = new AlvysDistanceMeasurement
+            {
+                Distance = new AlvysDistance { Value = 1050m, UnitOfMeasure = "Miles" },
+            },
+        });
+        client.Trips.Add(new AlvysTrip
+        {
+            Id = "T-100241",
+            LoadNumber = "L-100241",
+            TripValue = new AlvysMoney { Amount = 3900m, Currency = "USD" },
+            LoadedMileage = new AlvysDistanceMeasurement
+            {
+                Distance = new AlvysDistance { Value = 490m, UnitOfMeasure = "Miles" },
+            },
+        });
+
         var loads = new LtlLoadService(
             client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(), LtlTestFactory.Options());
         var options = DefaultOptions();
@@ -190,10 +218,68 @@ public sealed class ConsolidationPlanServiceTests
         Assert.Equal("L-100234", response.Parent.LoadNumber);
         var included = Assert.Single(response.Siblings);
         Assert.Equal("L-100241", included.LoadNumber);
+
+        // Customer-side, kept for operator context.
         Assert.Equal(8200m, response.CombinedRevenue);
         Assert.Equal(1072m, response.LinehaulMiles);
-        // 8200 / 1072 = 7.6492… rounded to 7.65
-        Assert.Equal(7.65m, response.CombinedRevenuePerMile);
+
+        // Driver-side — the numbers RPM is actually computed against.
+        Assert.Equal(1050m, response.DriverLoadedMiles);
+        Assert.Equal(8100m, response.CombinedDriverTripValue);
+        // 8100 / 1050 = 7.7142… rounded to 7.71. Reuben's yard-visit "~$5/mi combined" example
+        // was different numbers but the formula matches.
+        Assert.Equal(7.71m, response.CombinedRevenuePerMile);
+    }
+
+    [Fact]
+    public async Task Rpm_stays_null_when_no_driver_trip_data_available()
+    {
+        // Anti-failure map 3o: silent misses. When Alvys returns no trips for these load
+        // numbers, the plan must NOT invent a driver RPM by falling back to customer-side
+        // math. It reports null and shows dashes in the click card.
+        var parent = Load(
+            "L-100234", "Verdef",
+            "Laredo", "TX", "Dallas", "TX", ParentPickup,
+            rate: 4100m, mileage: 1072m, weight: 14200m);
+        var sibling = Load(
+            "L-100241", "Verdef",
+            "Laredo", "TX", "Dallas", "TX", ParentPickup.AddHours(3),
+            rate: 4100m, mileage: 500m, weight: 4100m);
+
+        var client = new StatefulAlvysClient(parent, sibling); // no trips seeded
+        var loads = new LtlLoadService(
+            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(), LtlTestFactory.Options());
+        var options = DefaultOptions();
+        options.CustomerPolicies.Add(new()
+        {
+            Customer = "Verdef",
+            Tier = CustomerConsolidationTier.Allowed,
+        });
+        var service = new ConsolidationPlanService(
+            loads,
+            Microsoft.Extensions.Options.Options.Create(options),
+            LtlTestFactory.Options(),
+            LtlTestFactory.Clock());
+
+        var response = await service.BuildAsync(
+            new ConsolidationPlanRequest
+            {
+                ParentLoadId = "L-100234",
+                SiblingLoadIds = ["L-100241"],
+            },
+            default);
+
+        Assert.Empty(response.Blockers);
+        Assert.Equal(8200m, response.CombinedRevenue);
+        Assert.Equal(1072m, response.LinehaulMiles);
+        Assert.Null(response.DriverLoadedMiles);
+        Assert.Null(response.CombinedDriverTripValue);
+        Assert.Null(response.CombinedRevenuePerMile);
+
+        // Click card should visibly say the driver RPM is unknown, not fake a number.
+        Assert.Contains("Combined driver RPM:", response.ClickCard.PlainText);
+        Assert.Contains("needs both combined driver trip value and parent loaded miles",
+            response.ClickCard.PlainText);
     }
 
     [Fact]

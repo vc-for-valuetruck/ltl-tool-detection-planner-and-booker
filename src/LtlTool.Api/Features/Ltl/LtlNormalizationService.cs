@@ -37,6 +37,11 @@ public sealed class LtlNormalizationService(
     /// visibility shares) without this service taking an Alvys dependency for the per-load fetch.
     /// <paramref name="carrierPayable"/> is optional (fetched from the load's trip on the detail/
     /// worklist path) and enables a gross-margin risk signal when a revenue figure is also known.
+    /// <paramref name="driverTripRate"/> and <paramref name="loadedMiles"/> are the
+    /// driver-facing rate (<c>Trip.TripValue.Amount</c>) and loaded miles
+    /// (<c>Trip.LoadedMileage.Distance.Value</c>) — the two inputs to the driver-RPM math the
+    /// Consolidation Planner needs (Reuben 2026-07-17 sync, 15:55 + 33:06). Both optional; null
+    /// on the list/search path where trips are not fetched.
     /// </summary>
     public LtlLoadSummary Normalize(
         AlvysLoad load,
@@ -44,7 +49,9 @@ public sealed class LtlNormalizationService(
         IReadOnlyList<AlvysInvoice>? invoices = null,
         VisibilityContext? visibility = null,
         IReadOnlyList<LtlExceptionFlag>? extraExceptions = null,
-        decimal? carrierPayable = null)
+        decimal? carrierPayable = null,
+        decimal? driverTripRate = null,
+        decimal? loadedMiles = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -132,6 +139,8 @@ public sealed class LtlNormalizationService(
             Mileage = mileage,
             RevenuePerMile = revenuePerMile,
             CarrierPayable = carrierPayable,
+            DriverTripRate = driverTripRate,
+            LoadedMiles = loadedMiles,
             GrossMargin = grossMargin,
             GrossMarginPercent = grossMarginPercent,
             IsLtl = isLtl,

@@ -58,10 +58,26 @@ public sealed class LtlLoadService(
         var loadNumber = load.LoadNumber ?? idOrNumber;
         var documents = await alvys.ListLoadDocumentsAsync(loadNumber, ct);
         var invoices = await FetchInvoicesForLoadAsync(loadNumber, ct);
-        var carrierPayable = await FetchCarrierPayableForLoadAsync(loadNumber, ct);
+        var tripEcon = await FetchTripEconomicsForLoadAsync(loadNumber, ct);
         var (context, visibilityExceptions) = await FetchVisibilityAsync(loadNumber, ct);
-        return normalizer.Normalize(load, documents, invoices, context, visibilityExceptions, carrierPayable);
+        return normalizer.Normalize(
+            load, documents, invoices, context, visibilityExceptions,
+            carrierPayable: tripEcon.CarrierPayable,
+            driverTripRate: tripEcon.DriverTripRate,
+            loadedMiles: tripEcon.LoadedMiles);
     }
+
+    /// <summary>
+    /// The three trip-derived economic fields the Consolidation Planner + Billing Worklist care
+    /// about: carrier total payable (billing), driver trip rate (dispatch), and loaded miles
+    /// (dispatch). All three come from the same <c>SearchTripsAsync</c> call, so this bundle
+    /// prevents three round-trips when only one is needed. Missing values remain null; nothing
+    /// is inferred.
+    /// </summary>
+    private readonly record struct TripEconomics(
+        decimal? CarrierPayable,
+        decimal? DriverTripRate,
+        decimal? LoadedMiles);
 
     /// <summary>
     /// Fetches the inbound + outbound visibility history for a single load (read-only) and turns it
@@ -101,26 +117,42 @@ public sealed class LtlLoadService(
     }
 
     /// <summary>
-    /// Fetches the carrier's total payable amount for a single load's trip (read-only), by
-    /// searching trips filtered to this load number. Returns null when there is no trip, no
-    /// carrier party, or the upstream degrades — never fabricates a cost.
+    /// Fetches the three trip-derived economic fields for a single load's trip (read-only):
+    /// carrier total payable, driver trip rate, loaded miles. All three come from the same
+    /// <c>SearchTripsAsync</c> call — one network hop, three signals. Returns
+    /// <c>default(TripEconomics)</c> (all-nulls) when there is no trip or the upstream
+    /// degrades. Never fabricates values.
     /// </summary>
-    private async Task<decimal?> FetchCarrierPayableForLoadAsync(string loadNumber, CancellationToken ct)
+    private async Task<TripEconomics> FetchTripEconomicsForLoadAsync(string loadNumber, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(loadNumber)) return null;
+        if (string.IsNullOrWhiteSpace(loadNumber)) return default;
 
         var response = await alvys.SearchTripsAsync(
             new TripSearchRequest { Page = 0, PageSize = 5, LoadNumbers = [loadNumber] }, ct);
-        return response.Items.Select(t => t.Carrier?.TotalPayable?.Amount).FirstOrDefault(a => a is not null);
+
+        // Prefer the first trip carrying any signal. Never mix values from different trips —
+        // that would attribute rate on trip A to miles on trip B.
+        var trip = response.Items.FirstOrDefault(t =>
+            t.Carrier?.TotalPayable?.Amount is not null
+            || t.TripValue?.Amount is not null
+            || t.LoadedMileage?.Value is not null);
+
+        if (trip is null) return default;
+
+        return new TripEconomics(
+            CarrierPayable: trip.Carrier?.TotalPayable?.Amount,
+            DriverTripRate: trip.TripValue?.Amount,
+            LoadedMiles: trip.LoadedMileage?.Value);
     }
 
     /// <summary>
     /// Bulk-fetches carrier total-payable amounts for a set of loads in one paged trip search
-    /// keyed by load number, returning a load-number → amount map. Same shape as
+    /// keyed by load number, returning a load-number → <see cref="TripEconomics"/> map with
+    /// carrier payable, driver trip rate, and loaded miles. Same shape as
     /// <see cref="FetchInvoicesForLoadsAsync"/> so the worklist gets margin context without an
     /// N-call fan-out. Returns an empty map when there are no load numbers or upstream degrades.
     /// </summary>
-    private async Task<IReadOnlyDictionary<string, decimal>> FetchCarrierPayablesForLoadsAsync(
+    private async Task<IReadOnlyDictionary<string, TripEconomics>> FetchTripEconomicsForLoadsAsync(
         IReadOnlyList<AlvysLoad> loads, CancellationToken ct)
     {
         var loadNumbers = loads
@@ -130,7 +162,7 @@ public sealed class LtlLoadService(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var map = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, TripEconomics>(StringComparer.OrdinalIgnoreCase);
         if (loadNumbers.Count == 0) return map;
 
         var page = 0;
@@ -145,9 +177,12 @@ public sealed class LtlLoadService(
 
             foreach (var trip in response.Items)
             {
+                if (string.IsNullOrWhiteSpace(trip.LoadNumber) || map.ContainsKey(trip.LoadNumber!)) continue;
                 var payable = trip.Carrier?.TotalPayable?.Amount;
-                if (payable is not null && !string.IsNullOrWhiteSpace(trip.LoadNumber) && !map.ContainsKey(trip.LoadNumber!))
-                    map[trip.LoadNumber!] = payable.Value;
+                var driverRate = trip.TripValue?.Amount;
+                var loadedMiles = trip.LoadedMileage?.Value;
+                if (payable is null && driverRate is null && loadedMiles is null) continue;
+                map[trip.LoadNumber!] = new TripEconomics(payable, driverRate, loadedMiles);
             }
 
             fetched += response.Items.Count;
@@ -181,15 +216,19 @@ public sealed class LtlLoadService(
         // filter upstream) rather than one call per load, so invoice-backed billing readiness
         // extends to the worklist without an N-call fan-out.
         var invoicesByLoad = await FetchInvoicesForLoadsAsync(loads, ct);
-        var carrierPayableByLoad = await FetchCarrierPayablesForLoadsAsync(loads, ct);
+        var tripEconByLoad = await FetchTripEconomicsForLoadsAsync(loads, ct);
 
         var normalized = loads.Select(l =>
-            normalizer.Normalize(
+        {
+            var econ = !string.IsNullOrWhiteSpace(l.LoadNumber)
+                && tripEconByLoad.TryGetValue(l.LoadNumber!, out var e) ? e : default;
+            return normalizer.Normalize(
                 l,
                 invoices: InvoicesFor(l, invoicesByLoad),
-                carrierPayable: !string.IsNullOrWhiteSpace(l.LoadNumber) && carrierPayableByLoad.TryGetValue(l.LoadNumber!, out var payable)
-                    ? payable
-                    : null));
+                carrierPayable: econ.CarrierPayable,
+                driverTripRate: econ.DriverTripRate,
+                loadedMiles: econ.LoadedMiles);
+        });
 
         return normalized
             .Where(s => !s.Billing.IsAlreadyInvoiced)

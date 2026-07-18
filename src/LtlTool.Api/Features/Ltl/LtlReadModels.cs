@@ -198,6 +198,25 @@ public sealed class LtlLoadSummary
     public decimal? CarrierPayable { get; init; }
 
     /// <summary>
+    /// Driver-facing trip rate (<c>AlvysTrip.TripValue.Amount</c>). This is the number Reuben
+    /// described at 33:06 in the 2026-07-17 sync as the "driver's rate" for RPM math. Distinct
+    /// from <see cref="Revenue"/> (customer-facing billing rate) and
+    /// <see cref="CarrierPayable"/> (Linehaul + Accessorials on the carrier row — which for
+    /// company drivers equals TripValue but semantically means "payable", not "trip rate").
+    /// Null when no trip was fetched or the trip carries no rate. Never inferred.
+    /// </summary>
+    public decimal? DriverTripRate { get; init; }
+
+    /// <summary>
+    /// Driver-facing loaded miles (<c>AlvysTrip.LoadedMileage.Distance.Value</c>). This is the
+    /// number the Alvys dispatch language panel labels "loaded miles" — the field Poornima
+    /// walks Holly through zeroing on consolidation children (Reuben 2026-07-17 sync, 15:55).
+    /// Distinct from <see cref="Mileage"/>, which maps to customer-facing billing miles.
+    /// Null when no trip was fetched or the trip carries no loaded mileage. Never inferred.
+    /// </summary>
+    public decimal? LoadedMiles { get; init; }
+
+    /// <summary>
     /// Revenue − <see cref="CarrierPayable"/>. Null unless both are present — a missing carrier
     /// payable is never treated as zero cost.
     /// </summary>

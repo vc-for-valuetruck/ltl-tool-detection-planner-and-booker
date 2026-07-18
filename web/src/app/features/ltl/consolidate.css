@@ -305,6 +305,14 @@ button.secondary:disabled { color: #94a3b8; cursor: not-allowed; }
 }
 .econ-total strong { color: #059669; font-weight: 700; }
 
+.econ-section-header {
+  margin: 20px 0 8px !important;
+  font-size: 13px !important;
+  color: #475569;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
 .econ-note {
   background: #fef3c7;
   color: #78350f;

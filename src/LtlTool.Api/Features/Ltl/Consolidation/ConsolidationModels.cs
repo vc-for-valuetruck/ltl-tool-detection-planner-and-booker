@@ -117,6 +117,21 @@ public sealed class ConsolidationPlanSibling
     public DateTimeOffset? ScheduledDeliveryAt { get; init; }
     public decimal? Revenue { get; init; }
     public decimal? WeightLbs { get; init; }
+
+    /// <summary>
+    /// Driver trip rate (<c>Trip.TripValue.Amount</c>). Null when no trip was fetched or the
+    /// trip carries no rate. Used for combined-RPM math — the operator-facing number Junior /
+    /// Holly / Brian care about.
+    /// </summary>
+    public decimal? DriverTripRate { get; init; }
+
+    /// <summary>
+    /// Driver loaded miles (<c>Trip.LoadedMileage.Distance.Value</c>). Null when no trip was
+    /// fetched. On the child sibling this is the miles Phase 5 will zero out; on the parent
+    /// it stays populated and is the denominator of the combined-RPM formula.
+    /// </summary>
+    public decimal? LoadedMiles { get; init; }
+
     public CustomerConsolidationTier CustomerTier { get; init; }
 
     /// <summary>
@@ -162,13 +177,40 @@ public sealed class ConsolidationPlanResponse
     /// <summary>Siblings that will be zeroed-out and reference the parent.</summary>
     public required IReadOnlyList<ConsolidationPlanSibling> Siblings { get; init; }
 
-    /// <summary>Sum of Parent.Revenue + all sibling Revenue values (null-safe).</summary>
+    /// <summary>
+    /// Sum of Parent.Revenue + all sibling Revenue values (customer-billing rates). This is
+    /// the total the customer owes for the moves being combined — kept for operator context,
+    /// not used as the RPM numerator.
+    /// </summary>
     public decimal? CombinedRevenue { get; init; }
 
-    /// <summary>Parent's linehaul mileage — the miles the driver actually gets paid on.</summary>
+    /// <summary>
+    /// Parent's customer-facing linehaul mileage (<c>Load.CustomerMileage</c>). Kept for
+    /// operator context alongside <see cref="DriverLoadedMiles"/>. Never used as the RPM
+    /// denominator — that would mix billing miles with driver-facing math.
+    /// </summary>
     public decimal? LinehaulMiles { get; init; }
 
-    /// <summary>Combined revenue divided by linehaul miles. Null unless both are known.</summary>
+    /// <summary>
+    /// Parent's driver-facing loaded miles (<c>Trip.LoadedMileage.Distance.Value</c>). This is
+    /// the actual denominator of <see cref="CombinedRevenuePerMile"/>. Null when no trip was
+    /// fetched — in which case the RPM stays null (never guessed).
+    /// </summary>
+    public decimal? DriverLoadedMiles { get; init; }
+
+    /// <summary>
+    /// Sum of Parent.DriverTripRate + all sibling DriverTripRate values. The numerator of
+    /// <see cref="CombinedRevenuePerMile"/>.
+    /// </summary>
+    public decimal? CombinedDriverTripValue { get; init; }
+
+    /// <summary>
+    /// Combined driver trip value divided by parent's driver loaded miles. This is the
+    /// operator-facing “did we catch a good consolidation?” number — the driver-RPM
+    /// leadership will read against the audit trail. Null unless both inputs are known.
+    /// Corrected 2026-07-18 per Reuben 2026-07-17 sync + empirical MCP verification (see
+    /// <c>docs/ALVYS_API_DECISIONS.md</c>).
+    /// </summary>
     public decimal? CombinedRevenuePerMile { get; init; }
 
     /// <summary>The click card the dispatcher pastes into Alvys.</summary>

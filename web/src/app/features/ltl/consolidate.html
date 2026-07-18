@@ -205,7 +205,7 @@
         </div>
 
         <div class="plan-economics">
-          <h3>Economics</h3>
+          <h3>Customer-side (billing)</h3>
           <div class="econ-row">
             <span>Parent revenue</span>
             <strong>{{ formatCurrency(p.parent.revenue) }}</strong>
@@ -217,19 +217,40 @@
             </div>
           }
           <div class="econ-row econ-total">
-            <span>Combined revenue</span>
+            <span>Combined customer revenue</span>
             <strong>{{ formatCurrency(p.combinedRevenue) }}</strong>
           </div>
           <div class="econ-row">
-            <span>Linehaul miles (parent)</span>
+            <span>Customer linehaul miles (parent)</span>
             <strong>{{ formatNumber(p.linehaulMiles) }}</strong>
           </div>
+
+          <h3 class="econ-section-header">Driver-side (RPM math)</h3>
+          <div class="econ-row">
+            <span>Parent driver trip rate</span>
+            <strong>{{ formatCurrency(p.parent.driverTripRate) }}</strong>
+          </div>
+          @for (s of p.siblings; track s.loadId) {
+            <div class="econ-row">
+              <span>{{ s.loadNumber ?? s.loadId }} driver rate</span>
+              <strong>{{ formatCurrency(s.driverTripRate) }}</strong>
+            </div>
+          }
           <div class="econ-row econ-total">
-            <span>Combined RPM</span>
+            <span>Combined driver trip value</span>
+            <strong>{{ formatCurrency(p.combinedDriverTripValue) }}</strong>
+          </div>
+          <div class="econ-row">
+            <span>Parent loaded miles</span>
+            <strong>{{ formatNumber(p.driverLoadedMiles) }}</strong>
+          </div>
+          <div class="econ-row econ-total">
+            <span>Combined driver RPM</span>
             <strong>{{ formatCurrency(p.combinedRevenuePerMile) }} / mi</strong>
           </div>
           <div class="econ-note">
-            Phase 1: dispatcher zeros child loaded miles manually in Alvys per the click card.
+            RPM = combined driver trip value ÷ parent loaded miles. Phase 1: dispatcher zeros
+            each child's loaded miles manually in Alvys per the click card.
           </div>
         </div>
       </div>
