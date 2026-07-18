@@ -1,5 +1,6 @@
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
+using LtlTool.Api.Features.Ltl.Consolidation;
 using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Tests.Ltl;
@@ -33,8 +34,40 @@ internal static class LtlTestFactory
 
     public static VisibilityAnalyzer Visibility() => new();
 
+    /// <summary>
+    /// Test-double policy reader that resolves purely from the given
+    /// <see cref="ConsolidationOptions.CustomerPolicies"/>. No Alvys calls. Same semantics
+    /// as the old inline ResolveTier: name lookup, Unknown default.
+    /// </summary>
+    public static ICustomerLtlPolicyReader StaticPolicyReader(ConsolidationOptions options) =>
+        new StaticLtlPolicyReader(options);
+
     public static EquipmentEventAnalyzer EquipmentEvents(LtlOptions? options = null) =>
         new(Options(options));
+}
+
+/// <summary>
+/// Test-double policy reader that resolves tiers purely from a
+/// <see cref="ConsolidationOptions.CustomerPolicies"/> list — no Alvys calls, no cache.
+/// Same semantics as the inline ResolveTier the two consolidation services used before
+/// <c>ICustomerLtlPolicyReader</c> was introduced.
+/// </summary>
+internal sealed class StaticLtlPolicyReader(ConsolidationOptions options) : ICustomerLtlPolicyReader
+{
+    private readonly ConsolidationOptions _opts = options;
+
+    public Task<CustomerConsolidationTier> ResolveAsync(
+        string? customerId,
+        string? customerName,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(customerName))
+            return Task.FromResult(CustomerConsolidationTier.Unknown);
+
+        var policy = _opts.CustomerPolicies.FirstOrDefault(
+            p => string.Equals(p.Customer, customerName, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(policy?.Tier ?? CustomerConsolidationTier.Unknown);
+    }
 }
 
 /// <summary>
@@ -56,6 +89,8 @@ internal class FakeAlvysClient : IAlvysClient
     public List<AlvysVisibilityHistoryEvent> OutboundVisibility { get; set; } = [];
     public List<AlvysTruckEvent> TruckEvents { get; set; } = [];
     public List<AlvysTrailerEvent> TrailerEvents { get; set; } = [];
+    public List<AlvysCustomer> Customers { get; set; } = [];
+    public int SearchCustomersCallCount { get; private set; }
 
     public Task<AlvysLoadsResponse> SearchLoadsAsync(
         int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
@@ -108,7 +143,17 @@ internal class FakeAlvysClient : IAlvysClient
     public Task<AlvysLocationsResponse> SearchLocationsAsync(LocationSearchRequest request, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<AlvysCustomersResponse> SearchCustomersAsync(CustomerSearchRequest request, CancellationToken ct = default)
-        => throw new NotSupportedException();
+    {
+        SearchCustomersCallCount++;
+        var items = Customers.Skip(request.Page * request.PageSize).Take(request.PageSize).ToList();
+        return Task.FromResult(new AlvysCustomersResponse
+        {
+            Page = request.Page,
+            PageSize = request.PageSize,
+            Total = Customers.Count,
+            Items = items,
+        });
+    }
     public Task<AlvysUsersResponse> SearchUsersAsync(UserSearchRequest request, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<AlvysTendersResponse> SearchTendersAsync(TenderSearchRequest request, CancellationToken ct = default)

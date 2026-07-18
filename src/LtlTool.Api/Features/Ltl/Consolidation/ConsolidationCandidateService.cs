@@ -19,12 +19,14 @@ public sealed class ConsolidationCandidateService(
     LtlLoadService loads,
     IOptions<ConsolidationOptions> options,
     IOptions<LtlOptions> ltlOptions,
-    TimeProvider clock)
+    TimeProvider clock,
+    ICustomerLtlPolicyReader policyReader)
 {
     private readonly LtlLoadService _loads = loads;
     private readonly ConsolidationOptions _opts = options.Value;
     private readonly LtlOptions _ltl = ltlOptions.Value;
     private readonly TimeProvider _clock = clock;
+    private readonly ICustomerLtlPolicyReader _policyReader = policyReader;
 
     /// <summary>
     /// Returns ranked consolidation candidates for the given seed load along the specified
@@ -77,7 +79,7 @@ public sealed class ConsolidationCandidateService(
             // A load cannot be its own sibling.
             if (string.Equals(summary.Id, seed.Id, StringComparison.OrdinalIgnoreCase)) continue;
 
-            var candidate = Evaluate(seed, summary, corridor, origin, destination);
+            var candidate = await EvaluateAsync(seed, summary, corridor, origin, destination, ct);
             if (candidate is not null) candidates.Add(candidate);
         }
 
@@ -109,12 +111,13 @@ public sealed class ConsolidationCandidateService(
     /// Evaluate a single load as a candidate against the seed. Returns <c>null</c> when the
     /// load is not in the corridor at all (so it never appears in the list).
     /// </summary>
-    private ConsolidationCandidate? Evaluate(
+    private async Task<ConsolidationCandidate?> EvaluateAsync(
         LtlLoadSummary seed,
         LtlLoadSummary candidate,
         ConsolidationCorridorOptions corridor,
         ConsolidationWarehouseOptions origin,
-        ConsolidationWarehouseOptions destination)
+        ConsolidationWarehouseOptions destination,
+        CancellationToken ct)
     {
         // Region gate — hard disqualifier before any factor evaluation.
         if (!IsInAllowedRegion(candidate.Origin) || !IsInAllowedRegion(candidate.Destination))
@@ -132,7 +135,7 @@ public sealed class ConsolidationCandidateService(
 
         var laneFit = EvaluateLaneFit(candidate, origin, destination);
         var timingFit = EvaluateTimingFit(seed, candidate, corridor);
-        var (customerFit, tier) = EvaluateCustomerFit(candidate);
+        var (customerFit, tier) = await EvaluateCustomerFitAsync(candidate, ct);
 
         var factors = new[] { laneFit, timingFit, customerFit };
         var blocked = factors.Any(f => f.Fit == ConsolidationFit.Blocked);
@@ -232,13 +235,15 @@ public sealed class ConsolidationCandidateService(
     }
 
     /// <summary>
-    /// Customer-fit chip: derived from the per-customer policy list. Unknown by default →
-    /// yellow "confirm with account owner", never green.
+    /// Customer-fit chip: derived from the per-customer policy reader (Alvys customer notes
+    /// first, static config fallback). Unknown by default → yellow "confirm with account
+    /// owner", never green. See <see cref="CustomerNotesLtlPolicyReader"/> for the notes
+    /// convention.
     /// </summary>
-    private (ConsolidationFactor Factor, CustomerConsolidationTier Tier) EvaluateCustomerFit(
-        LtlLoadSummary candidate)
+    private async Task<(ConsolidationFactor Factor, CustomerConsolidationTier Tier)>
+        EvaluateCustomerFitAsync(LtlLoadSummary candidate, CancellationToken ct)
     {
-        var tier = ResolveTier(candidate.CustomerName);
+        var tier = await _policyReader.ResolveAsync(candidate.CustomerId, candidate.CustomerName, ct);
         var factor = tier switch
         {
             CustomerConsolidationTier.Allowed => new ConsolidationFactor
@@ -273,14 +278,6 @@ public sealed class ConsolidationCandidateService(
             },
         };
         return (factor, tier);
-    }
-
-    private CustomerConsolidationTier ResolveTier(string? customerName)
-    {
-        if (string.IsNullOrWhiteSpace(customerName)) return CustomerConsolidationTier.Unknown;
-        var policy = _opts.CustomerPolicies.FirstOrDefault(
-            p => string.Equals(p.Customer, customerName, StringComparison.OrdinalIgnoreCase));
-        return policy?.Tier ?? CustomerConsolidationTier.Unknown;
     }
 
     private bool IsInAllowedRegion(LtlPlace? place)
