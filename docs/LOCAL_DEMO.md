@@ -60,6 +60,37 @@ prints a clear failure message and exits non-zero before you ever open the brows
 is the second of the two independent demo-mode checks; the first is the multi-line
 warning banner in the API logs (`docker compose logs api | grep DEMO`).
 
+## Watch the workflow run itself (Playwright E2E)
+
+If you want to see the pilot flow execute without touching the mouse — useful for
+your own smoke-tests, or for recording a demo video without live typing — there's a
+headed Playwright suite that drives Search → Consolidate against the running demo
+stack.
+
+One-time setup (after `demo-up` succeeds):
+
+```bash
+cd web
+npm install                     # picks up the Playwright dep from package.json
+npm run test:e2e:install        # downloads Chromium (~150 MB, one-time)
+```
+
+Run the workflow while watching (opens a real Chromium window, ~1.5 s between steps):
+
+```bash
+cd web
+npm run test:e2e
+```
+
+Alternatives:
+
+- `npm run test:e2e:ui` — Playwright's time-travel UI (best for debugging).
+- `npm run test:e2e:ci` — headless, for pipelines.
+
+The suite is intentionally tolerant of live-data variance: if no Laredo→Dallas loads
+are currently open in Alvys, plan-preview specs `test.skip()` rather than fail. Watch
+for `⚠` lines in the console output that call this out honestly.
+
 ## Demo script for leadership (5 minutes)
 
 1. **Open** `http://localhost:4200/ltl`. The workbench loads with no auth

@@ -143,12 +143,12 @@
     </div>
 
     <!-- Filters -->
-    <form class="filters" (ngSubmit)="onSubmit()">
-      <input type="search" name="keyword" placeholder="Load #, order #, PO#…" [(ngModel)]="filters().keyword" />
+    <form class="filters" data-testid="search-filters" (ngSubmit)="onSubmit()">
+      <input type="search" name="keyword" placeholder="Load #, order #, PO#…" [(ngModel)]="filters().keyword" data-testid="search-keyword" />
       <input type="text" name="customer" placeholder="Customer" [(ngModel)]="filters().customer" />
-      <input type="text" name="originCity" placeholder="Origin city" [(ngModel)]="filters().originCity" />
+      <input type="text" name="originCity" placeholder="Origin city" [(ngModel)]="filters().originCity" data-testid="search-origin-city" />
       <input type="text" name="originState" placeholder="Orig ST" maxlength="2" [(ngModel)]="filters().originState" />
-      <input type="text" name="destinationCity" placeholder="Dest city" [(ngModel)]="filters().destinationCity" />
+      <input type="text" name="destinationCity" placeholder="Dest city" [(ngModel)]="filters().destinationCity" data-testid="search-dest-city" />
       <input type="text" name="destinationState" placeholder="Dest ST" maxlength="2" [(ngModel)]="filters().destinationState" />
       <input type="text" name="equipmentType" placeholder="Equipment" [(ngModel)]="filters().equipmentType" />
       <select name="assignment" [(ngModel)]="filters().assignment">
@@ -228,7 +228,7 @@
           </thead>
           <tbody>
             @for (load of items(); track load.id) {
-              <tr (click)="select(load)" [class.selected]="selected()?.id === load.id">
+              <tr data-testid="search-load-row" (click)="select(load)" [class.selected]="selected()?.id === load.id">
                 <td>
                   <strong>{{ load.customerName || '—' }}</strong>
                   <div class="muted">{{ load.loadNumber || load.id }}</div>

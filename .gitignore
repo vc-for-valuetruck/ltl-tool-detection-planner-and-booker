@@ -13,3 +13,9 @@ logs/
 *.log
 .DS_Store
 Thumbs.db
+
+# Playwright E2E artifacts (see web/e2e/)
+web/test-results/
+web/playwright-report/
+web/blob-report/
+.playwright/
