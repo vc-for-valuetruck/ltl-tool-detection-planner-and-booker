@@ -18,13 +18,31 @@ builder.Services
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Microsoft Entra ID (JWT bearer) authentication.
-builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
+// Authentication scheme. AccessPolicy:Mode selects between real Entra ID and the demo
+// shim; anything but Demo defaults to Entra ID. See DemoAuthenticationHandler for the
+// posture-and-warnings applying to demo mode.
+builder.Services.Configure<AccessPolicyOptions>(builder.Configuration.GetSection("AccessPolicy"));
+var accessPolicyMode = builder.Configuration
+    .GetSection("AccessPolicy")
+    .GetValue<AccessPolicyMode?>("Mode") ?? AccessPolicyMode.EntraId;
+
+if (accessPolicyMode == AccessPolicyMode.Demo)
+{
+    // Demo mode: synthetic identity, no MSAL wiring. Loud warning at startup below.
+    builder.Services
+        .AddAuthentication(DemoAuthenticationHandler.SchemeName)
+        .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, DemoAuthenticationHandler>(
+            DemoAuthenticationHandler.SchemeName, _ => { });
+}
+else
+{
+    // Microsoft Entra ID (JWT bearer) authentication.
+    builder.Services
+        .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
+}
 
 // Authorization: require an authenticated user whose email domain is allow-listed.
-builder.Services.Configure<AccessPolicyOptions>(builder.Configuration.GetSection("AccessPolicy"));
 builder.Services.AddSingleton<IAuthorizationHandler, AllowedEmailDomainHandler>();
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(AccessPolicies.AllowedEmailDomain, policy =>
@@ -81,6 +99,21 @@ if (!app.Environment.IsEnvironment("Testing"))
 {
     var alvys = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AlvysOptions>>().Value;
     var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Alvys");
+
+    // Loud, unmistakable demo-mode banner. If this line ever appears in a UAT or prod
+    // deployment, someone shipped the wrong config: every request in demo mode is granted
+    // full API access under a synthetic identity.
+    if (accessPolicyMode == AccessPolicyMode.Demo)
+    {
+        var demoLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AccessPolicy");
+        demoLogger.LogWarning(
+            "\n" +
+            "================================================================\n" +
+            "  DEMO AUTH MODE ENABLED - every request is authenticated as\n" +
+            "  demo@valuetruck.com with a synthetic identity. Never deploy\n" +
+            "  this configuration to a public-facing environment.\n" +
+            "================================================================");
+    }
     if (alvys.Provider == AlvysProvider.Live && !alvys.HasCredentials)
     {
         startupLogger.LogWarning(

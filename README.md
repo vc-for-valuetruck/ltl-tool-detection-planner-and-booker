@@ -68,6 +68,21 @@ Then follow [`TEMPLATE_SETUP.md`](TEMPLATE_SETUP.md) and the rename checklist in
 
 ---
 
+## 2b. Local demo (no Azure required)
+
+To show the LTL Phase 1 pilot end-to-end from a laptop — no Azure, no Entra tenant,
+no UAT deployment — use the demo runner:
+
+```bash
+cp .env.demo.example .env       # then paste your ALVYS_CLIENT_SECRET into .env
+./scripts/demo-up.sh            # macOS / Linux / WSL
+pwsh ./scripts/demo-up.ps1      # Windows PowerShell
+```
+
+Sets `AccessPolicy:Mode=Demo` which grants every request a synthetic
+`demo@valuetruck.com` identity via `DemoAuthenticationHandler`. Alvys reads go
+live to va336; writeback stays hard-disabled. Full runbook: [`docs/LOCAL_DEMO.md`](docs/LOCAL_DEMO.md).
+
 ## 3. First run
 
 ```bash

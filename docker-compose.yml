@@ -39,14 +39,20 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: "http://+:8080"
-      AzureAd__TenantId: "${AZURE_AD_TENANT_ID}"
-      AzureAd__ClientId: "${AZURE_AD_API_CLIENT_ID}"
-      AzureAd__ClientSecret: "${AZURE_AD_CLIENT_SECRET}"
+      # AccessPolicy__Mode: EntraId (default) or Demo. Demo mode grants every request a
+      # synthetic identity so the tool runs against real Alvys reads without an Entra
+      # tenant. Set ACCESS_POLICY_MODE=Demo in .env for a local demo.
+      AccessPolicy__Mode: "${ACCESS_POLICY_MODE:-EntraId}"
+      AzureAd__TenantId: "${AZURE_AD_TENANT_ID:-}"
+      AzureAd__ClientId: "${AZURE_AD_API_CLIENT_ID:-}"
+      AzureAd__ClientSecret: "${AZURE_AD_CLIENT_SECRET:-}"
       AzureAd__Instance: "https://login.microsoftonline.com/"
-      AzureAd__Audience: "api://${AZURE_AD_API_CLIENT_ID}"
+      AzureAd__Audience: "api://${AZURE_AD_API_CLIENT_ID:-00000000-0000-0000-0000-000000000000}"
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=LtlTool;User Id=sa;Password=${MSSQL_SA_PASSWORD:-Your_strong_Password123!};Encrypt=False;TrustServerCertificate=True"
       Cors__AllowedOrigins__0: "http://localhost:4200"
-      AccessPolicy__AllowedEmailDomains__0: "${ALLOWED_EMAIL_DOMAIN:-example.com}"
+      # Empty allow-list = any authenticated caller admitted; demo mode's synthetic
+      # identity uses @valuetruck.com so an allow-list of valuetruck.com also works.
+      AccessPolicy__AllowedEmailDomains__0: "${ALLOWED_EMAIL_DOMAIN:-}"
       ExternalApi__BaseUrl: "${EXTERNAL_API_BASE_URL:-}"
       ExternalApi__ApiKey: "${EXTERNAL_API_KEY:-}"
       # Alvys TMS — API only, never surfaced to the SPA.
@@ -79,9 +85,13 @@ services:
       - api
     environment:
       API_UPSTREAM: "http://api:8080"
-      RUNTIME_TENANT_ID: "${AZURE_AD_TENANT_ID}"
-      RUNTIME_WEB_CLIENT_ID: "${AZURE_AD_WEB_CLIENT_ID}"
-      RUNTIME_API_SCOPE: "${AZURE_AD_API_SCOPE}"
+      # In demo mode leave the tenant/client/scope empty and the Angular app's
+      # isAuthConfigured() check will suppress MSAL entirely — the SPA calls the API
+      # without an Authorization header, and the API's DemoAuthenticationHandler admits
+      # the request under a synthetic identity.
+      RUNTIME_TENANT_ID: "${AZURE_AD_TENANT_ID:-}"
+      RUNTIME_WEB_CLIENT_ID: "${AZURE_AD_WEB_CLIENT_ID:-}"
+      RUNTIME_API_SCOPE: "${AZURE_AD_API_SCOPE:-}"
       RUNTIME_API_BASE_URL: "/api"
     ports:
       - "4200:80"
