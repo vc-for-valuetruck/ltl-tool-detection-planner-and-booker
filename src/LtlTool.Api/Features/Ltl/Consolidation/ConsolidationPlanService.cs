@@ -26,12 +26,14 @@ public sealed class ConsolidationPlanService(
     LtlLoadService loads,
     IOptions<ConsolidationOptions> options,
     IOptions<LtlOptions> ltlOptions,
-    TimeProvider clock)
+    TimeProvider clock,
+    ICustomerLtlPolicyReader policyReader)
 {
     private readonly LtlLoadService _loads = loads;
     private readonly ConsolidationOptions _opts = options.Value;
     private readonly LtlOptions _ltl = ltlOptions.Value;
     private readonly TimeProvider _clock = clock;
+    private readonly ICustomerLtlPolicyReader _policyReader = policyReader;
 
     /// <summary>
     /// Builds a plan preview. Returns 400-shaped errors as <see cref="InvalidOperationException"/>
@@ -122,7 +124,7 @@ public sealed class ConsolidationPlanService(
             }
 
             // Customer policy gate.
-            var tier = ResolveTier(sibling.CustomerName);
+            var tier = await _policyReader.ResolveAsync(sibling.CustomerId, sibling.CustomerName, ct);
             if (tier == CustomerConsolidationTier.Never)
             {
                 blockers.Add(
@@ -251,13 +253,7 @@ public sealed class ConsolidationPlanService(
         return total;
     }
 
-    private CustomerConsolidationTier ResolveTier(string? customerName)
-    {
-        if (string.IsNullOrWhiteSpace(customerName)) return CustomerConsolidationTier.Unknown;
-        var policy = _opts.CustomerPolicies.FirstOrDefault(
-            p => string.Equals(p.Customer, customerName, StringComparison.OrdinalIgnoreCase));
-        return policy?.Tier ?? CustomerConsolidationTier.Unknown;
-    }
+
 
     private static IReadOnlyList<string> BuildCautions(LtlLoadSummary sibling, CustomerConsolidationTier tier)
     {

@@ -32,7 +32,8 @@ public sealed class ConsolidationCandidateServiceTests
             loads,
             Microsoft.Extensions.Options.Options.Create(overrides ?? DefaultOptions()),
             LtlTestFactory.Options(),
-            LtlTestFactory.Clock());
+            LtlTestFactory.Clock(),
+            LtlTestFactory.StaticPolicyReader(overrides ?? DefaultOptions()));
     }
 
     private static AlvysLoad SeedLoad() => new()

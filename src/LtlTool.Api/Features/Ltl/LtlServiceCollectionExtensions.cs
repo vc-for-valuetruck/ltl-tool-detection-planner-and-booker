@@ -37,6 +37,12 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<AssignmentValidationService>();
 
         // Consolidation planner (Phase 1 pilot: Laredo → Dallas, read-only, click-card output).
+        // Customer LTL policy: reads Alvys customer notes for LTL_TIER/LTL_ALLOW markers,
+        // falls back to static ConsolidationOptions.CustomerPolicies. See
+        // docs/ALVYS_API_DECISIONS.md decision #10 (Reuben 2026-07-17: Alvys has no first-
+        // class per-customer LTL flag today; notes are the sanctioned interim).
+        services.AddScoped<ICustomerLtlPolicyReader, CustomerNotesLtlPolicyReader>();
+
         services.AddScoped<ConsolidationCandidateService>();
         services.AddScoped<ConsolidationPlanService>();
 
