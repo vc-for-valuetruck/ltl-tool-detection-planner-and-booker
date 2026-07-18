@@ -35,7 +35,13 @@ Get-Content .env | ForEach-Object {
     if ($_ -match '^\s*$') { return }
     $parts = $_ -split '=', 2
     if ($parts.Count -eq 2) {
-        Set-Item -Path "Env:$($parts[0].Trim())" -Value $parts[1].Trim()
+        $val = $parts[1].Trim()
+        # Strip surrounding double-quotes so a quoted secret in .env still
+        # ends up as the raw value (parity with bash `source` behavior).
+        if ($val.StartsWith('"') -and $val.EndsWith('"')) {
+            $val = $val.Substring(1, $val.Length - 2)
+        }
+        Set-Item -Path "Env:$($parts[0].Trim())" -Value $val
     }
 }
 
@@ -43,7 +49,9 @@ if ($env:ACCESS_POLICY_MODE -ne 'Demo') {
     Write-Err "ACCESS_POLICY_MODE must equal 'Demo' in .env for the demo runner. Aborting."
     exit 1
 }
-if ([string]::IsNullOrWhiteSpace($env:ALVYS_CLIENT_SECRET) -or $env:ALVYS_CLIENT_SECRET -like '*paste*') {
+if ([string]::IsNullOrWhiteSpace($env:ALVYS_CLIENT_SECRET) `
+    -or $env:ALVYS_CLIENT_SECRET -like '*REPLACE_WITH_YOUR_ALVYS_CLIENT_SECRET*' `
+    -or $env:ALVYS_CLIENT_SECRET -like '*paste*') {
     Write-Err "ALVYS_CLIENT_SECRET is not set in .env. Paste the Value Truck va336 secret and re-run."
     exit 1
 }

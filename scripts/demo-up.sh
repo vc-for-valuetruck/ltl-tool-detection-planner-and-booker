@@ -40,7 +40,9 @@ if [[ "${ACCESS_POLICY_MODE:-}" != "Demo" ]]; then
   err "ACCESS_POLICY_MODE must equal 'Demo' in .env for the demo runner. Aborting."
   exit 1
 fi
-if [[ -z "${ALVYS_CLIENT_SECRET:-}" || "${ALVYS_CLIENT_SECRET}" == *"paste"* ]]; then
+if [[ -z "${ALVYS_CLIENT_SECRET:-}" \
+   || "${ALVYS_CLIENT_SECRET}" == *"REPLACE_WITH_YOUR_ALVYS_CLIENT_SECRET"* \
+   || "${ALVYS_CLIENT_SECRET}" == *"paste"* ]]; then
   err "ALVYS_CLIENT_SECRET is not set in .env. Paste the Value Truck va336 secret and re-run."
   exit 1
 fi
