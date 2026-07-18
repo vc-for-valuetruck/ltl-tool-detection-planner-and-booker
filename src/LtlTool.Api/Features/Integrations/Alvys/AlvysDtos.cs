@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace LtlTool.Api.Features.Integrations.Alvys;
@@ -486,21 +487,7 @@ public sealed class AlvysDistance
     public string? UnitOfMeasure { get; set; }
 }
 
-/// <summary>
-/// A monetary amount as it appears on <see cref="AlvysTrip.TripValue"/>. Shape verified
-/// 2026-07-18 empirically — <c>Currency</c> is the ISO-4217 numeric code (840 = USD).
-/// Prior versions of this DTO modeled the field as a plain <c>decimal?</c>; that was
-/// incorrect and would fail to deserialize the real wire payload.
-/// </summary>
-public sealed class AlvysMoney
-{
-    [JsonPropertyName("Amount")]
-    public decimal? Amount { get; set; }
 
-    /// <summary>ISO-4217 numeric currency code (840 = USD).</summary>
-    [JsonPropertyName("Currency")]
-    public int? Currency { get; set; }
-}
 
 /// <summary>
 /// A document attached to a load, as returned by the read-only
@@ -2245,8 +2232,18 @@ public sealed class InvoiceSearchRequest
 public sealed class AlvysInvoicesResponse : AlvysPagedResponse<AlvysInvoice>;
 
 /// <summary>
-/// A monetary amount as carried on Alvys invoice fields: an amount plus an ISO currency
-/// code. Both are nullable/tolerant of missing values.
+/// A monetary amount as carried on Alvys money-valued fields: an amount plus a currency.
+/// Both are nullable/tolerant of missing values.
+/// <para>
+/// <b>Wire-format quirk (verified 2026-07-18 via MCP).</b> Different Alvys endpoints carry
+/// the currency in different shapes. Invoice endpoints (Linehaul / Accessorials /
+/// TotalPayable) return <c>"Currency": "USD"</c> (ISO-4217 alpha). Trip endpoints
+/// (<see cref="AlvysTrip.TripValue"/>) return <c>"Currency": 840</c> (ISO-4217 numeric).
+/// This DTO stores whichever came in as a normalised alpha code string via the
+/// <see cref="AlvysMoneyCurrencyConverter"/>. Numeric codes are translated on read using
+/// the ISO-4217 alpha map below; unknown numeric codes fall through as their string form
+/// (e.g. <c>"840"</c>) so nothing silently drops.
+/// </para>
 /// </summary>
 public sealed class AlvysMoney
 {
@@ -2254,7 +2251,45 @@ public sealed class AlvysMoney
     public decimal? Amount { get; set; }
 
     [JsonPropertyName("Currency")]
+    [JsonConverter(typeof(AlvysMoneyCurrencyConverter))]
     public string? Currency { get; set; }
+}
+
+/// <summary>
+/// Reads the <see cref="AlvysMoney.Currency"/> field in either the invoice shape
+/// (<c>"USD"</c> string) or the trip shape (<c>840</c> numeric ISO-4217 code). Writes
+/// always emit a string. Kept in this file so the DTO+converter pair is co-located.
+/// </summary>
+internal sealed class AlvysMoneyCurrencyConverter : JsonConverter<string?>
+{
+    // ISO-4217 numeric → alpha for the currencies we're likely to see in Value Truck's
+    // freight lanes. Extend when a new currency shows up empirically — do not preemptively
+    // add currencies to keep the map honest.
+    private static readonly Dictionary<int, string> NumericToAlpha = new()
+    {
+        { 840, "USD" },  // United States dollar
+        { 124, "CAD" },  // Canadian dollar (US↔CA freight)
+        { 484, "MXN" },  // Mexican peso (Laredo ↔ Vertiv Mexico lane)
+    };
+
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.TokenType switch
+        {
+            JsonTokenType.Null => null,
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.Number when reader.TryGetInt32(out var code) =>
+                NumericToAlpha.TryGetValue(code, out var alpha) ? alpha : code.ToString(),
+            _ => throw new JsonException(
+                $"Unexpected token {reader.TokenType} for AlvysMoney.Currency; expected string, number, or null."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null) writer.WriteNullValue();
+        else writer.WriteStringValue(value);
+    }
 }
 
 /// <summary>

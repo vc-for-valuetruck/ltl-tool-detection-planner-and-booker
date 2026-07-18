@@ -45,7 +45,29 @@ public sealed class AlvysDtoShapeTests
         Assert.Equal("Engine", trip.LoadedMileage?.Source);
         Assert.Equal("PCMiler", trip.LoadedMileage?.ProfileName);
         Assert.Equal(12400m, trip.TripValue?.Amount);
-        Assert.Equal(840, trip.TripValue?.Currency);
+        // AlvysMoneyCurrencyConverter translates the numeric ISO-4217 code (840) to alpha.
+        // This normalises trips-endpoint payloads to look like invoices-endpoint payloads.
+        Assert.Equal("USD", trip.TripValue?.Currency);
+    }
+
+    [Fact]
+    public void AlvysMoney_Currency_reads_both_numeric_and_string_wire_shapes()
+    {
+        // Trip endpoint: numeric 840.
+        var trip = JsonSerializer.Deserialize<AlvysMoney>("""{"Amount":100,"Currency":840}""");
+        Assert.Equal("USD", trip?.Currency);
+
+        // Invoice endpoint: alpha string.
+        var invoice = JsonSerializer.Deserialize<AlvysMoney>("""{"Amount":100,"Currency":"USD"}""");
+        Assert.Equal("USD", invoice?.Currency);
+
+        // Unknown numeric code falls through as string form so nothing silently drops.
+        var unknown = JsonSerializer.Deserialize<AlvysMoney>("""{"Amount":100,"Currency":999}""");
+        Assert.Equal("999", unknown?.Currency);
+
+        // Null currency preserved as null.
+        var noCurrency = JsonSerializer.Deserialize<AlvysMoney>("""{"Amount":100}""");
+        Assert.Null(noCurrency?.Currency);
     }
 
     [Fact]
@@ -79,7 +101,7 @@ public sealed class AlvysDtoShapeTests
             {
                 Distance = new AlvysDistance { Value = 2220m, UnitOfMeasure = "Miles" },
             },
-            TripValue = new AlvysMoney { Amount = 12400m, Currency = 840 },
+            TripValue = new AlvysMoney { Amount = 12400m, Currency = "USD" },
         };
 
         var driverRpm =

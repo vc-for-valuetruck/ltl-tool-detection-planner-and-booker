@@ -135,7 +135,8 @@ public sealed class AlvysClientTests
         Assert.Equal("Miles", item.LoadedMileage?.Distance?.UnitOfMeasure);
         Assert.Equal("Engine", item.LoadedMileage?.Source);
         Assert.Equal(847.5m, item.TripValue?.Amount);
-        Assert.Equal(840, item.TripValue?.Currency);
+        // Trip endpoint returns numeric ISO-4217 (840); AlvysMoneyCurrencyConverter normalises to alpha "USD".
+        Assert.Equal("USD", item.TripValue?.Currency);
         Assert.Equal("Reefer", item.Trailer?.EquipmentType);
         Assert.Equal(expectedPath, handler.Calls[0].Request.RequestUri?.AbsolutePath);
         Assert.Equal("Bearer test-token", handler.Calls[0].Request.Headers.Authorization?.ToString());
