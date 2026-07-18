@@ -18,13 +18,42 @@ builder.Services
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Microsoft Entra ID (JWT bearer) authentication.
+// Authentication schemes. Both are always registered so the auth pipeline is stable
+// across environments; the effective default is selected at request time from
+// AccessPolicy:Mode via a ForwardDefaultSelector. This lets tests and container-restart
+// scenarios switch modes without a rebuild, and it defers config reads until after the
+// full config chain (env vars + in-memory + appsettings) is composed — avoiding the
+// build-time read bug where WebApplicationFactory in-memory sources arrive too late.
+builder.Services.Configure<AccessPolicyOptions>(builder.Configuration.GetSection("AccessPolicy"));
+
 builder.Services
-    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddAuthentication(options =>
+    {
+        options.DefaultScheme = AuthenticationSchemeRouter.RouterScheme;
+        options.DefaultChallengeScheme = AuthenticationSchemeRouter.RouterScheme;
+    })
+    // Router that reads AccessPolicy:Mode at request time and forwards to the right
+    // concrete scheme. Kept separate from the concrete handlers so both stay
+    // independently testable.
+    .AddPolicyScheme(AuthenticationSchemeRouter.RouterScheme, "AccessPolicy-selected", options =>
+    {
+        options.ForwardDefaultSelector = context =>
+        {
+            var opts = context.RequestServices
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<AccessPolicyOptions>>().Value;
+            return opts.Mode == AccessPolicyMode.Demo
+                ? DemoAuthenticationHandler.SchemeName
+                : JwtBearerDefaults.AuthenticationScheme;
+        };
+    })
+    // Demo-mode handler. Present in every build; only reached when the router selects it.
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, DemoAuthenticationHandler>(
+        DemoAuthenticationHandler.SchemeName, _ => { })
+    // Microsoft Entra ID (JWT bearer). Only reached when the router selects it, so tests
+    // that run in Demo mode never trigger MSAL's ClientId validation.
     .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
 
 // Authorization: require an authenticated user whose email domain is allow-listed.
-builder.Services.Configure<AccessPolicyOptions>(builder.Configuration.GetSection("AccessPolicy"));
 builder.Services.AddSingleton<IAuthorizationHandler, AllowedEmailDomainHandler>();
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(AccessPolicies.AllowedEmailDomain, policy =>
@@ -81,6 +110,23 @@ if (!app.Environment.IsEnvironment("Testing"))
 {
     var alvys = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AlvysOptions>>().Value;
     var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Alvys");
+
+    // Loud, unmistakable demo-mode banner. If this line ever appears in a UAT or prod
+    // deployment, someone shipped the wrong config: every request in demo mode is granted
+    // full API access under a synthetic identity.
+    var effectiveAccessPolicy = app.Services
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<AccessPolicyOptions>>().Value;
+    if (effectiveAccessPolicy.Mode == AccessPolicyMode.Demo)
+    {
+        var demoLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AccessPolicy");
+        demoLogger.LogWarning(
+            "\n" +
+            "================================================================\n" +
+            "  DEMO AUTH MODE ENABLED - every request is authenticated as\n" +
+            "  demo@valuetruck.com with a synthetic identity. Never deploy\n" +
+            "  this configuration to a public-facing environment.\n" +
+            "================================================================");
+    }
     if (alvys.Provider == AlvysProvider.Live && !alvys.HasCredentials)
     {
         startupLogger.LogWarning(
