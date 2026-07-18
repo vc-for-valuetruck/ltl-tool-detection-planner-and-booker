@@ -65,5 +65,21 @@ public sealed class DemoAuthenticationTests(DemoModeWebApplicationFactory factor
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    /// <summary>
+    /// Pins the exact JSON key name that <c>scripts/demo-up.sh</c> and <c>demo-up.ps1</c>
+    /// grep out of the health payload for their post-boot smoke assertion. If someone
+    /// renames <c>authMode</c> to <c>auth_mode</c> or PascalCases it, the shell smoke
+    /// test regex would silently miss and demo-mode misconfiguration could ship. This
+    /// test fails first, forcing the runner scripts to be updated in lockstep.
+    /// </summary>
+    [Fact]
+    public async Task Health_payload_uses_authMode_key_that_demo_up_scripts_grep()
+    {
+        var client = _factory.CreateClient();
+        var raw = await client.GetStringAsync("/api/health");
+        Assert.Contains("\"authMode\"", raw, StringComparison.Ordinal);
+        Assert.Contains("\"Demo\"", raw, StringComparison.Ordinal);
+    }
+
     private sealed record DemoHealthResponse(string Status, DateTimeOffset Utc, string AuthMode);
 }

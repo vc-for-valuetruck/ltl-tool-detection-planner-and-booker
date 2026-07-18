@@ -53,6 +53,13 @@ pwsh ./scripts/demo-up.ps1    # Windows PowerShell
 First build takes ~2-3 minutes (image pull + `dotnet publish` + `ng build`).
 Subsequent runs re-use the layer cache.
 
+After the containers boot and `/api/health` reports healthy, the runner does one more
+check: it curls `/api/health` and asserts `authMode == "Demo"`. If the API somehow booted
+in EntraId mode (typo in `.env`, config precedence surprise, wrong image), the runner
+prints a clear failure message and exits non-zero before you ever open the browser. This
+is the second of the two independent demo-mode checks; the first is the multi-line
+warning banner in the API logs (`docker compose logs api | grep DEMO`).
+
 ## Demo script for leadership (5 minutes)
 
 1. **Open** `http://localhost:4200/ltl`. The workbench loads with no auth
