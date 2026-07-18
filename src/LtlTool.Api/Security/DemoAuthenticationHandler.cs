@@ -6,6 +6,25 @@ using Microsoft.Extensions.Options;
 namespace LtlTool.Api.Security;
 
 /// <summary>
+/// Constants for the request-time authentication scheme router. The router itself is
+/// registered inline in <c>Program.cs</c> via <c>AddPolicyScheme</c>; this class exists
+/// only to hold the scheme name so the router registration, its ForwardDefaultSelector,
+/// and any downstream code that needs to reference the router (unlikely) all agree on
+/// the identifier.
+/// </summary>
+public static class AuthenticationSchemeRouter
+{
+    /// <summary>
+    /// Name of the policy scheme registered in Program.cs. This is the default scheme
+    /// used by the authentication pipeline; at request time the scheme forwards to
+    /// either <see cref="DemoAuthenticationHandler.SchemeName"/> or
+    /// <see cref="Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme"/>
+    /// based on <see cref="Options.AccessPolicyOptions.Mode"/>.
+    /// </summary>
+    public const string RouterScheme = "AccessPolicyRouter";
+}
+
+/// <summary>
 /// Demo-mode authentication scheme. Grants every incoming request a synthetic identity
 /// so the LTL tool can be walked through end-to-end against **live Alvys read data**
 /// without an Entra tenant, MSAL flow, or Azure resources.

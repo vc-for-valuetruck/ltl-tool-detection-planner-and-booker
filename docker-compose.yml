@@ -43,8 +43,11 @@ services:
       # synthetic identity so the tool runs against real Alvys reads without an Entra
       # tenant. Set ACCESS_POLICY_MODE=Demo in .env for a local demo.
       AccessPolicy__Mode: "${ACCESS_POLICY_MODE:-EntraId}"
-      AzureAd__TenantId: "${AZURE_AD_TENANT_ID:-}"
-      AzureAd__ClientId: "${AZURE_AD_API_CLIENT_ID:-}"
+      # Placeholder GUIDs when running in Demo mode so MSAL's greedy option validation
+      # at build time doesn't crash. The scheme itself is never invoked in Demo mode —
+      # the AuthenticationSchemeRouter forwards to DemoAuthenticationHandler instead.
+      AzureAd__TenantId: "${AZURE_AD_TENANT_ID:-00000000-0000-0000-0000-000000000000}"
+      AzureAd__ClientId: "${AZURE_AD_API_CLIENT_ID:-00000000-0000-0000-0000-000000000000}"
       AzureAd__ClientSecret: "${AZURE_AD_CLIENT_SECRET:-}"
       AzureAd__Instance: "https://login.microsoftonline.com/"
       AzureAd__Audience: "api://${AZURE_AD_API_CLIENT_ID:-00000000-0000-0000-0000-000000000000}"

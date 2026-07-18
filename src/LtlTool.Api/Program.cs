@@ -18,33 +18,40 @@ builder.Services
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Authentication scheme. AccessPolicy:Mode selects between real Entra ID and the demo
-// shim; anything but Demo defaults to Entra ID. See DemoAuthenticationHandler for the
-// posture-and-warnings applying to demo mode.
+// Authentication schemes. Both are always registered so the auth pipeline is stable
+// across environments; the effective default is selected at request time from
+// AccessPolicy:Mode via a ForwardDefaultSelector. This lets tests and container-restart
+// scenarios switch modes without a rebuild, and it defers config reads until after the
+// full config chain (env vars + in-memory + appsettings) is composed — avoiding the
+// build-time read bug where WebApplicationFactory in-memory sources arrive too late.
 builder.Services.Configure<AccessPolicyOptions>(builder.Configuration.GetSection("AccessPolicy"));
-// Read AccessPolicy:Mode with tolerant parsing. GetValue<T?>() silently returns null on
-// enum-parse failure, which would fall through to EntraId and mask a typo like 'demo' vs
-// 'Demo'. We parse explicitly so misconfiguration surfaces immediately.
-var modeString = builder.Configuration["AccessPolicy:Mode"];
-var accessPolicyMode = string.IsNullOrWhiteSpace(modeString)
-    ? AccessPolicyMode.EntraId
-    : Enum.Parse<AccessPolicyMode>(modeString, ignoreCase: true);
 
-if (accessPolicyMode == AccessPolicyMode.Demo)
-{
-    // Demo mode: synthetic identity, no MSAL wiring. Loud warning at startup below.
-    builder.Services
-        .AddAuthentication(DemoAuthenticationHandler.SchemeName)
-        .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, DemoAuthenticationHandler>(
-            DemoAuthenticationHandler.SchemeName, _ => { });
-}
-else
-{
-    // Microsoft Entra ID (JWT bearer) authentication.
-    builder.Services
-        .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
-}
+builder.Services
+    .AddAuthentication(options =>
+    {
+        options.DefaultScheme = AuthenticationSchemeRouter.RouterScheme;
+        options.DefaultChallengeScheme = AuthenticationSchemeRouter.RouterScheme;
+    })
+    // Router that reads AccessPolicy:Mode at request time and forwards to the right
+    // concrete scheme. Kept separate from the concrete handlers so both stay
+    // independently testable.
+    .AddPolicyScheme(AuthenticationSchemeRouter.RouterScheme, "AccessPolicy-selected", options =>
+    {
+        options.ForwardDefaultSelector = context =>
+        {
+            var opts = context.RequestServices
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<AccessPolicyOptions>>().Value;
+            return opts.Mode == AccessPolicyMode.Demo
+                ? DemoAuthenticationHandler.SchemeName
+                : JwtBearerDefaults.AuthenticationScheme;
+        };
+    })
+    // Demo-mode handler. Present in every build; only reached when the router selects it.
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, DemoAuthenticationHandler>(
+        DemoAuthenticationHandler.SchemeName, _ => { })
+    // Microsoft Entra ID (JWT bearer). Only reached when the router selects it, so tests
+    // that run in Demo mode never trigger MSAL's ClientId validation.
+    .AddMicrosoftIdentityWebApi(builder.Configuration.GetSection("AzureAd"));
 
 // Authorization: require an authenticated user whose email domain is allow-listed.
 builder.Services.AddSingleton<IAuthorizationHandler, AllowedEmailDomainHandler>();
@@ -107,7 +114,9 @@ if (!app.Environment.IsEnvironment("Testing"))
     // Loud, unmistakable demo-mode banner. If this line ever appears in a UAT or prod
     // deployment, someone shipped the wrong config: every request in demo mode is granted
     // full API access under a synthetic identity.
-    if (accessPolicyMode == AccessPolicyMode.Demo)
+    var effectiveAccessPolicy = app.Services
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<AccessPolicyOptions>>().Value;
+    if (effectiveAccessPolicy.Mode == AccessPolicyMode.Demo)
     {
         var demoLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AccessPolicy");
         demoLogger.LogWarning(

@@ -23,6 +23,14 @@ public sealed class DemoModeWebApplicationFactory : WebApplicationFactory<Progra
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["AccessPolicy:Mode"] = "Demo",
+                // AzureAd values also required so the JwtBearer scheme registered at
+                // build time can materialize its options. In Demo mode nothing ever
+                // reaches that scheme (router forwards to Demo), but MSAL still
+                // validates its options greedily at registration; give it dummies.
+                ["AzureAd:Instance"] = "https://login.microsoftonline.com/",
+                ["AzureAd:TenantId"] = "00000000-0000-0000-0000-000000000000",
+                ["AzureAd:ClientId"] = "00000000-0000-0000-0000-000000000000",
+                ["AzureAd:Audience"] = "api://00000000-0000-0000-0000-000000000000",
                 ["ConnectionStrings:DefaultConnection"] =
                     "Server=localhost,14333;Database=Test;User Id=sa;Password=Not_Used_In_Tests1!;Encrypt=False;TrustServerCertificate=True",
             });
