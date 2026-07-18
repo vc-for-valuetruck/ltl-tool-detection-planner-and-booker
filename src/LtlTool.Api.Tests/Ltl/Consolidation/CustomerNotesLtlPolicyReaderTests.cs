@@ -3,6 +3,7 @@ using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Tests.Ltl;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Xunit;
 
 namespace LtlTool.Api.Tests.Ltl.Consolidation;
 
