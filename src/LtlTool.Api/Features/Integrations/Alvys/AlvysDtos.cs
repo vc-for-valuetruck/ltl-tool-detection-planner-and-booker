@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace LtlTool.Api.Features.Integrations.Alvys;
@@ -401,15 +402,92 @@ public sealed class AlvysNote
     public string? CreatedBy { get; set; }
 }
 
-/// <summary>A typed reference number (e.g. BOL, PO) on a load or stop.</summary>
+/// <summary>
+/// A reference (name/value tag) attached to a load, trip, or stop. Shape verified
+/// empirically 2026-07-18 via live MCP <c>loads_get_by_id</c> + <c>trips_search</c>
+/// against the va336 production tenant — see
+/// <c>docs/ALVYS_API_DECISIONS.md</c> “Empirical findings, Finding 1”.
+/// <para>
+/// Trip references (e.g. the <c>LTL</c> boolean on parent, <c>Main Load Id</c> string
+/// on child) live on <c>Trip.References[]</c> per the Reuben 2026-07-17 sync
+/// and confirmed by MCP payloads. Everything is transported as strings on the wire
+/// (<c>Type</c> is one of <c>""</c> / <c>"Text"</c> / <c>"List"</c>).
+/// </para>
+/// </summary>
 public sealed class AlvysReference
 {
+    /// <summary>Reference row id (stable across reads).</summary>
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    /// <summary>Reference-type id (optional; present for managed reference types).</summary>
+    [JsonPropertyName("ReferenceId")]
+    public string? ReferenceId { get; set; }
+
+    /// <summary>Human-readable reference name (e.g. <c>"Method of Payment"</c>, <c>"LTL"</c>).</summary>
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    /// <summary>Reference value — always a string on the wire, even for booleans.</summary>
+    [JsonPropertyName("Value")]
+    public string? Value { get; set; }
+
+    /// <summary>Data type of the reference — one of <c>""</c>, <c>"Text"</c>, <c>"List"</c>.</summary>
     [JsonPropertyName("Type")]
     public string? Type { get; set; }
 
-    [JsonPropertyName("Value")]
-    public string? Value { get; set; }
+    /// <summary>Access scope. Empirical values: <c>"Public"</c>.</summary>
+    [JsonPropertyName("Access")]
+    public string? Access { get; set; }
+
+    /// <summary>How the reference was created. Empirical values: <c>"Manual"</c>, <c>"EDI"</c>, <c>"Unknown"</c>.</summary>
+    [JsonPropertyName("Origin")]
+    public string? Origin { get; set; }
 }
+
+/// <summary>
+/// A distance measurement as it appears on trip mileage fields
+/// (<c>TotalMileage</c>, <c>EmptyMileage</c>, <c>LoadedMileage</c>). Shape verified
+/// 2026-07-18 empirically via MCP <c>trips_search</c> against va336. Prior versions
+/// of this DTO modeled the field as a plain <c>decimal?</c> — that was incorrect and
+/// would fail to deserialize the real wire payload.
+/// </summary>
+public sealed class AlvysDistanceMeasurement
+{
+    [JsonPropertyName("Distance")]
+    public AlvysDistance? Distance { get; set; }
+
+    /// <summary>Empirical: <c>"Engine"</c> when calculated by the routing engine.</summary>
+    [JsonPropertyName("Source")]
+    public string? Source { get; set; }
+
+    /// <summary>Empirical: <c>"PCMiler"</c>.</summary>
+    [JsonPropertyName("ProfileName")]
+    public string? ProfileName { get; set; }
+
+    /// <summary>
+    /// Convenience accessor: the numeric value of the distance, or <c>null</c> when
+    /// no distance is present. Callers doing RPM math should use this rather than
+    /// re-implementing null-safety on every access.
+    /// </summary>
+    [JsonIgnore]
+    public decimal? Value => Distance?.Value;
+}
+
+/// <summary>
+/// The inner distance component of an <see cref="AlvysDistanceMeasurement"/> —
+/// numeric magnitude plus its unit of measure (e.g. <c>"Miles"</c>).
+/// </summary>
+public sealed class AlvysDistance
+{
+    [JsonPropertyName("Value")]
+    public decimal? Value { get; set; }
+
+    [JsonPropertyName("UnitOfMeasure")]
+    public string? UnitOfMeasure { get; set; }
+}
+
+
 
 /// <summary>
 /// A document attached to a load, as returned by the read-only
@@ -586,17 +664,34 @@ public sealed class AlvysTrip
     [JsonPropertyName("Stops")]
     public List<AlvysTripStop>? Stops { get; set; }
 
+    /// <summary>
+    /// Total trip mileage including empty legs. Shape verified 2026-07-18 empirically —
+    /// the wire is not a plain decimal; it's a <see cref="AlvysDistanceMeasurement"/>
+    /// nested object with <c>Distance</c>, <c>Source</c>, <c>ProfileName</c>. See
+    /// <c>docs/ALVYS_API_DECISIONS.md</c> Finding 2.
+    /// </summary>
     [JsonPropertyName("TotalMileage")]
-    public decimal? TotalMileage { get; set; }
+    public AlvysDistanceMeasurement? TotalMileage { get; set; }
 
     [JsonPropertyName("EmptyMileage")]
-    public decimal? EmptyMileage { get; set; }
+    public AlvysDistanceMeasurement? EmptyMileage { get; set; }
 
+    /// <summary>
+    /// Driver-facing loaded miles (the <em>dispatch mileage</em> in Alvys UI vocabulary).
+    /// This is the field Phase 5 consolidation zeroes on child trips per Reuben 2026-07-17
+    /// (transcript at 15:55). Never zero <see cref="AlvysLoad.CustomerMileage"/> — that's
+    /// the billing mileage which stays populated for accurate customer invoicing.
+    /// </summary>
     [JsonPropertyName("LoadedMileage")]
-    public decimal? LoadedMileage { get; set; }
+    public AlvysDistanceMeasurement? LoadedMileage { get; set; }
 
+    /// <summary>
+    /// Driver-facing trip value (the rate paid to the driver / carrier). Combined driver
+    /// RPM formula per Reuben transcript 33:06 is
+    /// <c>TripValue.Amount / LoadedMileage.Distance.Value</c>.
+    /// </summary>
     [JsonPropertyName("TripValue")]
-    public decimal? TripValue { get; set; }
+    public AlvysMoney? TripValue { get; set; }
 
     [JsonPropertyName("PickupDate")]
     public DateTimeOffset? PickupDate { get; set; }
@@ -2137,8 +2232,18 @@ public sealed class InvoiceSearchRequest
 public sealed class AlvysInvoicesResponse : AlvysPagedResponse<AlvysInvoice>;
 
 /// <summary>
-/// A monetary amount as carried on Alvys invoice fields: an amount plus an ISO currency
-/// code. Both are nullable/tolerant of missing values.
+/// A monetary amount as carried on Alvys money-valued fields: an amount plus a currency.
+/// Both are nullable/tolerant of missing values.
+/// <para>
+/// <b>Wire-format quirk (verified 2026-07-18 via MCP).</b> Different Alvys endpoints carry
+/// the currency in different shapes. Invoice endpoints (Linehaul / Accessorials /
+/// TotalPayable) return <c>"Currency": "USD"</c> (ISO-4217 alpha). Trip endpoints
+/// (<see cref="AlvysTrip.TripValue"/>) return <c>"Currency": 840</c> (ISO-4217 numeric).
+/// This DTO stores whichever came in as a normalised alpha code string via the
+/// <see cref="AlvysMoneyCurrencyConverter"/>. Numeric codes are translated on read using
+/// the ISO-4217 alpha map below; unknown numeric codes fall through as their string form
+/// (e.g. <c>"840"</c>) so nothing silently drops.
+/// </para>
 /// </summary>
 public sealed class AlvysMoney
 {
@@ -2146,7 +2251,45 @@ public sealed class AlvysMoney
     public decimal? Amount { get; set; }
 
     [JsonPropertyName("Currency")]
+    [JsonConverter(typeof(AlvysMoneyCurrencyConverter))]
     public string? Currency { get; set; }
+}
+
+/// <summary>
+/// Reads the <see cref="AlvysMoney.Currency"/> field in either the invoice shape
+/// (<c>"USD"</c> string) or the trip shape (<c>840</c> numeric ISO-4217 code). Writes
+/// always emit a string. Kept in this file so the DTO+converter pair is co-located.
+/// </summary>
+internal sealed class AlvysMoneyCurrencyConverter : JsonConverter<string?>
+{
+    // ISO-4217 numeric → alpha for the currencies we're likely to see in Value Truck's
+    // freight lanes. Extend when a new currency shows up empirically — do not preemptively
+    // add currencies to keep the map honest.
+    private static readonly Dictionary<int, string> NumericToAlpha = new()
+    {
+        { 840, "USD" },  // United States dollar
+        { 124, "CAD" },  // Canadian dollar (US↔CA freight)
+        { 484, "MXN" },  // Mexican peso (Laredo ↔ Vertiv Mexico lane)
+    };
+
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return reader.TokenType switch
+        {
+            JsonTokenType.Null => null,
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.Number when reader.TryGetInt32(out var code) =>
+                NumericToAlpha.TryGetValue(code, out var alpha) ? alpha : code.ToString(),
+            _ => throw new JsonException(
+                $"Unexpected token {reader.TokenType} for AlvysMoney.Currency; expected string, number, or null."),
+        };
+    }
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value is null) writer.WriteNullValue();
+        else writer.WriteStringValue(value);
+    }
 }
 
 /// <summary>
