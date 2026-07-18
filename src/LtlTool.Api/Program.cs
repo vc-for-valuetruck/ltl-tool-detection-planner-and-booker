@@ -22,9 +22,13 @@ builder.Services.AddSwaggerGen();
 // shim; anything but Demo defaults to Entra ID. See DemoAuthenticationHandler for the
 // posture-and-warnings applying to demo mode.
 builder.Services.Configure<AccessPolicyOptions>(builder.Configuration.GetSection("AccessPolicy"));
-var accessPolicyMode = builder.Configuration
-    .GetSection("AccessPolicy")
-    .GetValue<AccessPolicyMode?>("Mode") ?? AccessPolicyMode.EntraId;
+// Read AccessPolicy:Mode with tolerant parsing. GetValue<T?>() silently returns null on
+// enum-parse failure, which would fall through to EntraId and mask a typo like 'demo' vs
+// 'Demo'. We parse explicitly so misconfiguration surfaces immediately.
+var modeString = builder.Configuration["AccessPolicy:Mode"];
+var accessPolicyMode = string.IsNullOrWhiteSpace(modeString)
+    ? AccessPolicyMode.EntraId
+    : Enum.Parse<AccessPolicyMode>(modeString, ignoreCase: true);
 
 if (accessPolicyMode == AccessPolicyMode.Demo)
 {
