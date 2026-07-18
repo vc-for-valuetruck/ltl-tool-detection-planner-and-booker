@@ -99,3 +99,155 @@ jobs:
       # `npm test` runs `ng test --watch=false --browsers=ChromeHeadless` (see web/package.json).
       # Angular's @angular/build:karma builder picks up the Chrome binary automatically.
       - run: npm test
+
+  e2e-demo:
+    # End-to-end walkthrough of the demo stack against live Alvys reads. Boots the same
+    # docker-compose the local runbook uses (scripts/demo-up.sh -> AccessPolicy:Mode=Demo),
+    # then runs `test:e2e:ci` (headless Playwright). Uploads the HTML report + traces on
+    # failure so a broken workflow is diagnosable without re-running locally.
+    #
+    # Requires the ALVYS_CLIENT_SECRET repo secret. Without it, the job skips gracefully:
+    # a fork PR or a first-time contributor can still merge without seeing a red X they
+    # can't fix.
+    #
+    # continue-on-error is intentional. Live-data variance (Alvys tenant has no open
+    # Laredo->Dallas loads at the moment) or transient Alvys API blips must not block a
+    # main-branch merge — the plan-preview spec already test.skip()s on empty candidate
+    # lists, but network / rate-limit flakes should still surface as a warning, not a
+    # hard failure. Tighten to hard-block later once the flake rate is measured.
+    name: E2E Demo Stack (Playwright)
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    continue-on-error: true
+    env:
+      # Consumed by docker-compose.yml. Everything else stays at its .env.demo.example default.
+      ACCESS_POLICY_MODE: Demo
+      ALVYS_PROVIDER: Live
+      ALVYS_API_BASE_URL: https://integrations.alvys.com
+      ALVYS_API_VERSION: v1
+      ALVYS_TENANT_ID: va336
+      ALVYS_CLIENT_ID: MZEDvQYVZmcEtk3f17QFgYTg19pa3eJL
+      ALVYS_WRITEBACK_MODE: Disabled
+      LTL_DETECTION_ENABLED: 'true'
+      LTL_DEFAULT_TIMEZONE: America/Chicago
+      MSSQL_SA_PASSWORD: 'Ltl_CI_p@ssw0rd!'
+      # Placeholder GUIDs so MSAL's greedy option validation doesn't crash the API at build
+      # time. The AuthenticationSchemeRouter forwards to DemoAuthenticationHandler in Demo
+      # mode, so JwtBearer is never actually invoked — but its options still materialize.
+      AZURE_AD_TENANT_ID: '00000000-0000-0000-0000-000000000000'
+      AZURE_AD_API_CLIENT_ID: '00000000-0000-0000-0000-000000000000'
+      AZURE_AD_WEB_CLIENT_ID: '00000000-0000-0000-0000-000000000000'
+      AZURE_AD_API_SCOPE: 'api://00000000-0000-0000-0000-000000000000/.default'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Alvys secret
+        id: check-secret
+        env:
+          ALVYS_CLIENT_SECRET_PRESENT: ${{ secrets.ALVYS_CLIENT_SECRET != '' }}
+        run: |
+          if [ "$ALVYS_CLIENT_SECRET_PRESENT" = "true" ]; then
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ALVYS_CLIENT_SECRET repo secret is not set; skipping E2E."
+            echo "::warning::Add the va336 Alvys client secret under Settings > Secrets > Actions."
+          fi
+
+      - name: Boot the demo stack (docker compose up)
+        if: steps.check-secret.outputs.has_secret == 'true'
+        env:
+          ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}
+        run: |
+          docker compose up -d --build
+          docker compose ps
+
+      - name: Wait for API health + assert authMode=Demo
+        if: steps.check-secret.outputs.has_secret == 'true'
+        run: |
+          set -euo pipefail
+          DEADLINE=$(( $(date +%s) + 240 ))
+          while true; do
+            if BODY=$(curl -fsS http://localhost:5072/api/health 2>/dev/null); then
+              echo "API healthy. Body: $BODY"
+              break
+            fi
+            if [ "$(date +%s)" -gt "$DEADLINE" ]; then
+              echo "::error::API failed to report healthy within 240s"
+              docker compose logs api | tail -100
+              exit 1
+            fi
+            sleep 4
+          done
+          AUTH_MODE=$(printf '%s' "$BODY" | sed -n 's/.*"authMode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+          if [ "$AUTH_MODE" != "Demo" ]; then
+            echo "::error::authMode=$AUTH_MODE, expected Demo"
+            exit 1
+          fi
+
+      - name: Wait for web to be reachable
+        if: steps.check-secret.outputs.has_secret == 'true'
+        run: |
+          set -euo pipefail
+          DEADLINE=$(( $(date +%s) + 120 ))
+          while ! curl -fsS http://localhost:4200 >/dev/null 2>&1; do
+            if [ "$(date +%s)" -gt "$DEADLINE" ]; then
+              echo "::error::web SPA failed to respond within 120s"
+              docker compose logs web | tail -50
+              exit 1
+            fi
+            sleep 3
+          done
+
+      - uses: actions/setup-node@v4
+        if: steps.check-secret.outputs.has_secret == 'true'
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web deps + Playwright browsers
+        if: steps.check-secret.outputs.has_secret == 'true'
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright suite
+        if: steps.check-secret.outputs.has_secret == 'true'
+        working-directory: web
+        env:
+          WEB_URL: http://localhost:4200
+          API_URL: http://localhost:5072
+          CI: '1' # strips the visual-pause between steps (see e2e/demo-workflow.spec.ts)
+        run: npm run test:e2e:ci
+
+      - name: Upload Playwright report on failure
+        if: failure() && steps.check-secret.outputs.has_secret == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 14
+
+      - name: Upload docker compose logs on failure
+        if: failure() && steps.check-secret.outputs.has_secret == 'true'
+        run: |
+          mkdir -p compose-logs
+          docker compose logs --no-color api > compose-logs/api.log 2>&1 || true
+          docker compose logs --no-color web > compose-logs/web.log 2>&1 || true
+          docker compose logs --no-color sqlserver > compose-logs/sqlserver.log 2>&1 || true
+
+      - name: Upload compose logs artifact
+        if: failure() && steps.check-secret.outputs.has_secret == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs
+          path: compose-logs
+          retention-days: 14
+
+      - name: Tear down stack
+        if: always() && steps.check-secret.outputs.has_secret == 'true'
+        run: docker compose down -v
