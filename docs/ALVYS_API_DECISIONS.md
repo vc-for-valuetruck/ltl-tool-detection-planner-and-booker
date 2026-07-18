@@ -413,7 +413,7 @@ consolidation to work. Confirm current state with Reuben; once off, the tool can
 **Decision.** There is no first-class `AllowConsolidation` field on the Alvys customer record.
 Store the value in the customer's `notes` field using a machine-parseable convention.
 
-**Convention (this repo's proposal).** In the customer's Internal Notes, add one line per LTL
+**Convention (SHIPPED 2026-07-18 in [PR #60](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/pull/60)).** In the customer's Internal Notes, add one line per LTL
 flag:
 
 ```
@@ -424,15 +424,20 @@ LTL_NOTIFY=alice@company.com
 
 Anything else in the notes field is a normal human note and must be ignored by the parser.
 Missing lines default to `LTL_TIER=Unknown → confirm with account owner`, never silent-allow.
+Case-insensitive on both keys and values. `LTL_TIER` wins over `LTL_ALLOW` when both are
+present (tightening precedence).
 
-**Consequence for the LTL tool today.** The
-`ConsolidationCandidateService`'s customer-tier check currently reads a static config file.
-Phase 2 replaces that with a `CustomerNotesLtlPolicyReader` that parses the customer's notes
-field and falls back to the static config as a default when a customer has no LTL_* line.
+**Status.** Implemented as `CustomerNotesLtlPolicyReader`
+(`src/LtlTool.Api/Features/Ltl/Consolidation/CustomerLtlPolicyReader.cs`). Both
+`ConsolidationCandidateService` and `ConsolidationPlanService` resolve tier via the reader
+(async), with the static `ConsolidationOptions.CustomerPolicies` list as a fallback for
+customers that don't yet carry an LTL_* line. In-memory cache amortises one
+`SearchCustomersAsync` call across all candidates in a plan build. Notes-read failures
+degrade quietly to static config and never fail the plan preview.
 
 **Follow-up when Alvys adds the real field.** Reuben said this is on Alvys' roadmap. When it
-lands, deprecate the notes convention and read the real field. The `Ltl:CustomerPolicy:Source`
-option will let us switch reader implementations without changing calling code.
+lands, add a second `ICustomerLtlPolicyReader` implementation reading the first-class field
+and swap it in via DI — calling code doesn't change.
 
 ---
 
@@ -489,6 +494,13 @@ is a Phase 3 optimization, not a Phase 2 blocker.
 combined-RPM computation uses driver rate + dispatch miles. If it uses customer rate, fix in a
 follow-up. This is the difference between showing an inflated billing number and the actual
 number the driver-pay-based commission structure will pay against.
+
+**Status (SHIPPED 2026-07-18 in [PR #59](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/pull/59)).** `ConsolidationPlanService.CombinedRpm` now
+computes as `combinedDriverTripValue / driverLoadedMiles`, sourced from
+`Trip.TripValue.Amount / Trip.LoadedMileage.Distance.Value` per the empirical field shape
+([PR #58](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/pull/58)). Click card now prints both blocks — Customer-side (billing) and Driver-side
+(RPM math) — so leadership sees the operator's number while billing keeps its own.
+Never falls back to customer math to invent a number; null-safety test pins this.
 
 ---
 
