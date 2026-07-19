@@ -9,15 +9,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Secret sanity
+        env:
+          T: ${{ secrets.AZURE_TENANT_ID }}
+          C: ${{ secrets.AZURE_CLIENT_ID }}
+          S: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          X: ${{ secrets.TEST_SECRET_DIAG }}
         run: |
-          T='${{ secrets.AZURE_TENANT_ID }}'
-          C='${{ secrets.AZURE_CLIENT_ID }}'
-          S='${{ secrets.AZURE_SUBSCRIPTION_ID }}'
-          echo "tenant len=${#T} first4=${T:0:4} last4=${T: -4}"
-          echo "client len=${#C} first4=${C:0:4} last4=${C: -4}"
-          echo "sub    len=${#S} first4=${S:0:4} last4=${S: -4}"
-      - name: OIDC token content
-        run: |
-          IDTOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
-          echo "$IDTOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print('sub:', d.get('sub')); print('iss:', d.get('iss')); print('aud:', d.get('aud'))" || echo "decode failed"
+          echo "tenant length: ${#T}"
+          echo "client length: ${#C}"
+          echo "sub    length: ${#S}"
+          echo "test   length: ${#X}"
+          # Check whether the tenant looks like a GUID
+          if [[ "$T" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            echo "tenant is a valid GUID"
+          else
+            echo "tenant is NOT a GUID"
+          fi
+          # md5 check to prove exact content
+          echo "tenant md5: $(echo -n "$T" | md5sum | cut -d' ' -f1)"
+          echo "test   md5: $(echo -n "$X" | md5sum | cut -d' ' -f1)"
