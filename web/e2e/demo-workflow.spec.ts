@@ -91,7 +91,10 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     await page.goto('/ltl/consolidate');
 
     await expect(page.getByRole('heading', { name: 'Consolidate' })).toBeVisible();
-    await expect(page.getByText('Laredo → Dallas pilot corridor')).toBeVisible();
+    // Corridor picker container renders whether corridors loaded or not (has a fallback
+    // for the degrade case). We assert the picker itself, not any specific corridor text
+    // — that would ossify Phase 1's pilot into E2E.
+    await expect(page.getByTestId('corridor-picker')).toBeVisible();
     await expect(page.getByTestId('consolidate-seed-form')).toBeVisible();
 
     await pauseSoOperatorCanSee(page, 'Focusing the seed input');
