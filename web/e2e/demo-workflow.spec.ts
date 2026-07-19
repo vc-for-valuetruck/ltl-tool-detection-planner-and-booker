@@ -109,8 +109,10 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     // We pick a seed from live Alvys via the API rather than hardcoding one that might not
     // exist. If no live seed with siblings is available, the test is skipped — better than
     // flaking against a tenant's current load state.
+    // Endpoint is /api/ltl/search (see LtlController.Search). We hit the same API the SPA
+    // uses so the spec picks a seed that will definitely resolve when the frontend queries.
     const search = await request.get(
-      `${API_URL}/api/ltl/loads?originCity=Laredo&destinationCity=Dallas`,
+      `${API_URL}/api/ltl/search?originCity=Laredo&destinationCity=Dallas`,
     );
     if (!search.ok()) {
       test.skip(true, `LTL search API returned ${search.status()}; skipping plan-preview E2E.`);

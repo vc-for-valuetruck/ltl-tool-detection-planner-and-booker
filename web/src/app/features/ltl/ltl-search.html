@@ -177,7 +177,7 @@
       <label class="check"><input type="checkbox" name="missingBillingData" [(ngModel)]="filters().missingBillingData" /> Missing billing</label>
       <label class="check"><input type="checkbox" name="exceptionsOnly" [(ngModel)]="filters().exceptionsOnly" /> Exceptions</label>
       <label class="check"><input type="checkbox" name="blockedOnly" [(ngModel)]="filters().blockedOnly" /> Blocked</label>
-      <button type="submit" class="primary">Search</button>
+      <button type="submit" class="primary" data-testid="search-submit">Search</button>
       <button type="button" (click)="clearFilters()">Reset</button>
     </form>
 
