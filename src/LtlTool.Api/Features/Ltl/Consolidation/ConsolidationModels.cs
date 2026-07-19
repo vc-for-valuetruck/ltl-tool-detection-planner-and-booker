@@ -1,5 +1,65 @@
 namespace LtlTool.Api.Features.Ltl.Consolidation;
 
+public sealed record ConsolidationOpportunitiesResponse
+{
+    public required IReadOnlyList<ConsolidationOpportunity> Opportunities { get; init; }
+    public required int TotalScanned { get; init; }
+    public required int TotalPairsFound { get; init; }
+    public required DateTimeOffset GeneratedAt { get; init; }
+    public required string DataSource { get; init; }
+}
+
+public sealed record ConsolidationOpportunity
+{
+    public required int Rank { get; init; }
+    public required string OriginState { get; init; }
+    public required string DestinationState { get; init; }
+    public required string OriginCity { get; init; }
+    public required string DestinationCity { get; init; }
+    public required DateOnly PickupDate { get; init; }
+    public required string CustomerName { get; init; }
+    public required decimal CombinedRevenue { get; init; }
+    public required decimal ParentLinehaulMiles { get; init; }
+    public required decimal CombinedRpm { get; init; }
+    public required decimal ProjectedUplift { get; init; }
+    public required ConsolidationOpportunityLoad Parent { get; init; }
+    public required IReadOnlyList<ConsolidationOpportunityLoad> Siblings { get; init; }
+}
+
+public sealed record ConsolidationOpportunityLoad
+{
+    public required string LoadNumber { get; init; }
+    public required string LoadId { get; init; }
+    public required string CustomerName { get; init; }
+    public required string OriginCity { get; init; }
+    public required string OriginState { get; init; }
+    public required string DestinationCity { get; init; }
+    public required string DestinationState { get; init; }
+    public required decimal LinehaulAmount { get; init; }
+    public required decimal Miles { get; init; }
+    public required decimal Rpm { get; init; }
+    public required decimal? WeightPounds { get; init; }
+}
+
+public sealed record ConsolidationAuditRequest
+{
+    public required string ParentLoadNumber { get; init; }
+    public required IReadOnlyList<string> SiblingLoadNumbers { get; init; }
+    public decimal? CombinedRevenue { get; init; }
+    public decimal? CombinedRpm { get; init; }
+}
+
+public sealed record ConsolidationAuditResponse
+{
+    public required string AuditId { get; init; }
+    public required DateTimeOffset RecordedAt { get; init; }
+    public required string RecordedBy { get; init; }
+    public required string ParentLoadNumber { get; init; }
+    public required IReadOnlyList<string> SiblingLoadNumbers { get; init; }
+    public decimal? CombinedRevenue { get; init; }
+    public decimal? CombinedRpm { get; init; }
+}
+
 /// <summary>
 /// Fit status for a single consolidation factor. Deliberately narrow: green/yellow/red/gray.
 /// The UI renders each factor as a single-word chip; no numeric score, no black box. Missing

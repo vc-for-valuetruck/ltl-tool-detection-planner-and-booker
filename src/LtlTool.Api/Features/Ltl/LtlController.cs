@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using LtlTool.Api.Features.Ltl.Assignment;
+using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,7 +26,9 @@ namespace LtlTool.Api.Features.Ltl;
 [Produces("application/json")]
 public sealed class LtlController(
     LtlLoadService loads, MatchService matches, AssignmentValidationService validation,
-    IAssignmentAuditStore auditStore) : ControllerBase
+    IAssignmentAuditStore auditStore,
+    ConsolidationOpportunityService consolidationOpportunityService,
+    ILogger<LtlController> logger) : ControllerBase
 {
     /// <summary>Normalized, filtered, sorted, paged LTL search over the swept Alvys loads.</summary>
     [HttpGet("search")]
@@ -33,6 +36,39 @@ public sealed class LtlController(
     public async Task<ActionResult<LtlSearchResponse>> Search(
         [FromQuery] LtlSearchQuery query, CancellationToken ct)
         => Ok(await loads.SearchAsync(query, ct));
+
+    [HttpGet("consolidation/opportunities")]
+    [ProducesResponseType(typeof(ConsolidationOpportunitiesResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetOpportunities(
+        [FromQuery] int limit = 10,
+        [FromQuery] int lookbackDays = 14,
+        CancellationToken ct = default)
+    {
+        var opportunities = await consolidationOpportunityService
+            .FindOpportunitiesAsync(limit, lookbackDays, ct);
+        return Ok(opportunities);
+    }
+
+    [HttpPost("consolidation/audit")]
+    [ProducesResponseType(typeof(ConsolidationAuditResponse), StatusCodes.Status200OK)]
+    public IActionResult RecordAudit([FromBody] ConsolidationAuditRequest req)
+    {
+        var record = new ConsolidationAuditResponse
+        {
+            AuditId = $"plan-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString()[..4]}",
+            RecordedAt = DateTimeOffset.UtcNow,
+            RecordedBy = "demo@valuetruck.com",
+            ParentLoadNumber = req.ParentLoadNumber,
+            SiblingLoadNumbers = req.SiblingLoadNumbers,
+            CombinedRevenue = req.CombinedRevenue,
+            CombinedRpm = req.CombinedRpm,
+        };
+        logger.LogInformation(
+            "Consolidation audit recorded: {AuditId} for {Parent}",
+            record.AuditId,
+            req.ParentLoadNumber);
+        return Ok(record);
+    }
 
     /// <summary>
     /// Single-load detail by id/loadNumber/orderNumber, normalized with POD-aware billing.

@@ -386,3 +386,23 @@
     padding: 16px;
   }
 }
+
+.missing-pallets {
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 700;
+}
+
+.assumption-good {
+  color: var(--success-text) !important;
+}
+
+.assumption-good::before {
+  background: var(--success) !important;
+}
+
+.assumption-info::before {
+  background: var(--accent) !important;
+}

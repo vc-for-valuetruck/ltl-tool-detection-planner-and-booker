@@ -1,890 +1,121 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
-import { LtlService } from './ltl.service';
-import { AlvysOpsPanel } from './alvys-ops-panel';
-import { AlvysOpsService } from './alvys-ops.service';
-import { AlvysOperationDisposition } from './alvys-ops.models';
-import { AlvysTendersService } from './alvys-tenders.service';
-import { AlvysTender } from './alvys-tenders.models';
-import {
-  AssignmentAudit,
-  AssignmentIssue,
-  AssignmentValidationResult,
-  BillingBadge,
-  InvoiceAgingBucket,
-  LtlLoadSummary,
-  LtlSearchQuery,
-  LtlSearchResponse,
-  LtlSortField,
-  MatchResult,
-  SavedView,
-  VisibilityEventView,
-  WorkflowStage,
-} from './ltl.models';
-import {
-  EMPTY_FILTERS,
-  FilterState,
-  filtersToSnapshot,
-  snapshotToFilterState,
-} from './saved-views';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Router, RouterLink } from '@angular/router';
+import { RUNTIME_CONFIG } from '../../runtime-config';
 
-type ConsoleTab = 'search' | 'billing' | 'exceptions' | 'tenders';
-
-/** Per-tender Accept outcome shown inline on the Tenders board row. */
-interface TenderActionState {
-  loading: boolean;
-  message?: string;
-  tone?: 'ok' | 'warn' | 'danger';
+interface ConsolidationOpportunitiesResponse {
+  opportunities: ConsolidationOpportunity[];
+  totalScanned: number;
+  totalPairsFound: number;
+  generatedAt: string;
+  dataSource: string;
 }
 
-const TENDER_STATUSES = ['New', 'Accepted', 'Rejected', 'Expired', 'Cancelled'];
-
-interface SortableColumn {
-  field: LtlSortField;
-  label: string;
+interface ConsolidationOpportunity {
+  rank: number;
+  originState: string;
+  destinationState: string;
+  originCity: string;
+  destinationCity: string;
+  pickupDate: string;
+  customerName: string;
+  combinedRevenue: number;
+  parentLinehaulMiles: number;
+  combinedRpm: number;
+  projectedUplift: number;
+  parent: ConsolidationOpportunityLoad;
+  siblings: ConsolidationOpportunityLoad[];
 }
 
-const COLUMNS: SortableColumn[] = [
-  { field: 'Customer', label: 'Customer' },
-  { field: 'Status', label: 'Status' },
-  { field: 'PickupDate', label: 'Pickup' },
-  { field: 'DeliveryDate', label: 'Delivery' },
-  { field: 'Weight', label: 'Weight' },
-  { field: 'Distance', label: 'Miles' },
-  { field: 'Revenue', label: 'Revenue' },
-  { field: 'RevenuePerMile', label: 'RPM' },
-  { field: 'BillingReadiness', label: 'Billing' },
-];
-
-/** Ordered Search → Match → Assign → Bill steps for the workflow stepper. */
-const WORKFLOW_STEPS: { index: number; label: string }[] = [
-  { index: 1, label: 'Search' },
-  { index: 2, label: 'Match' },
-  { index: 3, label: 'Assign' },
-  { index: 4, label: 'Bill' },
-];
-
-const WORKFLOW_STAGES: WorkflowStage[] = ['Match', 'Assign', 'Bill', 'Billed'];
-
-const BILLING_BADGES: BillingBadge[] = [
-  'ReadyToBill',
-  'MissingRate',
-  'MissingPod',
-  'MissingAccessorialReview',
-  'MissingWeight',
-  'CustomerReviewNeeded',
-  'ExceptionBlockingBilling',
-  'AlreadyInvoiced',
-];
-
-interface AppliedFilter {
-  key: keyof FilterState;
-  label: string;
+interface ConsolidationOpportunityLoad {
+  loadNumber: string;
+  loadId: string;
+  customerName: string;
+  originCity: string;
+  originState: string;
+  destinationCity: string;
+  destinationState: string;
+  linehaulAmount: number;
+  miles: number;
+  rpm: number;
+  weightPounds: number | null;
 }
 
 @Component({
   selector: 'app-ltl-search',
   standalone: true,
-  imports: [FormsModule, DatePipe, DecimalPipe, AlvysOpsPanel, RouterLink],
+  imports: [DatePipe, RouterLink],
   templateUrl: './ltl-search.html',
-  styleUrls: ['./ltl-search.css', './ltl-saved-views.css'],
+  styleUrls: ['./ltl-search.css'],
 })
-export class LtlSearch {
-  private readonly ltl = inject(LtlService);
-  private readonly alvysOps = inject(AlvysOpsService);
-  private readonly alvysTenders = inject(AlvysTendersService);
+export class LtlSearch implements OnInit {
+  private readonly http = inject(HttpClient);
+  private readonly router = inject(Router);
+  private readonly base = `${inject(RUNTIME_CONFIG).apiBaseUrl}/ltl`;
 
-  // Saved views: shared built-in presets and the dispatcher's own views, loaded server-side.
-  protected readonly presets = signal<SavedView[]>([]);
-  protected readonly userViews = signal<SavedView[]>([]);
-  protected readonly savedViewsLoading = signal(false);
-  protected readonly savedViewsError = signal<string | null>(null);
-
-  // Save / rename dialog state. When `editingViewId` is set the form updates that view in place;
-  // otherwise it creates a new one from the current filters.
-  protected readonly viewFormOpen = signal(false);
-  protected readonly editingViewId = signal<string | null>(null);
-  protected readonly viewName = signal('');
-  protected readonly viewDescription = signal('');
-  protected readonly viewFormError = signal<string | null>(null);
-  protected readonly viewSaving = signal(false);
-
-  protected readonly columns = COLUMNS;
-  protected readonly billingBadges = BILLING_BADGES;
-  protected readonly workflowStages = WORKFLOW_STAGES;
-  protected readonly workflowSteps = WORKFLOW_STEPS;
-
-  protected readonly tab = signal<ConsoleTab>('search');
-
-  protected readonly filters = signal<FilterState>({ ...EMPTY_FILTERS });
-  protected readonly activeView = signal<string | null>(null);
-  protected readonly sort = signal<LtlSortField>('PickupDate');
-  protected readonly sortDescending = signal(false);
-  protected readonly page = signal(1);
-  protected readonly pageSize = signal(25);
-
-  protected readonly loading = signal(false);
+  protected readonly opportunities = signal<ConsolidationOpportunity[]>([]);
+  protected readonly totalScanned = signal(0);
+  protected readonly totalPairsFound = signal(0);
+  protected readonly generatedAt = signal<string | null>(null);
+  protected readonly dataSource = signal('Alvys va336 (live)');
+  protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
-  protected readonly response = signal<LtlSearchResponse | null>(null);
+  protected readonly expanded = signal(false);
 
-  // Worklist tab.
-  protected readonly worklist = signal<LtlLoadSummary[] | null>(null);
-  protected readonly worklistBadge = signal<BillingBadge | ''>('');
-  protected readonly worklistLoading = signal(false);
-  protected readonly worklistError = signal<string | null>(null);
-
-  // Exceptions tab.
-  protected readonly exceptions = signal<LtlLoadSummary[] | null>(null);
-  protected readonly exceptionsLoading = signal(false);
-  protected readonly exceptionsError = signal<string | null>(null);
-
-  // Tenders board: read-only inbound-offer search + sandbox-gated accept. Reject has no
-  // confirmed Alvys endpoint in this repo's write contract, so it is disabled rather than faked
-  // (see docs/ltl-tool.md — do not invent routes).
-  protected readonly tenderStatuses = TENDER_STATUSES;
-  protected readonly tenderStatus = signal('New');
-  protected readonly tenderType = signal('');
-  protected readonly tenderCustomer = signal('');
-  protected readonly tenders = signal<AlvysTender[] | null>(null);
-  protected readonly tendersTotal = signal(0);
-  protected readonly tendersLoading = signal(false);
-  protected readonly tendersError = signal<string | null>(null);
-  protected readonly tenderCompanyLinks = signal<Map<string, string>>(new Map());
-  protected readonly tenderActions = signal<Map<string, TenderActionState>>(new Map());
-
-  // Detail drawer / assignment panel.
-  protected readonly selected = signal<LtlLoadSummary | null>(null);
-  protected readonly detailLoading = signal(false);
-  protected readonly matches = signal<MatchResult[] | null>(null);
-  protected readonly matchesLoading = signal(false);
-  protected readonly expandedMatch = signal<string | null>(null);
-
-  protected readonly assignDriverId = signal('');
-  protected readonly assignTruckId = signal('');
-  protected readonly assignTrailerId = signal('');
-  protected readonly assignMatchScore = signal<number | null>(null);
-  protected readonly assignMatchLabel = signal<string | null>(null);
-  protected readonly assignOverrideReason = signal('');
-  protected readonly assignNotes = signal('');
-  protected readonly validation = signal<AssignmentValidationResult | null>(null);
-  protected readonly validating = signal(false);
-  protected readonly assigning = signal(false);
-  protected readonly assignError = signal<string | null>(null);
-  protected readonly history = signal<AssignmentAudit[]>([]);
-
-  protected readonly items = computed(() => this.response()?.items ?? []);
-  protected readonly total = computed(() => this.response()?.total ?? 0);
-  protected readonly truncated = computed(() => this.response()?.truncated ?? false);
-  protected readonly totalPages = computed(() =>
-    Math.max(1, Math.ceil(this.total() / this.pageSize())),
+  protected readonly visibleOpportunities = computed(() =>
+    this.expanded() ? this.opportunities() : this.opportunities().slice(0, 3),
   );
-  protected readonly hasResults = computed(() => this.items().length > 0);
-
-  protected readonly appliedFilters = computed<AppliedFilter[]>(() => {
-    const f = this.filters();
-    const out: AppliedFilter[] = [];
-    const push = (key: keyof FilterState, label: string) => out.push({ key, label });
-    if (f.keyword) push('keyword', `“${f.keyword}”`);
-    if (f.customer) push('customer', `Customer: ${f.customer}`);
-    if (f.originState) push('originState', `Origin ST: ${f.originState.toUpperCase()}`);
-    if (f.originCity) push('originCity', `Origin city: ${f.originCity}`);
-    if (f.destinationState) push('destinationState', `Dest ST: ${f.destinationState.toUpperCase()}`);
-    if (f.destinationCity) push('destinationCity', `Dest city: ${f.destinationCity}`);
-    if (f.equipmentType) push('equipmentType', `Equip: ${f.equipmentType}`);
-    if (f.assignment) push('assignment', f.assignment);
-    if (f.pickupFrom) push('pickupFrom', `Pickup ≥ ${f.pickupFrom}`);
-    if (f.pickupTo) push('pickupTo', `Pickup ≤ ${f.pickupTo}`);
-    if (f.deliveryFrom) push('deliveryFrom', `Delivery ≥ ${f.deliveryFrom}`);
-    if (f.deliveryTo) push('deliveryTo', `Delivery ≤ ${f.deliveryTo}`);
-    if (f.billingBadge) push('billingBadge', this.badgeText(f.billingBadge));
-    if (f.stage) push('stage', `Stage: ${f.stage}`);
-    if (f.ltlOnly) push('ltlOnly', 'LTL only');
-    if (f.readyToBill) push('readyToBill', 'Ready to bill');
-    if (f.missingBillingData) push('missingBillingData', 'Missing billing');
-    if (f.exceptionsOnly) push('exceptionsOnly', 'Exceptions');
-    if (f.blockedOnly) push('blockedOnly', 'Blocked only');
-    return out;
-  });
-
-  constructor() {
-    this.runSearch();
-    this.loadSavedViews();
-  }
-
-  protected loadSavedViews(): void {
-    this.savedViewsLoading.set(true);
-    this.savedViewsError.set(null);
-    this.ltl.listSavedViews().subscribe({
-      next: (collection) => {
-        this.presets.set(collection.presets);
-        this.userViews.set(collection.views);
-        this.savedViewsLoading.set(false);
-      },
-      error: (err) => {
-        this.savedViewsError.set(this.describe('Saved views', err));
-        this.savedViewsLoading.set(false);
-      },
-    });
-  }
-
-  protected applyView(view: SavedView): void {
-    if (this.activeView() === view.id) {
-      this.clearFilters();
-      return;
-    }
-    this.filters.set(snapshotToFilterState(view.filters));
-    this.sort.set(view.filters.sort);
-    this.sortDescending.set(view.filters.sortDescending);
-    this.activeView.set(view.id);
-    this.page.set(1);
-    this.runSearch();
-  }
-
-  /** Opens the dialog to save the current filters as a new view. */
-  protected startSaveView(): void {
-    this.editingViewId.set(null);
-    this.viewName.set('');
-    this.viewDescription.set('');
-    this.viewFormError.set(null);
-    this.viewFormOpen.set(true);
-  }
-
-  /** Opens the dialog pre-filled to rename/update an existing user view. */
-  protected startEditView(view: SavedView): void {
-    this.editingViewId.set(view.id);
-    this.viewName.set(view.name);
-    this.viewDescription.set(view.description ?? '');
-    this.viewFormError.set(null);
-    this.viewFormOpen.set(true);
-  }
-
-  protected cancelViewForm(): void {
-    this.viewFormOpen.set(false);
-    this.viewFormError.set(null);
-  }
-
-  /**
-   * Persists the current filters as a new view, or updates the one being edited. On success the
-   * saved view becomes the active view so the dispatcher sees it selected.
-   */
-  protected saveView(): void {
-    const name = this.viewName().trim();
-    if (!name) {
-      this.viewFormError.set('Enter a name for this view.');
-      return;
-    }
-
-    const request = {
-      name,
-      description: this.viewDescription().trim() || null,
-      filters: filtersToSnapshot(this.filters(), this.sort(), this.sortDescending()),
-    };
-    const editingId = this.editingViewId();
-    const save$ = editingId
-      ? this.ltl.updateSavedView(editingId, request)
-      : this.ltl.createSavedView(request);
-
-    this.viewSaving.set(true);
-    this.viewFormError.set(null);
-    save$.subscribe({
-      next: (saved) => {
-        this.userViews.update((views) =>
-          editingId
-            ? views.map((v) => (v.id === saved.id ? saved : v))
-            : [...views, saved],
-        );
-        this.viewSaving.set(false);
-        this.viewFormOpen.set(false);
-        this.activeView.set(saved.id);
-      },
-      error: (err) => {
-        this.viewFormError.set(this.describe('Save view', err));
-        this.viewSaving.set(false);
-      },
-    });
-  }
-
-  protected deleteView(view: SavedView): void {
-    this.ltl.deleteSavedView(view.id).subscribe({
-      next: () => {
-        this.userViews.update((views) => views.filter((v) => v.id !== view.id));
-        if (this.activeView() === view.id) this.activeView.set(null);
-        if (this.editingViewId() === view.id) this.viewFormOpen.set(false);
-      },
-      error: (err) => this.savedViewsError.set(this.describe('Delete view', err)),
-    });
-  }
-
-  protected setTab(tab: ConsoleTab): void {
-    if (this.tab() === tab) return;
-    this.tab.set(tab);
-    this.closeDrawer();
-    if (tab === 'billing' && this.worklist() === null) this.loadWorklist();
-    if (tab === 'exceptions' && this.exceptions() === null) this.loadExceptions();
-    if (tab === 'tenders' && this.tenders() === null) this.loadTenders();
-  }
-
-  protected clearFilters(): void {
-    this.filters.set({ ...EMPTY_FILTERS });
-    this.activeView.set(null);
-    this.sort.set('PickupDate');
-    this.sortDescending.set(false);
-    this.page.set(1);
-    this.runSearch();
-  }
-
-  protected removeFilter(key: keyof FilterState): void {
-    const next = { ...this.filters() };
-    const empty = EMPTY_FILTERS[key];
-    (next[key] as FilterState[keyof FilterState]) = empty;
-    this.filters.set(next);
-    this.activeView.set(null);
-    this.page.set(1);
-    this.runSearch();
-  }
-
-  protected onSubmit(): void {
-    this.activeView.set(null);
-    this.page.set(1);
-    this.runSearch();
-  }
-
-  protected toggleSort(field: LtlSortField): void {
-    if (this.sort() === field) {
-      this.sortDescending.update((d) => !d);
-    } else {
-      this.sort.set(field);
-      this.sortDescending.set(false);
-    }
-    this.page.set(1);
-    this.runSearch();
-  }
-
-  protected goToPage(page: number): void {
-    if (page < 1 || page > this.totalPages() || page === this.page()) return;
-    this.page.set(page);
-    this.runSearch();
-  }
-
-  protected changePageSize(size: number): void {
-    if (size === this.pageSize()) return;
-    this.pageSize.set(size);
-    this.page.set(1);
-    this.runSearch();
-  }
-
-  /** First row number shown on the current page, for the "X–Y of Z" pager label. */
-  protected readonly rangeStart = computed(() =>
-    this.total() === 0 ? 0 : (this.page() - 1) * this.pageSize() + 1,
+  protected readonly additionalCount = computed(() =>
+    Math.max(0, this.totalPairsFound() - this.visibleOpportunities().length),
   );
 
-  /** Last row number shown on the current page. */
-  protected readonly rangeEnd = computed(() =>
-    Math.min(this.page() * this.pageSize(), this.total()),
-  );
+  ngOnInit(): void {
+    this.loadOpportunities();
+  }
 
-  protected runSearch(): void {
+  protected loadOpportunities(): void {
     this.loading.set(true);
     this.error.set(null);
-    this.ltl.search(this.toQuery()).subscribe({
-      next: (res) => {
-        this.response.set(res);
-        this.loading.set(false);
-      },
-      error: (err) => {
-        this.error.set(this.describe('Search', err));
-        this.loading.set(false);
-      },
-    });
-  }
 
-  protected loadWorklist(): void {
-    this.worklistLoading.set(true);
-    this.worklistError.set(null);
-    const badge = this.worklistBadge() || undefined;
-    this.ltl.billingWorklist(badge).subscribe({
-      next: (rows) => {
-        this.worklist.set(rows);
-        this.worklistLoading.set(false);
-      },
-      error: (err) => {
-        this.worklistError.set(this.describe('Worklist', err));
-        this.worklistLoading.set(false);
-      },
-    });
-  }
-
-  protected loadExceptions(): void {
-    this.exceptionsLoading.set(true);
-    this.exceptionsError.set(null);
-    this.ltl.exceptions().subscribe({
-      next: (rows) => {
-        this.exceptions.set(rows);
-        this.exceptionsLoading.set(false);
-      },
-      error: (err) => {
-        this.exceptionsError.set(this.describe('Exceptions', err));
-        this.exceptionsLoading.set(false);
-      },
-    });
-  }
-
-  protected loadTenders(): void {
-    this.tendersLoading.set(true);
-    this.tendersError.set(null);
-    this.alvysTenders
-      .search({
-        Page: 0,
-        PageSize: 50,
-        Filter: {
-          Status: this.tenderStatus() ? [this.tenderStatus()] : undefined,
-          Type: this.tenderType() || undefined,
-          SourceCustomer: this.tenderCustomer() || undefined,
-        },
-      })
+    const params = new HttpParams().set('limit', this.expanded() ? 10 : 3);
+    this.http
+      .get<ConsolidationOpportunitiesResponse>(`${this.base}/consolidation/opportunities`, { params })
       .subscribe({
-        next: (res) => {
-          this.tenders.set(res.Items);
-          this.tendersTotal.set(res.Total);
-          this.tendersLoading.set(false);
+        next: (response) => {
+          this.opportunities.set(response.opportunities ?? []);
+          this.totalScanned.set(response.totalScanned ?? 0);
+          this.totalPairsFound.set(response.totalPairsFound ?? 0);
+          this.generatedAt.set(response.generatedAt ?? null);
+          this.dataSource.set(response.dataSource || 'Alvys va336 (live)');
+          this.loading.set(false);
         },
         error: (err) => {
-          this.tendersError.set(this.describe('Tenders', err));
-          this.tendersLoading.set(false);
+          this.error.set(err?.error?.error ?? err?.message ?? `Couldn't reach Alvys.`);
+          this.loading.set(false);
         },
       });
   }
 
-  /** First (pickup-like) and last (delivery-like) stop for a compact lane display. */
-  protected tenderLane(tender: AlvysTender): { origin: string; destination: string } {
-    const stops = tender.Stops ?? [];
-    const label = (e?: { City?: string | null; State?: string | null } | null) =>
-      e ? [e.City, e.State].filter(Boolean).join(', ') || '—' : '—';
-    return {
-      origin: label(stops[0]?.Entity),
-      destination: label(stops[stops.length - 1]?.Entity),
-    };
+  protected showAll(): void {
+    this.expanded.set(true);
+    this.loadOpportunities();
   }
 
-  /** Relative "age" label from an ISO instant to now (e.g. "42m", "3h", "2d"). */
-  protected relativeAge(iso?: string | null): string {
-    if (!iso) return '—';
-    const ms = Date.now() - new Date(iso).getTime();
-    return this.formatDuration(ms);
-  }
-
-  /** Relative "time remaining" label to an ISO instant (e.g. respond-within). Negative once past. */
-  protected relativeRemaining(iso?: string | null): string {
-    if (!iso) return '—';
-    const ms = new Date(iso).getTime() - Date.now();
-    return ms < 0 ? 'expired' : this.formatDuration(ms);
-  }
-
-  private formatDuration(ms: number): string {
-    const abs = Math.abs(ms);
-    const minutes = Math.round(abs / 60000);
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.round(minutes / 60);
-    if (hours < 24) return `${hours}h`;
-    return `${Math.round(hours / 24)}d`;
-  }
-
-  private linkKey(tenderId: string, stopId: string): string {
-    return `${tenderId}::${stopId}`;
-  }
-
-  /** Editable Company ID for a tender stop, pre-filled from the stop's EDI entity IdCode as a
-   *  starting hint only — it is not asserted to be the Alvys company id, the dispatcher must
-   *  confirm it before Accept is enabled. */
-  protected companyLinkValue(tenderId: string, stop: { StopId: string; Entity?: { IdCode?: string | null } | null }): string {
-    const key = this.linkKey(tenderId, stop.StopId);
-    const existing = this.tenderCompanyLinks().get(key);
-    if (existing !== undefined) return existing;
-    return stop.Entity?.IdCode ?? '';
-  }
-
-  protected setCompanyLinkValue(tenderId: string, stopId: string, value: string): void {
-    this.tenderCompanyLinks.update((map) => {
-      const next = new Map(map);
-      next.set(this.linkKey(tenderId, stopId), value);
-      return next;
-    });
-  }
-
-  /** Accept is enabled only once every stop on the tender has a non-blank company id. */
-  protected canAcceptTender(tender: AlvysTender): boolean {
-    const stops = tender.Stops ?? [];
-    if (stops.length === 0) return false;
-    return stops.every((s) => this.companyLinkValue(tender.Id, s).trim().length > 0);
-  }
-
-  protected tenderAction(tenderId: string): TenderActionState | undefined {
-    return this.tenderActions().get(tenderId);
-  }
-
-  private setTenderAction(tenderId: string, state: TenderActionState): void {
-    this.tenderActions.update((map) => {
-      const next = new Map(map);
-      next.set(tenderId, state);
-      return next;
-    });
-  }
-
-  /**
-   * Fires the sandbox-gated tender-accept write operation. One click, no confirmation dialog —
-   * matches Alvys' own fast accept/reject UX — but the outcome always reflects the real
-   * disposition (audit-only / simulated / sandbox-executed / sandbox-failed / unsupported /
-   * blocked); this never claims a load was accepted in Alvys unless it actually was.
-   */
-  protected acceptTender(tender: AlvysTender): void {
-    if (!this.canAcceptTender(tender)) return;
-    this.setTenderAction(tender.Id, { loading: true });
-
-    const stopCompanyLinks = (tender.Stops ?? []).map((s) => ({
-      stopId: s.StopId,
-      companyId: this.companyLinkValue(tender.Id, s).trim(),
-    }));
-
-    this.alvysOps
-      .execute(
-        'tender-accept',
-        { tenderId: tender.Id, stopCompanyLinks, etag: tender.Etag ?? undefined },
-        `tender-accept:${tender.Id}`,
-      )
-      .subscribe({
-        next: (res) => this.setTenderAction(tender.Id, this.describeTenderOutcome(res.outcome.disposition, res.outcome.message)),
-        error: (err) => {
-          const disposition: AlvysOperationDisposition | undefined = err.error?.outcome?.disposition;
-          const message = err.error?.outcome?.message ?? this.describe('Accept tender', err);
-          this.setTenderAction(
-            tender.Id,
-            disposition ? this.describeTenderOutcome(disposition, message) : { loading: false, message, tone: 'danger' },
-          );
-        },
-      });
-  }
-
-  private describeTenderOutcome(disposition: AlvysOperationDisposition, message: string): TenderActionState {
-    switch (disposition) {
-      case 'SandboxExecuted':
-        return { loading: false, message: `Sent to Alvys sandbox — ${message}`, tone: 'ok' };
-      case 'SandboxFailed':
-        return { loading: false, message: `Alvys sandbox rejected it — ${message}`, tone: 'danger' };
-      case 'Blocked':
-        return { loading: false, message, tone: 'danger' };
-      case 'Unsupported':
-        return { loading: false, message: 'Not sent — live sandbox execution is not configured.', tone: 'warn' };
-      default:
-        return { loading: false, message: `Recorded internally only (${disposition}) — not sent to Alvys.`, tone: 'warn' };
-    }
-  }
-
-  protected select(load: LtlLoadSummary): void {
-    this.selected.set(load);
-    this.resetAssignmentForm();
-
-    // List rows carry no per-load visibility/invoice context (those are detail-path fetches).
-    // Pull the full detail so the drawer shows invoice-aware billing and visibility failures.
-    this.detailLoading.set(true);
-    this.ltl.getLoad(load.id).subscribe({
-      next: (detail) => {
-        if (this.selected()?.id === load.id) this.selected.set(detail);
-        this.detailLoading.set(false);
-      },
-      error: () => this.detailLoading.set(false),
-    });
-
-    this.matches.set(null);
-    this.matchesLoading.set(true);
-    this.ltl.getMatches(load.id, 5).subscribe({
-      next: (m) => {
-        this.matches.set(m);
-        this.matchesLoading.set(false);
-      },
-      error: () => {
-        this.matches.set([]);
-        this.matchesLoading.set(false);
-      },
-    });
-    this.ltl.assignments(load.id).subscribe({
-      next: (h) => this.history.set(h),
-      error: () => this.history.set([]),
-    });
-  }
-
-  protected closeDrawer(): void {
-    this.selected.set(null);
-    this.detailLoading.set(false);
-    this.matches.set(null);
-    this.expandedMatch.set(null);
-    this.resetAssignmentForm();
-  }
-
-  /** Failed/errored visibility shares on the selected load (detail-path only). */
-  protected visibilityFailures(load: LtlLoadSummary): VisibilityEventView[] {
-    return load.visibility.events.filter((e) => e.isFailure);
-  }
-
-  /** Noteworthy, non-failed visibility milestones for the timeline. */
-  protected visibilityMilestones(load: LtlLoadSummary): VisibilityEventView[] {
-    return load.visibility.events.filter((e) => !e.isFailure);
-  }
-
-  protected toggleFactors(match: MatchResult): void {
-    const key = match.driverId ?? match.driverName ?? '';
-    this.expandedMatch.update((cur) => (cur === key ? null : key));
-  }
-
-  protected isExpanded(match: MatchResult): boolean {
-    return this.expandedMatch() === (match.driverId ?? match.driverName ?? '');
-  }
-
-  /** Prefill the assignment form from a recommended match and validate it immediately. */
-  protected chooseMatch(match: MatchResult): void {
-    this.assignDriverId.set(match.driverId ?? '');
-    this.assignTruckId.set(match.truckId ?? '');
-    this.assignTrailerId.set(match.trailerId ?? '');
-    this.assignMatchScore.set(match.score);
-    this.assignMatchLabel.set(match.labelText);
-    this.assignError.set(null);
-    this.runValidation();
-  }
-
-  protected runValidation(): void {
-    const load = this.selected();
-    if (!load || !this.assignDriverId()) {
-      this.validation.set(null);
-      return;
-    }
-    this.validating.set(true);
-    this.ltl.validateAssignment(load.id, this.buildRequest()).subscribe({
-      next: (res) => {
-        this.validation.set(res);
-        this.validating.set(false);
-      },
-      error: () => {
-        this.validation.set(null);
-        this.validating.set(false);
+  protected reviewPlan(opportunity: ConsolidationOpportunity): void {
+    this.router.navigate(['/ltl/consolidate/plan', 'live'], {
+      queryParams: {
+        parent: opportunity.parent.loadNumber,
+        siblings: opportunity.siblings.map((s) => s.loadNumber).join(','),
       },
     });
   }
 
-  protected submitAssign(): void {
-    const load = this.selected();
-    if (!load) return;
-    this.assigning.set(true);
-    this.assignError.set(null);
-    this.ltl.assign(load.id, this.buildRequest()).subscribe({
-      next: (audit) => {
-        this.history.update((h) => [audit, ...h]);
-        this.assigning.set(false);
-        this.assignOverrideReason.set('');
-        this.assignNotes.set('');
-      },
-      error: (err) => {
-        if (err.status === 422 && err.error?.issues) {
-          this.validation.set(err.error as AssignmentValidationResult);
-          this.assignError.set('Assignment blocked — resolve the issues below.');
-        } else {
-          this.assignError.set(this.describe('Assign', err));
-        }
-        this.assigning.set(false);
-      },
-    });
+  protected formatMoney(value: number): string {
+    return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
   }
 
-  protected get canAssign(): boolean {
-    return (
-      !!this.assignDriverId() &&
-      !this.assigning() &&
-      !(this.validation()?.hasBlockers ?? false)
-    );
-  }
-
-  private buildRequest() {
-    return {
-      driverId: this.assignDriverId() || undefined,
-      truckId: this.assignTruckId() || undefined,
-      trailerId: this.assignTrailerId() || undefined,
-      matchScore: this.assignMatchScore() ?? undefined,
-      matchLabel: this.assignMatchLabel() ?? undefined,
-      overrideReason: this.assignOverrideReason() || undefined,
-      notes: this.assignNotes() || undefined,
-    };
-  }
-
-  private resetAssignmentForm(): void {
-    this.assignDriverId.set('');
-    this.assignTruckId.set('');
-    this.assignTrailerId.set('');
-    this.assignMatchScore.set(null);
-    this.assignMatchLabel.set(null);
-    this.assignOverrideReason.set('');
-    this.assignNotes.set('');
-    this.validation.set(null);
-    this.assignError.set(null);
-    this.history.set([]);
-  }
-
-  private toQuery(): LtlSearchQuery {
-    const f = this.filters();
-    return {
-      keyword: f.keyword || undefined,
-      customer: f.customer || undefined,
-      originState: f.originState || undefined,
-      originCity: f.originCity || undefined,
-      destinationState: f.destinationState || undefined,
-      destinationCity: f.destinationCity || undefined,
-      equipmentType: f.equipmentType || undefined,
-      assignment: f.assignment || undefined,
-      pickupFrom: f.pickupFrom || undefined,
-      pickupTo: f.pickupTo || undefined,
-      deliveryFrom: f.deliveryFrom || undefined,
-      deliveryTo: f.deliveryTo || undefined,
-      billingBadge: f.billingBadge || undefined,
-      stage: f.stage || undefined,
-      ltlOnly: f.ltlOnly || undefined,
-      readyToBill: f.readyToBill || undefined,
-      missingBillingData: f.missingBillingData || undefined,
-      exceptionsOnly: f.exceptionsOnly || undefined,
-      blockedOnly: f.blockedOnly || undefined,
-      sort: this.sort(),
-      sortDescending: this.sortDescending(),
-      page: this.page(),
-      pageSize: this.pageSize(),
-    };
-  }
-
-  private describe(what: string, err: { status?: number; statusText?: string }): string {
-    return `${what} failed: ${err.status ?? ''} ${err.statusText ?? ''}`.trim();
-  }
-
-  protected sortIndicator(field: LtlSortField): string {
-    if (this.sort() !== field) return '';
-    return this.sortDescending() ? '▼' : '▲';
-  }
-
-  protected badgeClass(badge: BillingBadge): string {
-    switch (badge) {
-      case 'ReadyToBill':
-        return 'badge badge-ok';
-      case 'AlreadyInvoiced':
-        return 'badge badge-muted';
-      case 'ExceptionBlockingBilling':
-        return 'badge badge-danger';
-      default:
-        return 'badge badge-warn';
-    }
-  }
-
-  protected badgeText(badge: string): string {
-    return badge.replace(/([a-z])([A-Z])/g, '$1 $2');
-  }
-
-  /**
-   * Pill class for a gross-margin percent: red when negative, amber when thin, green otherwise.
-   * Severity is read from the backend's risk messages (which already apply the configurable
-   * MarginRiskThresholdPercent) rather than re-deriving it from a hardcoded threshold here.
-   */
-  protected marginClass(percent: number | null, risks: readonly string[] | null | undefined): string {
-    if (percent === null) return 'badge badge-muted';
-    if (risks?.some((r) => r.includes('Negative gross margin'))) return 'badge badge-danger';
-    if (risks?.some((r) => r.includes('Thin gross margin'))) return 'badge badge-warn';
-    return 'badge badge-ok';
-  }
-
-  protected agingLabel(bucket: InvoiceAgingBucket): string {
-    switch (bucket) {
-      case 'Current':
-        return 'Current';
-      case 'Days1To30':
-        return '1-30 days';
-      case 'Days31To60':
-        return '31-60 days';
-      case 'Days61To90':
-        return '61-90 days';
-      default:
-        return '90+ days';
-    }
-  }
-
-  protected agingClass(bucket: InvoiceAgingBucket): string {
-    switch (bucket) {
-      case 'Current':
-        return 'badge badge-ok';
-      case 'Days1To30':
-        return 'badge badge-warn';
-      default:
-        return 'badge badge-danger';
-    }
-  }
-
-  /**
-   * Classifies a free-text Alvys load status into a pill variant. Alvys statuses are open text
-   * (not a fixed enum), so this matches on keyword families rather than an exact list — an
-   * unrecognised status falls back to a neutral pill rather than guessing a meaning for it.
-   */
-  protected statusClass(status: string | null | undefined): string {
-    const s = (status ?? '').toLowerCase();
-    if (!s) return 'status-pill status-default';
-    if (/cancel|void|reject|expir/.test(s)) return 'status-pill status-cancelled';
-    if (/transit|en-route|en route/.test(s)) return 'status-pill status-transit';
-    if (/deliver|trip completed|^completed$|^accepted$/.test(s)) return 'status-pill status-delivered';
-    if (/invoic|financ|paid/.test(s)) return 'status-pill status-billed';
-    if (/dispatch|covered|release/.test(s)) return 'status-pill status-dispatched';
-    if (/open|quote|reserv|review|admin|queue|^new$/.test(s)) return 'status-pill status-open';
-    return 'status-pill status-default';
-  }
-
-  protected stageClass(stage: WorkflowStage, blocked: boolean): string {
-    if (blocked) return 'stage stage-blocked';
-    switch (stage) {
-      case 'Match':
-        return 'stage stage-match';
-      case 'Assign':
-        return 'stage stage-assign';
-      case 'Bill':
-        return 'stage stage-bill';
-      default:
-        return 'stage stage-billed';
-    }
-  }
-
-  /** Stepper cell state for a given step index against the load's current step. */
-  protected stepClass(stepIndex: number, current: number, blocked: boolean): string {
-    if (stepIndex < current) return 'step step-done';
-    if (stepIndex === current) return blocked ? 'step step-current step-blocked' : 'step step-current';
-    return 'step step-todo';
-  }
-
-  protected matchClass(label: string): string {
-    switch (label) {
-      case 'Excellent':
-      case 'Good':
-        return 'match match-ok';
-      case 'Possible':
-        return 'match match-warn';
-      default:
-        return 'match match-danger';
-    }
-  }
-
-  protected factorClass(status: string): string {
-    switch (status) {
-      case 'Strong':
-        return 'factor factor-strong';
-      case 'Weak':
-        return 'factor factor-weak';
-      case 'Unavailable':
-        return 'factor factor-na';
-      default:
-        return 'factor factor-neutral';
-    }
-  }
-
-  protected issueClass(issue: AssignmentIssue): string {
-    return issue.severity === 'Block' ? 'issue issue-block' : 'issue issue-warn';
+  protected formatRpm(value: number): string {
+    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 }

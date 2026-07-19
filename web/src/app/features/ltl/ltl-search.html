@@ -1,782 +1,99 @@
-<nav class="shell-tabs" role="tablist" aria-label="LTL console">
-  <div class="shell-tabs-inner">
-    <button type="button" role="tab" class="shell-tab" [class.active]="tab() === 'search'" (click)="setTab('search')">
-      Search
-    </button>
-    <button type="button" role="tab" class="shell-tab" [class.active]="tab() === 'billing'" (click)="setTab('billing')">
-      Billing
-    </button>
-    <button type="button" role="tab" class="shell-tab" [class.active]="tab() === 'exceptions'" (click)="setTab('exceptions')">
-      Exceptions
-    </button>
-    <button type="button" role="tab" class="shell-tab" [class.active]="tab() === 'tenders'" (click)="setTab('tenders')">
-      Tenders
-    </button>
-    <a routerLink="/ltl/consolidate" class="shell-tab">Consolidate</a>
-  </div>
-</nav>
-
-<section class="ltl page-shell">
-  <div class="ltl-head">
-    <div>
-      <h1>LTL Operating Console</h1>
-      <p class="subtitle">
-        Search, match, assign and bill over live Alvys data &mdash; missing fields are surfaced,
-        never invented. Alvys stays read-only; assignment is internal &amp; audited.
-      </p>
-    </div>
+<section class="today page-shell">
+  <div class="hero">
+    <p class="eyebrow">Live consolidation queue</p>
+    <h1>Today's consolidations</h1>
+    <p class="subtitle">
+      {{ totalPairsFound() }} candidate pairs from your live Alvys pipeline, ranked by projected uplift.
+    </p>
   </div>
 
-  <!-- ===================== SEARCH TAB ===================== -->
-  @if (tab() === 'search') {
-    <div class="card">
-    <!-- Saved views: shared presets + the dispatcher's own views -->
-    <div class="saved-views" data-testid="saved-views">
-      @if (savedViewsError(); as err) {
-        <div class="state state-error saved-views-error" role="alert">
-          {{ err }}<button type="button" (click)="loadSavedViews()">Retry</button>
+  @if (loading()) {
+    <div class="skeleton-list" aria-label="Loading consolidation opportunities">
+      @for (_ of [1, 2, 3]; track _) {
+        <div class="skeleton-card">
+          <div class="skeleton-line skeleton-title"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+          <div class="skeleton-footer"></div>
         </div>
       }
+    </div>
+  } @else if (error()) {
+    <div class="state state-error">
+      <strong>Couldn't reach Alvys.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="loadOpportunities()">Retry</button>
+    </div>
+  } @else if (opportunities().length === 0) {
+    <div class="state state-empty">
+      No consolidations available right now. Your Alvys pipeline is clean.
+    </div>
+  } @else {
+    <div class="opportunity-list">
+      @for (opportunity of visibleOpportunities(); track opportunity.rank) {
+        <article class="opportunity-card">
+          <div class="card-topline">
+            <span class="rank-chip">#{{ opportunity.rank }}</span>
+            <div class="lane-title">
+              {{ opportunity.originState }} <span aria-hidden="true">→</span> {{ opportunity.destinationState }}
+              <span class="date-dot">·</span>
+              {{ opportunity.pickupDate | date: 'MMM d, y' }}
+            </div>
+          </div>
 
-      <div class="saved-views-group">
-        <span class="saved-views-label">Presets</span>
-        @if (savedViewsLoading() && presets().length === 0) {
-          <span class="muted">Loading…</span>
-        } @else {
-          <div class="chips" role="group" aria-label="Built-in presets">
-            @for (view of presets(); track view.id) {
-              <button
-                type="button"
-                class="chip"
-                data-testid="preset-chip"
-                [class.active]="activeView() === view.id"
-                [title]="view.description || view.name"
-                [attr.aria-pressed]="activeView() === view.id"
-                (click)="applyView(view)"
-              >
-                {{ view.name }}
-              </button>
+          <div class="load-lines">
+            <div class="load-line parent-line">
+              <strong>{{ opportunity.parent.loadNumber }}</strong>
+              <span>
+                ({{ opportunity.customerName || opportunity.parent.customerName || '—' }},
+                {{ opportunity.originCity }} → {{ opportunity.destinationCity }})
+              </span>
+            </div>
+            @for (sibling of opportunity.siblings; track sibling.loadId) {
+              <div class="load-line">
+                <strong>{{ sibling.loadNumber }}</strong>
+                <span>({{ sibling.customerName || opportunity.customerName || '—' }})</span>
+              </div>
             }
           </div>
-        }
-      </div>
 
-      <div class="saved-views-group">
-        <span class="saved-views-label">My views</span>
-        <div class="chips" role="group" aria-label="My saved views">
-          @for (view of userViews(); track view.id) {
-            <span class="chip chip-user" [class.active]="activeView() === view.id" data-testid="user-view">
-              <button
-                type="button"
-                class="chip-apply"
-                [title]="view.description || view.name"
-                [attr.aria-pressed]="activeView() === view.id"
-                (click)="applyView(view)"
-              >
-                {{ view.name }}
-              </button>
-              <button
-                type="button"
-                class="chip-edit"
-                [attr.aria-label]="'Rename or update ' + view.name"
-                title="Rename / update"
-                (click)="startEditView(view)"
-              >&#9998;</button>
-              <button
-                type="button"
-                class="chip-del"
-                [attr.aria-label]="'Delete ' + view.name"
-                title="Delete"
-                (click)="deleteView(view)"
-              >&times;</button>
-            </span>
-          }
-          @if (userViews().length === 0 && !savedViewsLoading()) {
-            <span class="muted">No saved views yet — refine filters, then “Save current view”.</span>
-          }
-        </div>
-      </div>
+          <div class="card-metrics">
+            Combined RPM ${{ formatRpm(opportunity.combinedRpm) }}/mi
+            <span>·</span>
+            Same customer
+            <span>·</span>
+            Same day
+          </div>
 
-      <div class="saved-views-actions">
-        <button type="button" class="link" data-testid="save-view" (click)="startSaveView()">
-          + Save current view
-        </button>
-        @if (activeView()) {
-          <button type="button" class="chip chip-clear" (click)="clearFilters()">Clear view</button>
-        }
-      </div>
-
-      @if (viewFormOpen()) {
-        <form class="view-form" data-testid="view-form" (ngSubmit)="saveView()">
-          <span class="view-form-title">
-            {{ editingViewId() ? 'Update saved view' : 'Save current filters as a view' }}
-          </span>
-          <label>
-            Name
-            <input
-              type="text"
-              name="viewName"
-              maxlength="80"
-              placeholder="e.g. Midwest reefer, this week"
-              data-testid="view-name"
-              [ngModel]="viewName()"
-              (ngModelChange)="viewName.set($event)"
-            />
-          </label>
-          <label>
-            Description <span class="muted">(optional)</span>
-            <input
-              type="text"
-              name="viewDescription"
-              maxlength="280"
-              [ngModel]="viewDescription()"
-              (ngModelChange)="viewDescription.set($event)"
-            />
-          </label>
-          <p class="staged-note">Saved to this tool only — never written back to Alvys.</p>
-          @if (viewFormError(); as err) { <div class="assign-error">{{ err }}</div> }
-          <div class="view-form-actions">
-            <button type="submit" class="primary" [disabled]="viewSaving() || !viewName().trim()">
-              {{ viewSaving() ? 'Saving…' : editingViewId() ? 'Update view' : 'Save view' }}
+          <div class="card-actions">
+            <button type="button" class="review-link" (click)="reviewPlan(opportunity)">
+              Review plan →
             </button>
-            <button type="button" (click)="cancelViewForm()">Cancel</button>
+            <span class="uplift-pill">Uplift +${{ formatMoney(opportunity.projectedUplift) }}</span>
           </div>
-        </form>
+        </article>
       }
     </div>
 
-    <!-- Filters -->
-    <form class="filters" data-testid="search-filters" (ngSubmit)="onSubmit()">
-      <input type="search" name="keyword" placeholder="Load #, order #, PO#…" [(ngModel)]="filters().keyword" data-testid="search-keyword" />
-      <input type="text" name="customer" placeholder="Customer" [(ngModel)]="filters().customer" />
-      <input type="text" name="originCity" placeholder="Origin city" [(ngModel)]="filters().originCity" data-testid="search-origin-city" />
-      <input type="text" name="originState" placeholder="Orig ST" maxlength="2" [(ngModel)]="filters().originState" />
-      <input type="text" name="destinationCity" placeholder="Dest city" [(ngModel)]="filters().destinationCity" data-testid="search-dest-city" />
-      <input type="text" name="destinationState" placeholder="Dest ST" maxlength="2" [(ngModel)]="filters().destinationState" />
-      <input type="text" name="equipmentType" placeholder="Equipment" [(ngModel)]="filters().equipmentType" />
-      <select name="assignment" [(ngModel)]="filters().assignment">
-        <option value="">Any assignment</option>
-        <option value="Unassigned">Unassigned</option>
-        <option value="Assigned">Assigned</option>
-      </select>
-      <select name="billingBadge" [(ngModel)]="filters().billingBadge">
-        <option value="">Any billing state</option>
-        @for (b of billingBadges; track b) {
-          <option [value]="b">{{ badgeText(b) }}</option>
-        }
-      </select>
-      <select name="stage" [(ngModel)]="filters().stage">
-        <option value="">Any workflow stage</option>
-        @for (s of workflowStages; track s) {
-          <option [value]="s">{{ s }}</option>
-        }
-      </select>
-      <label class="date">Pickup<input type="date" name="pickupFrom" [(ngModel)]="filters().pickupFrom" /></label>
-      <label class="date">to<input type="date" name="pickupTo" [(ngModel)]="filters().pickupTo" /></label>
-      <label class="date">Deliver<input type="date" name="deliveryFrom" [(ngModel)]="filters().deliveryFrom" /></label>
-      <label class="date">to<input type="date" name="deliveryTo" [(ngModel)]="filters().deliveryTo" /></label>
-      <label class="check"><input type="checkbox" name="ltlOnly" [(ngModel)]="filters().ltlOnly" /> LTL only</label>
-      <label class="check"><input type="checkbox" name="readyToBill" [(ngModel)]="filters().readyToBill" /> Ready to bill</label>
-      <label class="check"><input type="checkbox" name="missingBillingData" [(ngModel)]="filters().missingBillingData" /> Missing billing</label>
-      <label class="check"><input type="checkbox" name="exceptionsOnly" [(ngModel)]="filters().exceptionsOnly" /> Exceptions</label>
-      <label class="check"><input type="checkbox" name="blockedOnly" [(ngModel)]="filters().blockedOnly" /> Blocked</label>
-      <button type="submit" class="primary" data-testid="search-submit">Search</button>
-      <button type="button" (click)="clearFilters()">Reset</button>
-    </form>
-
-    <!-- Applied-filter chips -->
-    @if (appliedFilters().length > 0) {
-      <div class="applied">
-        <span class="applied-label">Applied:</span>
-        @for (af of appliedFilters(); track af.key) {
-          <button type="button" class="applied-chip" (click)="removeFilter(af.key)" [title]="'Remove ' + af.label">
-            {{ af.label }} <span aria-hidden="true">&times;</span>
-          </button>
-        }
-        <button type="button" class="applied-reset" (click)="clearFilters()">Clear all</button>
-      </div>
-    }
-
-    <!-- States -->
-    @if (loading()) {
-      <div class="state">Loading loads…</div>
-    } @else if (error()) {
-      <div class="state state-error">{{ error() }}<button type="button" (click)="runSearch()">Retry</button></div>
-    } @else if (!hasResults()) {
-      <div class="state state-empty">
-        <strong>No loads match the current filters.</strong>
-        <span>Adjust or clear filters to widen the search.</span>
-        @if (appliedFilters().length > 0) {
-          <button type="button" (click)="clearFilters()">Clear filters</button>
-        }
-      </div>
-    } @else {
-      @if (truncated()) {
-        <div class="banner">
-          Showing the first results of a larger Alvys sweep &mdash; refine filters to narrow the set.
-        </div>
+    <div class="below-list">
+      @if (additionalCount() > 0) {
+        <p>Not shown: {{ additionalCount() }} additional same-day corridor pairs with lower confidence.</p>
+      } @else {
+        <p>All same-day corridor pairs found in this scan are shown.</p>
       }
-      <div class="table-wrap">
-        <table class="grid">
-          <thead>
-            <tr>
-              @for (col of columns; track col.field) {
-                <th (click)="toggleSort(col.field)" [class.sorted]="sort() === col.field">
-                  {{ col.label }} <span class="sort">{{ sortIndicator(col.field) }}</span>
-                </th>
-              }
-              <th>Stage</th>
-              <th>Flags</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (load of items(); track load.id) {
-              <tr data-testid="search-load-row" (click)="select(load)" [class.selected]="selected()?.id === load.id">
-                <td>
-                  <strong>{{ load.customerName || '—' }}</strong>
-                  <div class="muted">{{ load.loadNumber || load.id }}</div>
-                </td>
-                <td>
-                  <span [class]="statusClass(load.status)">{{ load.status }}</span>
-                  <div class="muted">{{ load.assignment }}</div>
-                </td>
-                <td>
-                  {{ load.scheduledPickupAt ? (load.scheduledPickupAt | date: 'MMM d') : '—' }}
-                  <div class="muted">{{ load.origin?.label || '—' }}</div>
-                </td>
-                <td>
-                  {{ load.scheduledDeliveryAt ? (load.scheduledDeliveryAt | date: 'MMM d') : '—' }}
-                  <div class="muted">{{ load.destination?.label || '—' }}</div>
-                </td>
-                <td>
-                  @if (load.weightLbs !== null) { {{ load.weightLbs | number: '1.0-0' }} lb }
-                  @else { <span class="missing">missing</span> }
-                </td>
-                <td>
-                  @if (load.mileage !== null) { {{ load.mileage | number: '1.0-0' }} }
-                  @else { <span class="missing">—</span> }
-                </td>
-                <td>
-                  @if (load.revenue !== null) { &#36;{{ load.revenue | number: '1.0-0' }} }
-                  @else { <span class="missing">missing</span> }
-                </td>
-                <td>
-                  @if (load.revenuePerMile !== null) { &#36;{{ load.revenuePerMile | number: '1.2-2' }} }
-                  @else { — }
-                </td>
-                <td>
-                  <span [class]="stageClass(load.workflow.stage, load.workflow.isBlocked)"
-                        [title]="load.workflow.recommendedAction">
-                    {{ load.workflow.stageLabel }}@if (load.workflow.isBlocked) { <span aria-hidden="true"> ⚠</span> }
-                  </span>
-                </td>
-                <td>
-                  @for (badge of load.billing.badges; track badge) {
-                    <span [class]="badgeClass(badge)">{{ badgeText(badge) }}</span>
-                  }
-                </td>
-                <td>
-                  @if (load.hasExceptions) {
-                    <span class="badge badge-danger" [title]="load.exceptions[0].message">{{ load.exceptions.length }} exc</span>
-                  }
-                  @if (load.missingData.length > 0) {
-                    <span class="badge badge-warn" [title]="load.missingData.join(', ')">{{ load.missingData.length }} missing</span>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-
-      <div class="pager">
-        <label class="pager-size">
-          Rows
-          <select [ngModel]="pageSize()" (ngModelChange)="changePageSize($event)" name="pageSize">
-            <option [value]="25">25</option>
-            <option [value]="50">50</option>
-            <option [value]="100">100</option>
-          </select>
-        </label>
-        <span class="pager-range">{{ rangeStart() }}&ndash;{{ rangeEnd() }} of {{ total() }} loads</span>
-        <div class="pager-nav">
-          <button type="button" title="First page" (click)="goToPage(1)" [disabled]="page() <= 1">&laquo;</button>
-          <button type="button" title="Previous page" (click)="goToPage(page() - 1)" [disabled]="page() <= 1">&lsaquo;</button>
-          <span class="pager-page">Page {{ page() }} of {{ totalPages() }}</span>
-          <button type="button" title="Next page" (click)="goToPage(page() + 1)" [disabled]="page() >= totalPages()">&rsaquo;</button>
-          <button type="button" title="Last page" (click)="goToPage(totalPages())" [disabled]="page() >= totalPages()">&raquo;</button>
-        </div>
-      </div>
-    }
-    </div>
-  }
-
-  <!-- ===================== BILLING WORKLIST TAB ===================== -->
-  @if (tab() === 'billing') {
-    <div class="card">
-    <div class="worklist-bar">
-      <select name="worklistBadge" [ngModel]="worklistBadge()" (ngModelChange)="worklistBadge.set($event); loadWorklist()">
-        <option value="">All needing attention</option>
-        @for (b of billingBadges; track b) {
-          <option [value]="b">{{ badgeText(b) }}</option>
-        }
-      </select>
-      <button type="button" (click)="loadWorklist()">Refresh</button>
-      <span class="muted">Already-invoiced loads are excluded. Ready-to-bill is prioritised first.</span>
-    </div>
-
-    @if (worklistLoading()) {
-      <div class="state">Loading worklist…</div>
-    } @else if (worklistError()) {
-      <div class="state state-error">{{ worklistError() }}<button type="button" (click)="loadWorklist()">Retry</button></div>
-    } @else if ((worklist()?.length ?? 0) === 0) {
-      <div class="state state-empty"><strong>Nothing in the worklist.</strong><span>No uninvoiced loads need billing attention.</span></div>
-    } @else {
-      <div class="table-wrap">
-        <table class="grid">
-          <thead>
-            <tr><th>Customer</th><th>Lane</th><th>Delivered</th><th>Revenue</th><th>Margin</th><th>Aging</th><th>Billing state</th><th>Blocking</th></tr>
-          </thead>
-          <tbody>
-            @for (load of worklist(); track load.id) {
-              <tr (click)="select(load)" [class.selected]="selected()?.id === load.id">
-                <td><strong>{{ load.customerName || '—' }}</strong><div class="muted">{{ load.loadNumber || load.id }}</div></td>
-                <td>{{ load.origin?.label || '—' }} → {{ load.destination?.label || '—' }}</td>
-                <td>{{ load.actualDeliveryAt ? (load.actualDeliveryAt | date: 'MMM d') : '—' }}</td>
-                <td>
-                  @if (load.revenue !== null) { &#36;{{ load.revenue | number: '1.0-0' }} }
-                  @else { <span class="missing">missing</span> }
-                </td>
-                <td>
-                  @if (load.grossMarginPercent !== null) {
-                    <span [class]="marginClass(load.grossMarginPercent, load.billing.risks)">{{ load.grossMarginPercent | number: '1.0-1' }}%</span>
-                  } @else { <span class="muted">—</span> }
-                </td>
-                <td>
-                  @if (load.billing.agingBucket) {
-                    <span [class]="agingClass(load.billing.agingBucket)">{{ agingLabel(load.billing.agingBucket) }}</span>
-                  } @else { <span class="muted">—</span> }
-                </td>
-                <td>
-                  @for (badge of load.billing.badges; track badge) {
-                    <span [class]="badgeClass(badge)">{{ badgeText(badge) }}</span>
-                  }
-                </td>
-                <td>
-                  @if (load.billing.risks.length > 0) {
-                    <span class="missing" [title]="load.billing.risks.join('; ')">{{ load.billing.risks[0] }}</span>
-                  } @else { <span class="muted">—</span> }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
-    </div>
-  }
-
-  <!-- ===================== EXCEPTIONS TAB ===================== -->
-  @if (tab() === 'exceptions') {
-    <div class="card">
-    <div class="worklist-bar">
-      <button type="button" (click)="loadExceptions()">Refresh</button>
-      <span class="muted">Billing-blocking exceptions are listed first.</span>
-    </div>
-
-    @if (exceptionsLoading()) {
-      <div class="state">Loading exceptions…</div>
-    } @else if (exceptionsError()) {
-      <div class="state state-error">{{ exceptionsError() }}<button type="button" (click)="loadExceptions()">Retry</button></div>
-    } @else if ((exceptions()?.length ?? 0) === 0) {
-      <div class="state state-empty"><strong>No open exceptions.</strong><span>No loads are carrying operational or billing exceptions.</span></div>
-    } @else {
-      <div class="table-wrap">
-        <table class="grid">
-          <thead>
-            <tr><th>Customer</th><th>Lane</th><th>Status</th><th>Exceptions</th></tr>
-          </thead>
-          <tbody>
-            @for (load of exceptions(); track load.id) {
-              <tr (click)="select(load)" [class.selected]="selected()?.id === load.id">
-                <td><strong>{{ load.customerName || '—' }}</strong><div class="muted">{{ load.loadNumber || load.id }}</div></td>
-                <td>{{ load.origin?.label || '—' }} → {{ load.destination?.label || '—' }}</td>
-                <td><span [class]="statusClass(load.status)">{{ load.status }}</span></td>
-                <td>
-                  @for (ex of load.exceptions; track ex.code) {
-                    <span [class]="ex.blocksBilling ? 'badge badge-danger' : 'badge badge-warn'" [title]="ex.message">
-                      {{ badgeText(ex.code) }}
-                    </span>
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
-    </div>
-  }
-
-  <!-- ===================== TENDERS TAB ===================== -->
-  @if (tab() === 'tenders') {
-    <div class="card">
-    <div class="worklist-bar">
-      <label class="tender-filter">Status
-        <select name="tenderStatus" [ngModel]="tenderStatus()" (ngModelChange)="tenderStatus.set($event)">
-          <option value="">Any</option>
-          @for (s of tenderStatuses; track s) { <option [value]="s">{{ s }}</option> }
-        </select>
-      </label>
-      <label class="tender-filter">Type
-        <input type="text" name="tenderType" placeholder="Any type" [ngModel]="tenderType()" (ngModelChange)="tenderType.set($event)" />
-      </label>
-      <label class="tender-filter">Customer
-        <input type="text" name="tenderCustomer" placeholder="Any customer" [ngModel]="tenderCustomer()" (ngModelChange)="tenderCustomer.set($event)" />
-      </label>
-      <button type="button" class="primary" (click)="loadTenders()">Apply</button>
-      <span class="muted">
-        Read-only Alvys tender search. Accept fires the sandbox-gated tender-accept write &mdash;
-        <strong>never production</strong>. Reject has no confirmed Alvys endpoint yet, so it is disabled.
-      </span>
-    </div>
-
-    @if (tendersLoading()) {
-      <div class="state">Loading tenders…</div>
-    } @else if (tendersError()) {
-      <div class="state state-error">{{ tendersError() }}<button type="button" (click)="loadTenders()">Retry</button></div>
-    } @else if ((tenders()?.length ?? 0) === 0) {
-      <div class="state state-empty"><strong>No tenders match this filter.</strong><span>Adjust the status/type/customer filter above.</span></div>
-    } @else {
-      <div class="table-wrap">
-        <table class="grid">
-          <thead>
-            <tr>
-              <th>Customer</th>
-              <th>Type</th>
-              <th>Age</th>
-              <th>Respond within</th>
-              <th>Status</th>
-              <th>Lane</th>
-              <th>Equipment</th>
-              <th>Rate</th>
-              <th>Company links</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (t of tenders(); track t.Id) {
-              <tr>
-                <td>
-                  <strong>{{ t.Entities?.[0]?.CompanyName || t.Entities?.[0]?.Name || '—' }}</strong>
-                  <div class="muted">{{ t.Id }} @if (t.SCAC) { &middot; {{ t.SCAC }} }</div>
-                </td>
-                <td>{{ t.TransportationMethodTypeCode || '—' }}</td>
-                <td [title]="t.DateImported?.DateTime || ''">{{ relativeAge(t.DateImported?.DateTime) }}</td>
-                <td [title]="t.ExpirationDate?.DateTime || ''">{{ relativeRemaining(t.ExpirationDate?.DateTime) }}</td>
-                <td><span [class]="statusClass(t.Status)">{{ t.Status || 'Unknown' }}</span></td>
-                <td>
-                  @if (tenderLane(t); as lane) {
-                    {{ lane.origin }} <span aria-hidden="true">&rarr;</span> {{ lane.destination }}
-                  }
-                  <div class="muted">{{ (t.Stops?.length) || 0 }} stop(s)</div>
-                </td>
-                <td>{{ t.Equipment?.Type || '—' }}<div class="muted">{{ t.Equipment?.Length ? (t.Equipment?.Length + "'") : '' }}</div></td>
-                <td>@if (t.Rate !== null && t.Rate !== undefined) { &#36;{{ t.Rate | number: '1.0-0' }} } @else { <span class="missing">missing</span> }</td>
-                <td>
-                  <div class="tender-links">
-                    @for (stop of t.Stops; track stop.StopId) {
-                      <label class="tender-link-row" [title]="stop.Entity?.Name || stop.StopId">
-                        <span class="tender-link-stop">{{ stop.Type }}</span>
-                        <input
-                          type="text"
-                          class="tender-link-input"
-                          placeholder="Company ID"
-                          [ngModel]="companyLinkValue(t.Id, stop)"
-                          (ngModelChange)="setCompanyLinkValue(t.Id, stop.StopId, $event)"
-                          [name]="'link-' + t.Id + '-' + stop.StopId"
-                        />
-                      </label>
-                    }
-                  </div>
-                </td>
-                <td class="tender-actions">
-                  <button
-                    type="button"
-                    class="primary"
-                    [disabled]="!canAcceptTender(t) || (tenderAction(t.Id)?.loading ?? false)"
-                    (click)="acceptTender(t)"
-                  >
-                    {{ tenderAction(t.Id)?.loading ? 'Accepting…' : 'Accept' }}
-                  </button>
-                  <button type="button" disabled title="No confirmed Alvys reject endpoint in this phase">Reject</button>
-                  @if (tenderAction(t.Id); as action) {
-                    @if (!action.loading && action.message) {
-                      <div [class]="'tender-outcome tender-outcome-' + (action.tone || 'warn')">{{ action.message }}</div>
-                    }
-                  }
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
+      @if (!expanded() && additionalCount() > 0) {
+        <button type="button" class="show-all" (click)="showAll()">Show all →</button>
+      } @else {
+        <a routerLink="/ltl/consolidate" class="show-all">Open full consolidate board →</a>
+      }
     </div>
   }
 </section>
 
-<!-- ===================== DETAIL DRAWER / ASSIGNMENT PANEL ===================== -->
-@if (selected(); as load) {
-  <aside class="drawer" (click)="$event.stopPropagation()">
-    <header>
-      <h3>{{ load.customerName || 'Load' }} &middot; {{ load.loadNumber || load.id }}</h3>
-      <button type="button" class="close" (click)="closeDrawer()" aria-label="Close">&times;</button>
-    </header>
-
-    <!-- Workflow stage + recommended next action -->
-    <div class="drawer-section workflow">
-      <ol class="stepper" aria-label="Workflow stage">
-        @for (step of workflowSteps; track step.index) {
-          <li [class]="stepClass(step.index, load.workflow.stepIndex, load.workflow.isBlocked)">
-            {{ step.label }}
-          </li>
-        }
-      </ol>
-      <div class="next-action" [class.blocked]="load.workflow.isBlocked">
-        <span class="next-label">{{ load.workflow.isBlocked ? 'Blocked' : 'Next' }}</span>
-        <span class="next-text">{{ load.workflow.recommendedAction }}</span>
-      </div>
-      @if (load.workflow.blockers.length > 0) {
-        <ul class="risks">
-          @for (b of load.workflow.blockers; track b) { <li class="blocking">{{ b }}</li> }
-        </ul>
-      }
-      @if (load.workflow.evidence.length > 0) {
-        <div class="evidence">
-          <span>Evidence</span>
-          @for (e of load.workflow.evidence; track e) { <span class="badge badge-muted">{{ e }}</span> }
-        </div>
-      }
-    </div>
-
-    <dl class="detail">
-      <dt>Status</dt><dd>{{ load.status }} ({{ load.assignment }})</dd>
-      <dt>Lane</dt><dd>{{ load.origin?.label || '—' }} → {{ load.destination?.label || '—' }}</dd>
-      <dt>Pickup</dt><dd>{{ load.scheduledPickupAt ? (load.scheduledPickupAt | date: 'medium') : '—' }}</dd>
-      <dt>Delivery</dt><dd>{{ load.scheduledDeliveryAt ? (load.scheduledDeliveryAt | date: 'medium') : '—' }}</dd>
-      <dt>Equipment</dt><dd>{{ load.equipment.length ? load.equipment.join(', ') : '—' }}</dd>
-      <dt>Weight</dt>
-      <dd>@if (load.weightLbs !== null) { {{ load.weightLbs | number: '1.0-0' }} lb } @else { <span class="missing">missing</span> }</dd>
-      <dt>Revenue</dt>
-      <dd>@if (load.revenue !== null) { &#36;{{ load.revenue | number: '1.0-0' }} } @else { <span class="missing">missing</span> }</dd>
-      <dt>Carrier payable</dt>
-      <dd>@if (load.carrierPayable !== null) { &#36;{{ load.carrierPayable | number: '1.0-0' }} } @else { <span class="muted">not available</span> }</dd>
-      <dt>Gross margin</dt>
-      <dd>
-        @if (load.grossMargin !== null) {
-          <span [class]="marginClass(load.grossMarginPercent, load.billing.risks)">
-            &#36;{{ load.grossMargin | number: '1.0-0' }} ({{ load.grossMarginPercent | number: '1.0-1' }}%)
-          </span>
-        } @else { <span class="muted">not evaluated</span> }
-      </dd>
-      @if (load.billing.agingBucket) {
-        <dt>Unpaid aging</dt>
-        <dd>
-          <span [class]="agingClass(load.billing.agingBucket)">{{ agingLabel(load.billing.agingBucket) }}</span>
-          @if (load.billing.unpaidBalance !== null) { &#36;{{ load.billing.unpaidBalance | number: '1.0-0' }} unpaid }
-        </dd>
-      }
-    </dl>
-
-    <!-- Billing readiness -->
-    <div class="drawer-section">
-      <h4>Billing readiness</h4>
-      <div class="chips">
-        @for (badge of load.billing.badges; track badge) {
-          <span [class]="badgeClass(badge)">{{ badgeText(badge) }}</span>
-        }
-        @if (load.billing.badges.length === 0) { <span class="muted">No billing signals.</span> }
-      </div>
-      @if (load.billing.risks.length > 0) {
-        <ul class="risks">
-          @for (risk of load.billing.risks; track risk) { <li>{{ risk }}</li> }
-        </ul>
-      }
-    </div>
-
-    <!-- Exceptions -->
-    @if (load.exceptions.length > 0) {
-      <div class="drawer-section">
-        <h4>Exceptions</h4>
-        <ul class="risks">
-          @for (ex of load.exceptions; track ex.code) {
-            <li [class.blocking]="ex.blocksBilling">{{ ex.message }}</li>
-          }
-        </ul>
-      </div>
-    }
-
-    <!-- Tracking visibility (detail-path only) -->
-    @if (detailLoading()) {
-      <div class="drawer-section"><h4>Tracking visibility</h4><p class="muted">Loading visibility history…</p></div>
-    } @else if (load.visibility.evaluated) {
-      <div class="drawer-section">
-        <h4>Tracking visibility</h4>
-        @if (visibilityFailures(load).length > 0) {
-          <ul class="risks">
-            @for (ev of visibilityFailures(load); track $index) {
-              <li class="blocking">
-                <strong>{{ ev.direction }} {{ ev.eventType || 'share' }} failed</strong>
-                @if (ev.status) { <span class="muted"> · {{ ev.status }}</span> }
-                @if (ev.sharedAt) { <span class="muted"> · {{ ev.sharedAt | date: 'short' }}</span> }
-                @if (ev.destination) { <span class="muted"> → {{ ev.destination }}</span> }
-                @if (ev.error) { <div class="missing">{{ ev.error }}</div> }
-                @else if (ev.reason) { <div class="missing">{{ ev.reason }}</div> }
-              </li>
-            }
-          </ul>
-        } @else {
-          <p class="muted">No failed tracking shares.</p>
-        }
-        @if (visibilityMilestones(load).length > 0) {
-          <details class="vis-timeline">
-            <summary>{{ visibilityMilestones(load).length }} tracking milestone(s)</summary>
-            <ul class="timeline">
-              @for (ev of visibilityMilestones(load); track $index) {
-                <li>
-                  <span class="factor-name">{{ ev.direction }} {{ ev.eventType || 'event' }}</span>
-                  @if (ev.sharedAt) { <span class="muted">{{ ev.sharedAt | date: 'short' }}</span> }
-                  @if (ev.destination) { <span class="muted">→ {{ ev.destination }}</span> }
-                </li>
-              }
-            </ul>
-          </details>
-        }
-      </div>
-    }
-
-    <!-- Missing data -->
-    @if (load.missingData.length > 0) {
-      <div class="drawer-section">
-        <h4>Missing data</h4>
-        <div class="chips">
-          @for (flag of load.missingData; track flag) { <span class="badge badge-warn">{{ flag }}</span> }
-        </div>
-      </div>
-    }
-
-    <!-- Recommended matches -->
-    <div class="drawer-section">
-      <h4>Recommended matches</h4>
-      @if (matchesLoading()) {
-        <p class="muted">Scoring candidates…</p>
-      } @else if (matches() && matches()!.length > 0) {
-        <ul class="matches">
-          @for (m of matches(); track m.driverId ?? m.driverName ?? $index) {
-            <li>
-              <div class="match-head">
-                <span [class]="matchClass(m.label)">{{ m.labelText }} ({{ m.score }})</span>
-                <strong>{{ m.driverName || m.driverId }}</strong>
-                <button type="button" class="link" (click)="toggleFactors(m)">
-                  {{ isExpanded(m) ? 'Hide factors' : 'Why?' }}
-                </button>
-                <button type="button" class="link choose" (click)="chooseMatch(m)">Select</button>
-              </div>
-              <div class="muted">{{ m.summary }}</div>
-              @if (m.disqualifiers.length > 0) {
-                <div class="missing">{{ m.disqualifiers.join('; ') }}</div>
-              }
-              @if (isExpanded(m)) {
-                <ul class="factors">
-                  @for (f of m.factors; track f.name) {
-                    <li [class]="factorClass(f.status)">
-                      <span class="factor-name">{{ f.name }}</span>
-                      <span class="factor-pts">
-                        @if (f.status === 'Unavailable') { n/a }
-                        @else { {{ f.points | number: '1.0-0' }}/{{ f.maxPoints | number: '1.0-0' }} }
-                      </span>
-                      <span class="factor-detail">{{ f.detail }}</span>
-                    </li>
-                  }
-                </ul>
-              }
-            </li>
-          }
-        </ul>
-      } @else {
-        <p class="muted">No eligible candidates found.</p>
-      }
-    </div>
-
-    <!-- Internal assignment -->
-    <div class="drawer-section assign">
-      <h4>Stage internal assignment</h4>
-      <p class="staged-note">
-        Recorded in the internal audit trail only. <strong>Not pushed to Alvys</strong>
-        (writeback = NotPerformed in this phase).
-      </p>
-
-      <div class="assign-form">
-        <label>Driver ID<input type="text" [ngModel]="assignDriverId()" (ngModelChange)="assignDriverId.set($event)" name="aDriver" placeholder="required" /></label>
-        <label>Truck ID<input type="text" [ngModel]="assignTruckId()" (ngModelChange)="assignTruckId.set($event)" name="aTruck" /></label>
-        <label>Trailer ID<input type="text" [ngModel]="assignTrailerId()" (ngModelChange)="assignTrailerId.set($event)" name="aTrailer" /></label>
-        <label class="wide">Override reason<input type="text" [ngModel]="assignOverrideReason()" (ngModelChange)="assignOverrideReason.set($event)" name="aOverride" placeholder="Needed when assigning over warnings" /></label>
-        <label class="wide">Notes<input type="text" [ngModel]="assignNotes()" (ngModelChange)="assignNotes.set($event)" name="aNotes" /></label>
-      </div>
-
-      <div class="assign-actions">
-        <button type="button" (click)="runValidation()" [disabled]="!assignDriverId() || validating()">
-          {{ validating() ? 'Checking…' : 'Validate' }}
-        </button>
-        <button type="button" class="primary" (click)="submitAssign()" [disabled]="!canAssign">
-          {{ assigning() ? 'Staging…' : 'Stage assignment' }}
-        </button>
-      </div>
-
-      @if (assignError()) { <div class="assign-error">{{ assignError() }}</div> }
-
-      @if (validation(); as v) {
-        @if (v.issues.length === 0) {
-          <div class="validation-ok">No blockers or warnings — clear to stage.</div>
-        } @else {
-          <ul class="issues">
-            @for (issue of v.issues; track issue.code) {
-              <li [class]="issueClass(issue)">
-                <span class="issue-sev">{{ issue.severity }}</span> {{ issue.message }}
-              </li>
-            }
-          </ul>
-        }
-      }
-    </div>
-
-    <!-- Alvys writeback readiness (sandbox-gated; audit/simulation only in this phase) -->
-    <div class="drawer-section">
-      <app-alvys-ops-panel [loadNumber]="load.loadNumber" />
-    </div>
-
-    <!-- Assignment history -->
-    @if (history().length > 0) {
-      <div class="drawer-section">
-        <h4>Assignment history</h4>
-        <ul class="history">
-          @for (a of history(); track a.id) {
-            <li>
-              <div>
-                <strong>{{ a.driverId || '—' }}</strong>
-                @if (a.matchLabel) { <span class="muted">· {{ a.matchLabel }}</span> }
-                <span class="badge badge-muted">Alvys: {{ a.alvysWriteback }}</span>
-              </div>
-              <div class="muted">{{ a.recordedBy }} · {{ a.recordedAt | date: 'short' }}</div>
-              @if (a.overrideReason) { <div class="muted">Override: {{ a.overrideReason }}</div> }
-              @if (a.warnings.length > 0) {
-                <div class="missing">{{ a.warnings.length }} warning(s) acknowledged</div>
-              }
-            </li>
-          }
-        </ul>
-      </div>
-    }
-  </aside>
-}
+<footer class="live-footer">
+  <span>{{ dataSource() }}</span>
+  <span aria-hidden="true">·</span>
+  <span>{{ totalScanned() }} loads scanned</span>
+  <span aria-hidden="true">·</span>
+  <span>updated {{ generatedAt() ? (generatedAt() | date: 'short') : '—' }}</span>
+</footer>

@@ -1,16 +1,19 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { ConsolidationService } from './consolidation.service';
-import { ConsolidationAuditRecord, ConsolidationPlanResponse } from './consolidation.models';
+import { RUNTIME_CONFIG } from '../../runtime-config';
 
-/**
- * Alvys Click Card (mockup screen 3): the sanctioned copy-pasteable text a dispatcher uses to
- * key the consolidation into Alvys by hand. Nothing on this screen writes to Alvys — the plan
- * is re-derived live via `ConsolidationService.buildPlan()` (same as Plan Detail) and, once
- * shown, is recorded as an audit entry via `recordPlanAudit()` so the uplift claim is backed by
- * a durable record even though Alvys writeback is NotPerformed in this phase.
- */
+interface ConsolidationAuditResponse {
+  auditId: string;
+  recordedAt: string;
+  recordedBy: string;
+  parentLoadNumber: string;
+  siblingLoadNumbers: string[];
+  combinedRevenue?: number | null;
+  combinedRpm?: number | null;
+}
+
 @Component({
   selector: 'app-click-card',
   standalone: true,
@@ -20,77 +23,83 @@ import { ConsolidationAuditRecord, ConsolidationPlanResponse } from './consolida
 })
 export class ClickCard implements OnInit {
   private readonly route = inject(ActivatedRoute);
-  private readonly consolidation = inject(ConsolidationService);
+  private readonly http = inject(HttpClient);
+  private readonly base = `${inject(RUNTIME_CONFIG).apiBaseUrl}/ltl`;
 
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
   readonly missingContext = signal(false);
-  readonly plan = signal<ConsolidationPlanResponse | null>(null);
   readonly copyMessage = signal<string | null>(null);
-  /** Carried through so the breadcrumb can link back to the exact same plan context. */
+  readonly auditRecord = signal<ConsolidationAuditResponse | null>(null);
+
+  readonly parentLoadNumber = signal<string | null>(null);
+  readonly siblingLoadNumbers = signal<string[]>([]);
+  readonly combinedRevenue = signal<number | null>(null);
+  readonly combinedRpm = signal<number | null>(null);
   readonly planDetailQueryParams = signal<Record<string, string>>({});
 
-  readonly recordingAudit = signal(false);
-  readonly auditError = signal<string | null>(null);
-  readonly auditRecord = signal<ConsolidationAuditRecord | null>(null);
+  readonly cardText = computed(() => {
+    const parent = this.parentLoadNumber();
+    const siblings = this.siblingLoadNumbers();
+    if (!parent || siblings.length === 0) return '';
+
+    return [
+      'LTL CONSOLIDATION PLAN',
+      `Parent load: ${parent}`,
+      `Sibling loads: ${siblings.join(', ')}`,
+      '',
+      'Operator action:',
+      '1. Open the parent and sibling loads in Alvys.',
+      '2. Verify same customer, same day, same corridor, dock fit, and receiver requirements.',
+      '3. Keep the parent trip as the absorbing trip; manually zero child loaded miles only after verification.',
+      '4. Preserve this audit id on the dispatcher notes once recorded.',
+      '',
+      `Projected combined revenue: ${this.formatCurrency(this.combinedRevenue())}`,
+      `Projected combined RPM: ${this.formatRpm(this.combinedRpm())}`,
+    ].join('\n');
+  });
 
   ngOnInit(): void {
     const qp = this.route.snapshot.queryParamMap;
-    const parentLoadId = qp.get('parent');
+    const parent = qp.get('parent');
     const siblingsParam = qp.get('siblings');
-    const corridor = qp.get('corridor') ?? undefined;
+    const combinedRevenue = this.parseNumber(qp.get('combinedRevenue'));
+    const combinedRpm = this.parseNumber(qp.get('combinedRpm'));
 
-    if (!parentLoadId || !siblingsParam) {
+    if (!parent || !siblingsParam) {
       this.missingContext.set(true);
       this.loading.set(false);
       return;
     }
 
-    this.planDetailQueryParams.set({
-      parent: parentLoadId,
-      siblings: siblingsParam,
-      ...(corridor ? { corridor } : {}),
-    });
+    const siblings = siblingsParam.split(',').map((s) => s.trim()).filter(Boolean);
+    this.parentLoadNumber.set(parent);
+    this.siblingLoadNumbers.set(siblings);
+    this.combinedRevenue.set(combinedRevenue);
+    this.combinedRpm.set(combinedRpm);
+    this.planDetailQueryParams.set({ parent, siblings: siblingsParam });
 
-    const siblingLoadIds = siblingsParam.split(',').filter(Boolean);
-
-    this.consolidation.buildPlan({ parentLoadId, siblingLoadIds, corridorCode: corridor }).subscribe({
-      next: (response) => {
-        this.plan.set(response);
-        this.loading.set(false);
-        // The click card is only meaningful once it's actually surfaced to the dispatcher —
-        // record the audit entry now so the uplift claim carries a timestamped record, matching
-        // "the tool has recorded the plan as an audit entry" copy on this screen.
-        this.recordAudit(parentLoadId, response);
-      },
-      error: (err) => {
-        this.error.set(err?.error?.error ?? err?.message ?? 'Failed to load plan from Alvys.');
-        this.loading.set(false);
-      },
-    });
-  }
-
-  private recordAudit(parentLoadId: string, plan: ConsolidationPlanResponse): void {
-    if (plan.blockers.length > 0) return;
-    this.recordingAudit.set(true);
-    this.auditError.set(null);
-
-    this.consolidation
-      .recordPlanAudit({ parentLoadId, siblingLoadIds: plan.siblings.map((s) => s.loadId) })
+    this.http
+      .post<ConsolidationAuditResponse>(`${this.base}/consolidation/audit`, {
+        parentLoadNumber: parent,
+        siblingLoadNumbers: siblings,
+        combinedRevenue,
+        combinedRpm,
+      })
       .subscribe({
         next: (record) => {
           this.auditRecord.set(record);
-          this.recordingAudit.set(false);
+          this.loading.set(false);
         },
         error: (err) => {
-          this.auditError.set(err?.error?.error ?? err?.message ?? 'Failed to record audit.');
-          this.recordingAudit.set(false);
+          this.error.set(err?.error?.error ?? err?.message ?? 'Failed to record consolidation audit.');
+          this.loading.set(false);
         },
       });
   }
 
   async copyToClipboard(): Promise<void> {
-    const text = this.plan()?.clickCard.plainText;
+    const text = this.cardText();
     if (!text) return;
     try {
       if (navigator?.clipboard?.writeText) {
@@ -105,17 +114,18 @@ export class ClickCard implements OnInit {
   }
 
   formatCurrency(value: number | null | undefined): string {
-    if (value === null || value === undefined) return '—';
+    if (value === null || value === undefined || Number.isNaN(value)) return '—';
     return `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
   }
 
   formatRpm(value: number | null | undefined): string {
-    if (value === null || value === undefined) return '—';
+    if (value === null || value === undefined || Number.isNaN(value)) return '—';
     return `$${value.toFixed(2)} / mi`;
   }
 
-  formatNumber(value: number | null | undefined): string {
-    if (value === null || value === undefined) return '—';
-    return value.toLocaleString();
+  private parseNumber(value: string | null): number | null {
+    if (value === null || value.trim() === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
 }

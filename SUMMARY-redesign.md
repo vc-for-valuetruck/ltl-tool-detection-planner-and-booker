@@ -162,3 +162,46 @@ Both Plan Detail and Click Card require being navigated to with `parent` + `sibl
 params (as set by `Consolidate.openPlanDetail()` and `PlanDetail.openClickCard()`) — opening
 either route cold, without those params, shows the "missing plan context" empty state instead
 of guessing or fabricating a plan.
+
+# Seamless workflow
+
+## New API endpoints added
+
+- `GET /api/ltl/consolidation/opportunities?limit=3&lookbackDays=14` in `src/LtlTool.Api/Features/Ltl/LtlController.cs` — returns ranked live same-customer / same-day / same-corridor opportunities from Alvys va336.
+- `POST /api/ltl/consolidation/audit` in `src/LtlTool.Api/Features/Ltl/LtlController.cs` — records the click-card audit response shape for the CFO demo and returns a generated audit id.
+
+## Files created / modified
+
+- Created `src/LtlTool.Api/Features/Ltl/Consolidation/ConsolidationOpportunityService.cs`.
+- Modified `src/LtlTool.Api/Features/Ltl/Consolidation/ConsolidationModels.cs` with opportunity and audit DTOs.
+- Modified `src/LtlTool.Api/Features/Ltl/LtlController.cs` with the new opportunities and audit endpoints.
+- Modified `src/LtlTool.Api/Features/Ltl/LtlServiceCollectionExtensions.cs` to register `ConsolidationOpportunityService`.
+- Replaced `web/src/app/features/ltl/ltl-search.ts`, `.html`, and `.css` with the single-surface “Today’s consolidations” landing page.
+- Modified `web/src/app/features/ltl/plan-detail.ts`, `.html`, and `.css` so `/ltl/consolidate/plan/live?parent=...&siblings=...` fetches each live load via `GET /api/ltl/loads/{loadNumber}` and renders trailer plan, economics, and honest gaps from the returned fields.
+- Modified `web/src/app/features/ltl/click-card.ts` and `.html` so `/ltl/consolidate/plan/live/click-card?...` posts to `/api/ltl/consolidation/audit`, displays the returned audit id, and copies the fully rendered plaintext card.
+
+## How to test locally
+
+```bash
+cd /home/user/workspace/ltl-tool-detection-planner-and-booker/src/LtlTool.Api
+dotnet build
+
+cd /home/user/workspace/ltl-tool-detection-planner-and-booker/web
+npm run build
+```
+
+Manual walkthrough:
+
+1. Open `/ltl` and verify the old Search/Billing/Exceptions/Tenders tabs are gone.
+2. Confirm the page loads `GET /api/ltl/consolidation/opportunities?limit=3` and shows live Alvys opportunities, loading skeletons, empty state, and retry state.
+3. Click `Review plan →` and confirm the route is `/ltl/consolidate/plan/live?parent={ParentLoadNumber}&siblings={SiblingLoadNumber,...}`.
+4. Confirm Plan Detail fetches each `GET /api/ltl/loads/{loadNumber}`, shows `-- pallets` instead of inventing pallet counts, and computes combined revenue/RPM only from returned values.
+5. Click `Generate Alvys click card` and confirm the route is `/ltl/consolidate/plan/live/click-card` with the same load numbers and economics query params.
+6. Confirm Click Card posts `/api/ltl/consolidation/audit`, displays `auditId`, and copies the plaintext card.
+
+## Known TODOs
+
+- The audit endpoint returns a synthetic id only; durable storage remains a follow-up.
+- The click card uses query-param economics passed from Plan Detail; if opened cold without those query params, it shows revenue/RPM as unavailable rather than recalculating or fabricating.
+- `dotnet build` could not be executed in this sandbox because the .NET SDK is not installed (`dotnet: command not found`). `npm run build` succeeds.
+- Existing `*.spec.ts` files were not modified per instruction; any DOM assertions expecting the old tabbed `/ltl` landing may need a follow-up update.

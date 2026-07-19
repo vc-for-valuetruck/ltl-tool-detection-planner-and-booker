@@ -44,6 +44,7 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<ICustomerLtlPolicyReader, CustomerNotesLtlPolicyReader>();
 
         services.AddScoped<ConsolidationCandidateService>();
+        services.AddScoped<ConsolidationOpportunityService>();
         services.AddScoped<ConsolidationPlanService>();
 
         // Consolidation audit trail. Singleton in-memory store matching the same posture as

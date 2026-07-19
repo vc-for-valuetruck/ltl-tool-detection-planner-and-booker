@@ -1,159 +1,102 @@
-<nav class="shell-tabs" role="tablist" aria-label="LTL console">
-  <div class="shell-tabs-inner">
-    <a routerLink="/ltl" class="shell-tab">Search</a>
-    <a routerLink="/ltl" class="shell-tab">Billing</a>
-    <a routerLink="/ltl" class="shell-tab">Exceptions</a>
-    <a routerLink="/ltl" class="shell-tab">Tenders</a>
-    <a routerLink="/ltl/consolidate" class="shell-tab active">Consolidate</a>
-  </div>
-</nav>
-
 <div class="plan-detail page-shell">
   <div class="breadcrumb">
-    <a routerLink="/ltl/consolidate">Consolidate</a>
-    <span aria-hidden="true">&middot;</span>
-    <a routerLink="/ltl/consolidate">Candidates</a>
-    <span aria-hidden="true">&middot;</span>
+    <a routerLink="/ltl">Today's consolidations</a>
+    <span aria-hidden="true">·</span>
     <span class="breadcrumb-current">Plan detail</span>
   </div>
 
   @if (loading()) {
-    <div class="state">Loading plan from Alvys…</div>
+    <div class="state">Loading live loads from Alvys…</div>
   } @else if (missingContext()) {
     <div class="state-empty">
-      <strong>No plan context in this link.</strong>
-      <span>
-        Plan Detail re-computes the plan live from a parent load id and sibling load ids passed
-        as query params &mdash; open this page via &ldquo;Open plan detail&rdquo; from the
-        <a routerLink="/ltl/consolidate">Candidates screen</a> so we know what to ask Alvys for.
-      </span>
+      <strong>No live plan context in this link.</strong>
+      <span>Open this page from “Review plan” so the parent and sibling load numbers are present.</span>
     </div>
   } @else if (error()) {
     <div class="error">{{ error() }}</div>
-  } @else if (plan(); as p) {
-    <h1>Plan &middot; {{ p.parent.origin?.label ?? 'Laredo' }} <span aria-hidden="true">&rarr;</span> {{ p.parent.destination?.label ?? 'Dallas' }} &middot; {{ p.siblings.length + 1 }} loads</h1>
-    <p class="subtitle">Draft plan &mdash; nothing has been written to Alvys yet.</p>
+  } @else if (parent(); as p) {
+    <h1>
+      Plan · {{ p.origin?.label ?? '—' }} <span aria-hidden="true">→</span>
+      {{ p.destination?.label ?? '—' }} · {{ siblings().length + 1 }} loads
+    </h1>
+    <p class="subtitle">Live Alvys plan preview. Nothing has been written to Alvys.</p>
 
     <div class="plan-columns">
       <div class="plan-col-main">
-        <!-- Trailer plan visualization -->
         <div class="card">
           <div class="card-header">
-            <h2>Trailer plan (visual only &mdash; dims not verified)</h2>
-            <span class="muted">53' trailer &middot; illustrative allocation &middot; dispatchers verify at Laredo dock</span>
+            <h2>Trailer plan</h2>
+            <span class="muted">53' trailer · visual verification required at dock</span>
           </div>
 
           <div class="trailer-viz">
             <div class="trailer-slot trailer-slot-parent">
-              <strong>{{ p.parent.loadNumber ?? p.parent.id }} &middot; {{ p.parent.customerName ?? '—' }}</strong>
-              <span>{{ p.parent.destination?.label ?? '—' }}</span>
-              <span>{{ p.parent.weightLbs ? (p.parent.weightLbs + ' lb') : '— lb' }} &middot; visual verify</span>
-              <span class="trailer-slot-tag">PARENT &middot; nose-load</span>
+              <strong>{{ p.loadNumber ?? p.id }} · {{ p.customerName ?? '—' }}</strong>
+              <span>{{ p.destination?.label ?? '—' }}</span>
+              <span>
+                {{ p.weightLbs ? (formatNumber(p.weightLbs) + ' lb') : '— lb' }} ·
+                <span class="missing-pallets">-- pallets</span>
+              </span>
+              <span class="trailer-slot-tag">PARENT</span>
             </div>
-            @for (s of p.siblings; track s.loadId) {
+
+            @for (s of siblings(); track s.id) {
               <div class="trailer-slot trailer-slot-sibling">
-                <strong>{{ s.loadNumber ?? s.loadId }} &middot; {{ s.customerName ?? '—' }}</strong>
-                <span>{{ s.destinationLabel ?? '—' }}</span>
-                <span>{{ s.weightLbs ? (s.weightLbs + ' lb') : '— lb' }} &middot; visual verify</span>
-                <span class="trailer-slot-tag">SIBLING &middot; mid</span>
+                <strong>{{ s.loadNumber ?? s.id }} · {{ s.customerName ?? '—' }}</strong>
+                <span>{{ s.destination?.label ?? '—' }}</span>
+                <span>
+                  {{ s.weightLbs ? (formatNumber(s.weightLbs) + ' lb') : '— lb' }} ·
+                  <span class="missing-pallets">-- pallets</span>
+                </span>
+                <span class="trailer-slot-tag">SIBLING</span>
               </div>
             }
-            <div class="trailer-slot trailer-slot-open">
-              <span>Open</span>
-              <span class="trailer-slot-cta">Add a 3rd sibling if a candidate fits</span>
-            </div>
           </div>
 
           <div class="trailer-footnote">
-            Total {{ totalWeight(p) !== null ? (totalWeight(p) + ' lb') : '— lb' }} &middot;
-            {{ p.siblings.length + 1 }} pallets(s) grouping &middot; trailer max ~45,000 lb / 26 pallets
-            &mdash; capacity indicator only, not authoritative
+            Total {{ totalWeight() !== null ? (formatNumber(totalWeight()) + ' lb') : '— lb' }} · trailer max 45,000 lb · pallet count unavailable unless verified at dock
           </div>
         </div>
 
-        <!-- Assumptions and honest gaps -->
         <div class="card">
-          <h2>Assumptions and honest gaps</h2>
+          <h2>Honest gaps</h2>
           <ul class="assumptions">
-            @for (s of p.siblings; track s.loadId) {
-              @for (c of s.cautions; track c) {
-                <li class="assumption-warn">{{ c }}</li>
-              }
-            }
-            <li class="assumption-info">Same driver + truck + trailer assumed across both loads (per the sanctioned consolidation pattern).</li>
-            <li class="assumption-info">Both loads cross-dock at the Laredo yard, then the trailer moves through the Dallas re-split. No mid-route seal breaks.</li>
-            <li class="assumption-info">US-side consolidation only. Nothing crosses into Mexico with this plan.</li>
-            @if (p.blockers.length > 0) {
-              @for (b of p.blockers; track b) {
-                <li class="assumption-blocker">{{ b }}</li>
-              }
+            @for (gap of honestGaps(); track gap.text) {
+              <li [class.assumption-warn]="gap.tone === 'amber'" [class.assumption-info]="gap.tone === 'blue'" [class.assumption-good]="gap.tone === 'green'">
+                {{ gap.text }}
+              </li>
             }
           </ul>
-        </div>
-
-        <!-- Audit trail -->
-        <div class="card">
-          <h2>Audit trail (recorded even if no click card is generated)</h2>
-          @if (auditRecord(); as record) {
-            <dl class="audit-dl">
-              <dt>Plan id</dt><dd>{{ record.id }}</dd>
-              <dt>Created by</dt><dd>{{ record.recordedBy }} &middot; {{ record.recordedAt | date: 'medium' }}</dd>
-              <dt>Alvys writeback status</dt><dd>{{ record.alvysWriteback }} (Phase 1 read-only)</dd>
-              <dt>Projected uplift</dt>
-              <dd>{{ formatCurrency(record.combinedRevenue) }} combined revenue &middot; {{ formatRpm(record.combinedRevenuePerMile) }}</dd>
-            </dl>
-          } @else {
-            <p class="muted">Plan id &middot; {{ p.previewId }}</p>
-            <p class="muted">Not yet recorded &mdash; use &ldquo;Save audit only&rdquo; or generate the click card to record this plan.</p>
-            @if (auditError()) { <div class="error">{{ auditError() }}</div> }
-            <button type="button" class="link" data-testid="save-audit-only" (click)="recordAuditOnly()" [disabled]="!canRecordAudit()">
-              {{ recordingAudit() ? 'Saving…' : 'Save audit only' }}
-            </button>
-          }
         </div>
       </div>
 
       <div class="plan-col-side">
-        <!-- Economics -->
         <div class="card">
           <h2>Economics</h2>
-          <div class="econ-row">
-            <span>{{ p.parent.loadNumber ?? p.parent.id }} revenue</span>
-            <strong>{{ formatCurrency(p.parent.revenue) }}</strong>
-          </div>
-          @for (s of p.siblings; track s.loadId) {
+          @for (load of allLoads(); track load.id) {
             <div class="econ-row">
-              <span>{{ s.loadNumber ?? s.loadId }} revenue</span>
-              <strong>{{ formatCurrency(s.revenue) }}</strong>
+              <span>{{ load.loadNumber ?? load.id }} revenue</span>
+              <strong>{{ formatCurrency(load.revenue) }}</strong>
             </div>
           }
           <div class="econ-divider"></div>
           <div class="econ-row econ-row-bold">
             <span>Combined revenue</span>
-            <strong class="econ-positive">{{ formatCurrency(p.combinedRevenue) }}</strong>
+            <strong class="econ-positive">{{ formatCurrency(combinedRevenue()) }}</strong>
           </div>
           <div class="econ-row">
-            <span>Linehaul miles (parent trip)</span>
-            <strong>{{ formatNumber(p.linehaulMiles) }}</strong>
-          </div>
-          <div class="econ-row">
-            <span>Sibling child miles (Alvys)</span>
-            <strong class="econ-manual">0 (manual)</strong>
+            <span>Parent linehaul miles</span>
+            <strong>{{ formatNumber(parentLinehaulMiles()) }}</strong>
           </div>
           <div class="econ-row econ-row-bold">
             <span>Combined RPM</span>
-            <strong class="econ-positive">{{ formatRpm(p.combinedRevenuePerMile) }}</strong>
+            <strong class="econ-positive">{{ formatRpm(combinedRpm()) }}</strong>
           </div>
-          <div class="econ-callout">Phase 1: dispatcher zeros child miles manually in Alvys</div>
         </div>
 
-        <!-- Ready to dispatch CTA -->
         <div class="card card-dark">
-          <h2>Ready to dispatch?</h2>
-          <p>
-            Generating the click card is safe. It only tells the dispatcher what to click in
-            Alvys. Nothing writes automatically.
-          </p>
+          <h2>Ready for the click card?</h2>
+          <p>Generate the operator-facing card with these same live load numbers.</p>
           <button type="button" class="btn-generate" data-testid="generate-click-card" (click)="openClickCard()">
             Generate Alvys click card
           </button>
