@@ -91,11 +91,47 @@ Alternatives:
 
 The `E2E Demo Stack (Playwright)` job in `.github/workflows/ci.yml` boots the same
 `docker-compose` stack, waits for `/api/health` to report `authMode=Demo`, then runs
-`npm run test:e2e:ci`. On failure it uploads two artifacts you can download from the
-Actions run page:
+`npm run test:e2e:ci` — which includes a **screenshot tour** spec that walks every key
+screen and saves labeled full-page PNGs into `test-results/tour/`.
 
-- `playwright-report` — the HTML report with per-spec traces, screenshots, and videos.
-- `compose-logs` — tail of `api`, `web`, and `sqlserver` container logs.
+### View the demo without booting docker
+
+Every E2E run — push, PR, cron, or manual dispatch — uploads a `playwright-report`
+artifact containing:
+
+- **`test-results/tour/*.png`** — labeled screenshots of each screen against live va336:
+  - `01-ltl-home.png`
+  - `02-search-filters-filled.png`
+  - `03-search-results.png`
+  - `04-consolidate-corridor-picker.png`
+  - `05-consolidate-seed-entered.png`
+  - `06-billing-worklist.png`
+  - `07-exceptions.png`
+  - `08-swagger-ui.png`
+- **`playwright-report/`** — interactive HTML report with per-spec traces + videos.
+
+On failure the job also uploads `compose-logs` with tailed container logs.
+
+### Fetch via CLI
+
+```bash
+# Trigger a fresh run
+gh workflow run ci.yml --ref main
+
+# Wait for it to finish (opens live-tail)
+gh run watch
+
+# Download the artifact once green
+gh run download --name playwright-report --dir /tmp/ltl-tour
+
+# View the screenshots
+open /tmp/ltl-tour/test-results/tour/*.png       # macOS
+explorer /tmp/ltl-tour/test-results/tour        # Windows
+```
+
+### Or via the GitHub UI
+
+[Actions → CI → latest run on `main`](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/actions/workflows/ci.yml?query=branch%3Amain) → scroll to the bottom → download `playwright-report` → open `test-results/tour/` in the ZIP.
 
 The job is gated on the `ALVYS_CLIENT_SECRET` repository secret. Set it under
 **Settings → Secrets and variables → Actions → New repository secret**; the value is your

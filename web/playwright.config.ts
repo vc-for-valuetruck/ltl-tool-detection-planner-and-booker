@@ -24,9 +24,12 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: process.env.WEB_URL ?? 'http://localhost:4200',
-    trace: 'retain-on-failure',
-    video: 'retain-on-failure',
-    screenshot: 'only-on-failure',
+    // Keep artifacts on every run — the E2E doubles as a walking-tour of the demo stack.
+    // CI uploads playwright-report unconditionally, so operators can download screenshots
+    // + traces from any successful run and eyeball the workflow without booting docker.
+    trace: 'on',
+    video: 'on',
+    screenshot: 'on',
     actionTimeout: 10_000,
     navigationTimeout: 20_000,
   },

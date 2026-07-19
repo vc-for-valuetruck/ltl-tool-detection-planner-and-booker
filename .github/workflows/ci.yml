@@ -231,8 +231,11 @@ jobs:
           CI: '1' # strips the visual-pause between steps (see e2e/demo-workflow.spec.ts)
         run: npm run test:e2e:ci
 
-      - name: Upload Playwright report on failure
-        if: failure() && steps.check-secret.outputs.has_secret == 'true'
+      # Always upload the Playwright report + test-results — not just on failure. The
+      # test-results/tour/ folder contains the demo-tour PNGs (see web/e2e/demo-tour.spec.ts),
+      # which operators + leadership use to review the demo without booting the stack.
+      - name: Upload Playwright report
+        if: always() && steps.check-secret.outputs.has_secret == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
@@ -240,6 +243,7 @@ jobs:
             web/playwright-report
             web/test-results
           retention-days: 14
+          if-no-files-found: warn
 
       - name: Upload docker compose logs on failure
         if: failure() && steps.check-secret.outputs.has_secret == 'true'

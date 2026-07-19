@@ -1,0 +1,98 @@
+import { test, expect, Page } from '@playwright/test';
+
+/**
+ * Screenshot tour of the LTL demo stack.
+ *
+ * The demo-workflow spec asserts behavior; this spec produces artifacts. Its whole job is
+ * to walk every key screen and save a full-page screenshot with a stable name so the CI
+ * artifact bundle lets operators / leadership review the pilot's shape without booting
+ * the docker stack themselves.
+ *
+ * Design:
+ *  - One spec per screen, so failures on later screens don't hide earlier screenshots.
+ *  - Every screenshot is taken with `fullPage: true` and saved into
+ *    `test-results/tour/<screen>.png`. The CI job uploads the whole `test-results` tree.
+ *  - Preflight uses the same authMode=Demo check as demo-workflow.spec so a mis-booted
+ *    stack fails fast, not mid-tour.
+ */
+
+const API_URL = process.env.API_URL ?? 'http://localhost:5072';
+
+/** Directory under `test-results/` where tour PNGs land. */
+const TOUR_DIR = 'tour';
+
+async function shot(page: Page, name: string): Promise<void> {
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {
+    // Some Alvys-backed lists never fully settle to networkidle if a background refresh is
+    // running. Fall through to the screenshot anyway; better a mid-fetch snapshot than none.
+  });
+  await page.screenshot({
+    path: `test-results/${TOUR_DIR}/${name}.png`,
+    fullPage: true,
+  });
+}
+
+test.describe('LTL demo — screenshot tour', () => {
+  test.beforeAll(async ({ request }) => {
+    const health = await request.get(`${API_URL}/api/health`);
+    expect(health.ok(), 'API is not reachable \u2014 is the demo stack running?').toBeTruthy();
+    const body = await health.json();
+    expect(body.authMode, 'API is not in Demo mode \u2014 check ACCESS_POLICY_MODE=Demo').toBe(
+      'Demo',
+    );
+  });
+
+  test('01 - LTL Operating Console home', async ({ page }) => {
+    await page.goto('/ltl');
+    await expect(page.getByRole('heading', { name: 'LTL Operating Console' })).toBeVisible();
+    await shot(page, '01-ltl-home');
+  });
+
+  test('02 - Search filters + saved views', async ({ page }) => {
+    await page.goto('/ltl');
+    await expect(page.getByTestId('search-filters')).toBeVisible();
+    await page.getByTestId('search-origin-city').fill('Laredo');
+    await page.getByTestId('search-dest-city').fill('Dallas');
+    await shot(page, '02-search-filters-filled');
+    await page.getByTestId('search-submit').click();
+    // Give the grid ~2s to paint whichever state Alvys returns (rows, or the empty banner).
+    await page.waitForTimeout(2000);
+    await shot(page, '03-search-results');
+  });
+
+  test('03 - Consolidate tab: corridor picker + seed form', async ({ page }) => {
+    await page.goto('/ltl/consolidate');
+    await expect(page.getByRole('heading', { name: 'Consolidate' })).toBeVisible();
+    await expect(page.getByTestId('corridor-picker')).toBeVisible();
+    // Give the corridors + corridors/health calls a moment to resolve so the chip shows
+    // the live count instead of the "\u2026" placeholder.
+    await page.waitForTimeout(2500);
+    await shot(page, '04-consolidate-corridor-picker');
+    await page.getByTestId('consolidate-seed-input').fill('L-100234');
+    await shot(page, '05-consolidate-seed-entered');
+  });
+
+  test('04 - Billing Worklist tab', async ({ page }) => {
+    await page.goto('/ltl');
+    // Click the Billing Worklist tab. Use text-based click since the tab has no testid yet.
+    await page.getByRole('tab', { name: 'Billing Worklist' }).click();
+    await page.waitForTimeout(1500);
+    await shot(page, '06-billing-worklist');
+  });
+
+  test('05 - Exceptions tab', async ({ page }) => {
+    await page.goto('/ltl');
+    await page.getByRole('tab', { name: 'Exceptions' }).click();
+    await page.waitForTimeout(1500);
+    await shot(page, '07-exceptions');
+  });
+
+  test('06 - Swagger UI (API surface)', async ({ page }) => {
+    // The Swagger UI is served by the API on the same origin as /api. In CI docker-compose
+    // exposes it on http://localhost:5072/swagger. Use direct navigation via API_URL rather
+    // than the SPA proxy so the screenshot captures the real surface.
+    await page.goto(`${API_URL}/swagger`);
+    await page.waitForTimeout(2000);
+    await shot(page, '08-swagger-ui');
+  });
+});
