@@ -7,6 +7,8 @@ import {
   ConsolidationCandidateResponse,
   ConsolidationPlanRequest,
   ConsolidationPlanResponse,
+  CorridorSummary,
+  CorridorHealth,
 } from './consolidation.models';
 
 /**
@@ -44,5 +46,21 @@ export class ConsolidationService {
     let params = new HttpParams();
     if (parentLoadId) params = params.set('parentLoadId', parentLoadId);
     return this.http.get<ConsolidationAuditRecord[]>(`${this.base}/plan/audits`, { params });
+  }
+
+  /**
+   * Configured corridors, joined with warehouse metadata. Static config, cheap to fetch,
+   * safe to cache in the caller's memory for the session.
+   */
+  getCorridors(): Observable<CorridorSummary[]> {
+    return this.http.get<CorridorSummary[]>(`${this.base}/corridors`);
+  }
+
+  /**
+   * Live per-corridor open-load counts. Hits Alvys once per corridor; the caller should not
+   * poll aggressively — open on tab-load is enough.
+   */
+  getCorridorHealth(): Observable<CorridorHealth[]> {
+    return this.http.get<CorridorHealth[]>(`${this.base}/corridors/health`);
   }
 }

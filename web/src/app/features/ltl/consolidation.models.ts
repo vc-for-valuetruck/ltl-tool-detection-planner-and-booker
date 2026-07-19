@@ -110,3 +110,31 @@ export interface ConsolidationAuditRecord {
   recordedBy: string;
   recordedAt: string;
 }
+
+/** Public projection of a configured consolidation corridor. Static config; safe to cache. */
+export interface CorridorSummary {
+  code: string;
+  origin: WarehouseSummary;
+  destination: WarehouseSummary;
+  pickupWindowDays: number;
+  deliveryWindowDays: number;
+}
+
+export interface WarehouseSummary {
+  code: string;
+  name: string;
+  state: string;
+  nearbyCities: string[];
+}
+
+/**
+ * Live per-corridor open-load count. `openLoadCount === null` means the Alvys read
+ * degraded — the UI must show "unknown" honestly rather than a misleading zero.
+ */
+export interface CorridorHealth {
+  code: string;
+  openLoadCount: number | null;
+  truncated: boolean;
+  originCity: string;
+  destinationCity: string;
+}

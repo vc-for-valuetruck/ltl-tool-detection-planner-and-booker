@@ -5,6 +5,15 @@ on:
     branches: [main, 'feature/**']
   pull_request:
     branches: [main]
+  # Scheduled canary against main. Runs every 4 hours so we notice quickly when the demo
+  # stack rots — Alvys DTO drift, credential rotation, docker-compose regression — or
+  # when the pilot corridor comes back to life (plan-preview spec starts firing its
+  # driver-RPM assertion). Cron minutes offset to 17 to spread load away from the top of
+  # the hour where hosted-runner queues often spike.
+  schedule:
+    - cron: '17 */4 * * *'
+  # Manual trigger for on-demand smoke tests without a code change.
+  workflow_dispatch: {}
 
 jobs:
   api:

@@ -91,7 +91,10 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     await page.goto('/ltl/consolidate');
 
     await expect(page.getByRole('heading', { name: 'Consolidate' })).toBeVisible();
-    await expect(page.getByText('Laredo → Dallas pilot corridor')).toBeVisible();
+    // Corridor picker container renders whether corridors loaded or not (has a fallback
+    // for the degrade case). We assert the picker itself, not any specific corridor text
+    // — that would ossify Phase 1's pilot into E2E.
+    await expect(page.getByTestId('corridor-picker')).toBeVisible();
     await expect(page.getByTestId('consolidate-seed-form')).toBeVisible();
 
     await pauseSoOperatorCanSee(page, 'Focusing the seed input');
@@ -126,6 +129,25 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     if (corridors.length === 0) {
       test.skip(true, 'No consolidation corridors configured; skipping plan-preview.');
       return;
+    }
+
+    // Cheap early-exit: if the corridor-health endpoint reports zero open loads across all
+    // configured corridors, don't bother crawling nearby-cities cross-products — skip clean
+    // with a specific reason.
+    const healthResp = await request.get(`${API_URL}/api/ltl/consolidation/corridors/health`);
+    if (healthResp.ok()) {
+      const healths = (await healthResp.json()) as Array<{
+        code: string;
+        openLoadCount: number | null;
+      }>;
+      const total = healths.reduce((n, h) => n + (h.openLoadCount ?? 0), 0);
+      if (total === 0) {
+        test.skip(
+          true,
+          `Corridor health reports 0 open loads across ${healths.length} corridors; skipping plan-preview.`,
+        );
+        return;
+      }
     }
 
     // Walk each configured corridor and each origin/destination city pair inside it, taking

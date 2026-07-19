@@ -271,6 +271,34 @@ public sealed class CorridorSummary
     public required int DeliveryWindowDays { get; init; }
 }
 
+/// <summary>
+/// Live-count signal for one corridor. Companion to <see cref="CorridorSummary"/>:
+/// <c>/corridors</c> paints the picker with static shape, <c>/corridors/health</c>
+/// fills in "how many loads are open right now?" so leadership can see at a glance
+/// which corridor has plannable pairs.
+/// </summary>
+public sealed class CorridorHealth
+{
+    /// <summary>Corridor code (matches <see cref="CorridorSummary.Code"/>).</summary>
+    public required string Code { get; init; }
+
+    /// <summary>
+    /// Loads open on this corridor's canonical city pair right now.
+    /// <c>null</c> when the Alvys read degraded — the UI shows "unknown" rather than a
+    /// misleading zero.
+    /// </summary>
+    public required int? OpenLoadCount { get; init; }
+
+    /// <summary>True when the underlying Alvys sweep hit its bound; the real count may be higher.</summary>
+    public required bool Truncated { get; init; }
+
+    /// <summary>Canonical origin city sampled for this count (first entry in NearbyCities).</summary>
+    public required string OriginCity { get; init; }
+
+    /// <summary>Canonical destination city sampled for this count.</summary>
+    public required string DestinationCity { get; init; }
+}
+
 /// <summary>Public projection of a warehouse. Never carries geolocation — Phase 1 filters on state + NearbyCities.</summary>
 public sealed class WarehouseSummary
 {
