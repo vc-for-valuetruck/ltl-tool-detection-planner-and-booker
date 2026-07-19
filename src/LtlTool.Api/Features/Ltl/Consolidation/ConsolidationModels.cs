@@ -247,3 +247,42 @@ public sealed class ConsolidationCandidateResponse
     /// </summary>
     public bool ScanTruncated { get; init; }
 }
+
+/// <summary>
+/// Public projection of a configured consolidation corridor, joined with warehouse details.
+/// Returned by <c>GET /api/ltl/consolidation/corridors</c>. Stable enough for automation
+/// (E2E tests, UI corridor pickers) to depend on it directly.
+/// </summary>
+public sealed class CorridorSummary
+{
+    /// <summary>Stable code, e.g. <c>LAREDO_TO_DALLAS</c>.</summary>
+    public required string Code { get; init; }
+
+    /// <summary>Origin warehouse projection.</summary>
+    public required WarehouseSummary Origin { get; init; }
+
+    /// <summary>Destination warehouse projection.</summary>
+    public required WarehouseSummary Destination { get; init; }
+
+    /// <summary>Days on either side of the seed's pickup used to gate sibling candidates.</summary>
+    public required int PickupWindowDays { get; init; }
+
+    /// <summary>Days on either side of the seed's delivery used to gate sibling candidates.</summary>
+    public required int DeliveryWindowDays { get; init; }
+}
+
+/// <summary>Public projection of a warehouse. Never carries geolocation — Phase 1 filters on state + NearbyCities.</summary>
+public sealed class WarehouseSummary
+{
+    /// <summary>Stable code, e.g. <c>LAREDO</c>.</summary>
+    public required string Code { get; init; }
+
+    /// <summary>Human label ("Laredo yard").</summary>
+    public required string Name { get; init; }
+
+    /// <summary>Two-letter ISO state code.</summary>
+    public required string State { get; init; }
+
+    /// <summary>Cities considered "near" this warehouse for lane-fit evaluation.</summary>
+    public required IReadOnlyList<string> NearbyCities { get; init; }
+}
