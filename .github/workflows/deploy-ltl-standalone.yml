@@ -1,0 +1,353 @@
+name: Deploy LTL Standalone (phone-friendly)
+
+# Phone-native LTL pilot deploy: everything runs on GitHub Actions + Azure.
+# Trigger this from the GitHub mobile web UI (Actions tab -> this workflow ->
+# Run workflow). No Cloud Shell, no local machine, no Docker required.
+#
+# What it does end-to-end (~15-20 min):
+#   1. Logs into Azure via OIDC (same SP the UAT workflow uses).
+#   2. az group create ltl-standalone-rg in centralus.
+#   3. az deployment group create against infra/uat/main.bicep.
+#   4. az acr build for API + Web images (server-side, no runner Docker).
+#   5. Points App Services at the fresh images + writes app settings for
+#      AccessPolicy:Mode=Demo, live va336 Alvys, writeback Disabled.
+#   6. Restarts apps and smoke-tests /api/health for authMode=Demo.
+#   7. Writes a summary with the public URLs to the workflow run page.
+#
+# Required repo/environment secrets (add via GitHub Settings -> Secrets):
+#   - AZURE_CLIENT_ID           service-principal client id (OIDC federated)
+#   - AZURE_TENANT_ID           Entra tenant id
+#   - AZURE_SUBSCRIPTION_ID     target subscription (VLTK Azure Development 1)
+#   - ALVYS_CLIENT_SECRET       va336 client secret (already set at repo scope)
+#   - SQL_ADMIN_PASSWORD        SQL admin password (script uses ltlsqladmin)
+#
+# Optional inputs at Run Workflow time:
+#   - subscription_id override, resource_group override, base_name override
+#
+# Safety posture (Demo mode default):
+#   1. AccessPolicy:Mode default in code is EntraId; Demo requires explicit opt-in.
+#   2. API startup logs a multi-line warning banner.
+#   3. /api/health publishes authMode; the smoke test asserts it.
+#   4. DemoAuthenticationHandler is a separate .cs file, wired only when mode matches.
+
+on:
+  workflow_dispatch:
+    inputs:
+      subscription_id:
+        description: 'Azure subscription id (default: from AZURE_SUBSCRIPTION_ID secret)'
+        required: false
+        default: ''
+      resource_group:
+        description: 'Resource group to deploy into'
+        required: false
+        default: 'ltl-standalone-rg'
+      base_name:
+        description: 'Base name for all resources (ACR, apps, SQL). Must be globally unique for ACR.'
+        required: false
+        default: 'ltl-standalone'
+      location:
+        description: 'Azure region'
+        required: false
+        default: 'centralus'
+      access_policy_mode:
+        description: 'Demo (public demo without Entra) or EntraId (requires AZURE_AD_* secrets)'
+        required: false
+        default: 'Demo'
+        type: choice
+        options:
+          - Demo
+          - EntraId
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-ltl-standalone-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Provision + deploy to Azure standalone
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Preflight: fail early if the two hard-required secrets are missing,
+      # before we waste 10 minutes on infra.
+      - name: Preflight secrets check
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          ACCESS_POLICY_MODE: ${{ inputs.access_policy_mode }}
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_API_CLIENT_ID: ${{ secrets.AZURE_AD_API_CLIENT_ID }}
+          AZURE_AD_WEB_CLIENT_ID: ${{ secrets.AZURE_AD_WEB_CLIENT_ID }}
+          AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+        run: |
+          missing=()
+          # These four are always required.
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID ALVYS_CLIENT_SECRET SQL_ADMIN_PASSWORD; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          # If EntraId mode selected, the four AZURE_AD_* secrets are required too.
+          if [ "$ACCESS_POLICY_MODE" = "EntraId" ]; then
+            for name in AZURE_AD_TENANT_ID AZURE_AD_API_CLIENT_ID AZURE_AD_WEB_CLIENT_ID AZURE_AD_CLIENT_SECRET; do
+              if [ -z "${!name}" ]; then missing+=("$name (required when access_policy_mode=EntraId)"); fi
+            done
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            {
+              echo "## Deployment blocked — missing secrets"
+              echo ""
+              echo "Add these under Settings → Secrets and variables → Actions:"
+              for name in "${missing[@]}"; do echo "- \`$name\`"; done
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Missing required secrets: ${missing[*]}"
+            exit 1
+          fi
+          echo "Preflight OK."
+
+      - name: Azure login (OIDC federated)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ inputs.subscription_id != '' && inputs.subscription_id || secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure resource group exists
+        env:
+          RG: ${{ inputs.resource_group }}
+          LOC: ${{ inputs.location }}
+        run: |
+          if ! az group show --name "$RG" >/dev/null 2>&1; then
+            echo "Creating resource group $RG in $LOC..."
+            az group create --name "$RG" --location "$LOC" \
+              --tags project=ltl-standalone createdBy=deploy-ltl-standalone.yml \
+              --output none
+          else
+            echo "Resource group $RG already exists."
+          fi
+
+      - name: Deploy Bicep infrastructure
+        env:
+          RG: ${{ inputs.resource_group }}
+          LOC: ${{ inputs.location }}
+          BASE_NAME: ${{ inputs.base_name }}
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+        run: |
+          DEPLOY_NAME="ltl-standalone-$(date +%Y%m%d-%H%M%S)"
+          echo "Deploying Bicep template ($DEPLOY_NAME). Takes 4-8 min..."
+          az deployment group create \
+            --resource-group "$RG" \
+            --name "$DEPLOY_NAME" \
+            --template-file infra/uat/main.bicep \
+            --parameters "baseName=$BASE_NAME" "sqlAdminPassword=$SQL_ADMIN_PASSWORD" "location=$LOC" \
+            --output none
+          echo "Infra provisioned."
+
+      - name: Discover resources
+        id: discover
+        env:
+          RG: ${{ inputs.resource_group }}
+          BASE_NAME: ${{ inputs.base_name }}
+        run: |
+          ACR_NAME=$(az acr list --resource-group "$RG" --query "[0].name" -o tsv)
+          SQL_SERVER=$(az sql server list --resource-group "$RG" --query "[0].name" -o tsv)
+          ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RG" --query loginServer -o tsv)
+          {
+            echo "acr_name=$ACR_NAME"
+            echo "acr_login_server=$ACR_LOGIN_SERVER"
+            echo "sql_server=$SQL_SERVER"
+            echo "api_app=${BASE_NAME}-api"
+            echo "web_app=${BASE_NAME}-web"
+            echo "sql_db=${BASE_NAME}-sqldb"
+          } >> "$GITHUB_OUTPUT"
+          echo "Discovered ACR=$ACR_NAME; SQL=$SQL_SERVER"
+
+      - name: Build API image via ACR Task
+        env:
+          RG: ${{ inputs.resource_group }}
+          ACR_NAME: ${{ steps.discover.outputs.acr_name }}
+        run: |
+          IMAGE_TAG="${GITHUB_SHA::12}-$(date +%Y%m%d%H%M%S)"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_ENV"
+          az acr build \
+            --registry "$ACR_NAME" \
+            --resource-group "$RG" \
+            --image "ltl-api:$IMAGE_TAG" \
+            --file src/LtlTool.Api/Dockerfile \
+            --output none \
+            .
+
+      - name: Build Web image via ACR Task
+        env:
+          RG: ${{ inputs.resource_group }}
+          ACR_NAME: ${{ steps.discover.outputs.acr_name }}
+        run: |
+          az acr build \
+            --registry "$ACR_NAME" \
+            --resource-group "$RG" \
+            --image "ltl-web:$image_tag" \
+            --file web/Dockerfile \
+            --output none \
+            .
+
+      - name: Point App Services at fresh images
+        env:
+          RG: ${{ inputs.resource_group }}
+          ACR_NAME: ${{ steps.discover.outputs.acr_name }}
+          ACR_LOGIN_SERVER: ${{ steps.discover.outputs.acr_login_server }}
+          API_APP: ${{ steps.discover.outputs.api_app }}
+          WEB_APP: ${{ steps.discover.outputs.web_app }}
+        run: |
+          ACR_USER=$(az acr credential show --name "$ACR_NAME" --resource-group "$RG" --query username -o tsv)
+          ACR_PASS=$(az acr credential show --name "$ACR_NAME" --resource-group "$RG" --query "passwords[0].value" -o tsv)
+          az webapp config container set --name "$API_APP" --resource-group "$RG" \
+            --docker-custom-image-name "$ACR_LOGIN_SERVER/ltl-api:$image_tag" \
+            --docker-registry-server-url "https://$ACR_LOGIN_SERVER" \
+            --docker-registry-server-user "$ACR_USER" \
+            --docker-registry-server-password "$ACR_PASS" \
+            --output none
+          az webapp config container set --name "$WEB_APP" --resource-group "$RG" \
+            --docker-custom-image-name "$ACR_LOGIN_SERVER/ltl-web:$image_tag" \
+            --docker-registry-server-url "https://$ACR_LOGIN_SERVER" \
+            --docker-registry-server-user "$ACR_USER" \
+            --docker-registry-server-password "$ACR_PASS" \
+            --output none
+
+      - name: Configure app settings
+        env:
+          RG: ${{ inputs.resource_group }}
+          API_APP: ${{ steps.discover.outputs.api_app }}
+          WEB_APP: ${{ steps.discover.outputs.web_app }}
+          SQL_SERVER: ${{ steps.discover.outputs.sql_server }}
+          SQL_DB: ${{ steps.discover.outputs.sql_db }}
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          ACCESS_POLICY_MODE: ${{ inputs.access_policy_mode }}
+          ALLOWED_EMAIL_DOMAIN: ${{ vars.ALLOWED_EMAIL_DOMAIN || 'valuetruck.com' }}
+          ALVYS_TENANT_ID: ${{ vars.ALVYS_TENANT_ID || 'va336' }}
+          ALVYS_CLIENT_ID: ${{ vars.ALVYS_CLIENT_ID || 'MZEDvQYVZmcEtk3f17QFgYTg19pa3eJL' }}
+          ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}
+          ALVYS_API_BASE_URL: ${{ vars.ALVYS_API_BASE_URL || 'https://integrations.alvys.com' }}
+          ALVYS_API_VERSION: ${{ vars.ALVYS_API_VERSION || 'v1' }}
+          ALVYS_PROVIDER: ${{ vars.ALVYS_PROVIDER || 'Live' }}
+          ALVYS_WRITEBACK_MODE: ${{ vars.ALVYS_WRITEBACK_MODE || 'Disabled' }}
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_API_CLIENT_ID: ${{ secrets.AZURE_AD_API_CLIENT_ID }}
+          AZURE_AD_WEB_CLIENT_ID: ${{ secrets.AZURE_AD_WEB_CLIENT_ID }}
+          AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+        run: |
+          # Placeholder GUIDs when in Demo mode; MSAL registers but the auth
+          # scheme router forwards to DemoAuthenticationHandler at request time.
+          if [ -z "$AZURE_AD_TENANT_ID"     ]; then AZURE_AD_TENANT_ID='00000000-0000-0000-0000-000000000000'; fi
+          if [ -z "$AZURE_AD_API_CLIENT_ID" ]; then AZURE_AD_API_CLIENT_ID='00000000-0000-0000-0000-000000000000'; fi
+          if [ -z "$AZURE_AD_WEB_CLIENT_ID" ]; then AZURE_AD_WEB_CLIENT_ID='00000000-0000-0000-0000-000000000000'; fi
+
+          WEB_URL="https://$(az webapp show --name "$WEB_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
+          API_URL="https://$(az webapp show --name "$API_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
+          echo "web_url=$WEB_URL" >> "$GITHUB_ENV"
+          echo "api_url=$API_URL" >> "$GITHUB_ENV"
+
+          SQL_CONN_STR="Server=tcp:${SQL_SERVER}.database.windows.net,1433;Initial Catalog=${SQL_DB};Persist Security Info=False;User ID=ltlsqladmin;Password=${SQL_ADMIN_PASSWORD};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+
+          az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --output none --settings \
+            WEBSITES_PORT=8080 \
+            ASPNETCORE_ENVIRONMENT=Production \
+            "AccessPolicy__Mode=$ACCESS_POLICY_MODE" \
+            "AccessPolicy__AllowedEmailDomains__0=$ALLOWED_EMAIL_DOMAIN" \
+            "AzureAd__TenantId=$AZURE_AD_TENANT_ID" \
+            "AzureAd__ClientId=$AZURE_AD_API_CLIENT_ID" \
+            "AzureAd__ClientSecret=$AZURE_AD_CLIENT_SECRET" \
+            AzureAd__Instance="https://login.microsoftonline.com/" \
+            "AzureAd__Audience=api://$AZURE_AD_API_CLIENT_ID" \
+            "ConnectionStrings__DefaultConnection=$SQL_CONN_STR" \
+            "Cors__AllowedOrigins__0=$WEB_URL" \
+            "Alvys__Provider=$ALVYS_PROVIDER" \
+            "Alvys__ApiBaseUrl=$ALVYS_API_BASE_URL" \
+            "Alvys__ApiVersion=$ALVYS_API_VERSION" \
+            "Alvys__TenantId=$ALVYS_TENANT_ID" \
+            "Alvys__ClientId=$ALVYS_CLIENT_ID" \
+            "Alvys__ClientSecret=$ALVYS_CLIENT_SECRET" \
+            "Alvys__Writeback__Mode=$ALVYS_WRITEBACK_MODE" \
+            Ltl__DetectionEnabled=true \
+            Ltl__DefaultTimezone=America/Chicago
+
+          if [ "$ACCESS_POLICY_MODE" = "Demo" ]; then
+            az webapp config appsettings set --name "$WEB_APP" --resource-group "$RG" --output none --settings \
+              WEBSITES_PORT=80 \
+              "API_UPSTREAM=$API_URL" \
+              RUNTIME_TENANT_ID='' \
+              RUNTIME_WEB_CLIENT_ID='' \
+              RUNTIME_API_SCOPE='' \
+              RUNTIME_API_BASE_URL=/api
+          else
+            az webapp config appsettings set --name "$WEB_APP" --resource-group "$RG" --output none --settings \
+              WEBSITES_PORT=80 \
+              "API_UPSTREAM=$API_URL" \
+              "RUNTIME_TENANT_ID=$AZURE_AD_TENANT_ID" \
+              "RUNTIME_WEB_CLIENT_ID=$AZURE_AD_WEB_CLIENT_ID" \
+              "RUNTIME_API_SCOPE=api://$AZURE_AD_API_CLIENT_ID/access_as_user" \
+              RUNTIME_API_BASE_URL=/api
+          fi
+
+      - name: Restart App Services
+        env:
+          RG: ${{ inputs.resource_group }}
+          API_APP: ${{ steps.discover.outputs.api_app }}
+          WEB_APP: ${{ steps.discover.outputs.web_app }}
+        run: |
+          az webapp restart --name "$API_APP" --resource-group "$RG" --output none
+          az webapp restart --name "$WEB_APP" --resource-group "$RG" --output none
+
+      - name: Smoke test /api/health
+        env:
+          ACCESS_POLICY_MODE: ${{ inputs.access_policy_mode }}
+        run: |
+          echo "Polling $api_url/api/health for authMode=$ACCESS_POLICY_MODE (max 4 min)..."
+          BODY=""
+          for i in $(seq 1 40); do
+            BODY=$(curl -fsS "$api_url/api/health" 2>/dev/null || true)
+            if [ -n "$BODY" ]; then break; fi
+            echo "  ... $i/40"
+            sleep 6
+          done
+          if [ -z "$BODY" ]; then
+            echo "::error::API did not respond within 4 min"
+            exit 1
+          fi
+          AUTH_MODE=$(printf '%s' "$BODY" | sed -n 's/.*"authMode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+          if [ "$AUTH_MODE" != "$ACCESS_POLICY_MODE" ]; then
+            echo "::error::authMode=$AUTH_MODE, expected $ACCESS_POLICY_MODE"
+            echo "Body: $BODY"
+            exit 1
+          fi
+          echo "Health OK. authMode=$AUTH_MODE"
+
+      - name: Summary
+        if: always()
+        env:
+          RG: ${{ inputs.resource_group }}
+          ACCESS_POLICY_MODE: ${{ inputs.access_policy_mode }}
+        run: |
+          {
+            echo "## LTL standalone deploy"
+            echo ""
+            if [ -n "${api_url:-}" ]; then
+              echo "- **Web**: $web_url"
+              echo "- **API**: $api_url"
+              echo "- **Health**: $api_url/api/health"
+              echo "- **Mode**: \`AccessPolicy:Mode=$ACCESS_POLICY_MODE\`"
+              echo "- **Alvys**: va336 (read-only, writeback \`Disabled\`)"
+            else
+              echo "Deployment did not reach the URL-discovery step. See job log."
+            fi
+            echo ""
+            echo "### Tear down"
+            echo "\`\`\`bash"
+            echo "az group delete --name $RG --yes --no-wait"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
