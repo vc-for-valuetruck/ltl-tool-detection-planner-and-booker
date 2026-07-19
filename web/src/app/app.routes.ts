@@ -13,5 +13,13 @@ export const routes: Routes = [
     path: 'ltl/consolidate',
     loadComponent: () => import('./features/ltl/consolidate').then((m) => m.Consolidate),
   },
+  {
+    path: 'ltl/consolidate/plan/:planId',
+    loadComponent: () => import('./features/ltl/plan-detail').then((m) => m.PlanDetail),
+  },
+  {
+    path: 'ltl/consolidate/plan/:planId/click-card',
+    loadComponent: () => import('./features/ltl/click-card').then((m) => m.ClickCard),
+  },
   { path: '**', redirectTo: '' },
 ];

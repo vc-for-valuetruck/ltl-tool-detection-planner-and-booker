@@ -1,7 +1,25 @@
-<section class="ltl">
+<nav class="shell-tabs" role="tablist" aria-label="LTL console">
+  <div class="shell-tabs-inner">
+    <button type="button" role="tab" class="shell-tab" [class.active]="tab() === 'search'" (click)="setTab('search')">
+      Search
+    </button>
+    <button type="button" role="tab" class="shell-tab" [class.active]="tab() === 'billing'" (click)="setTab('billing')">
+      Billing
+    </button>
+    <button type="button" role="tab" class="shell-tab" [class.active]="tab() === 'exceptions'" (click)="setTab('exceptions')">
+      Exceptions
+    </button>
+    <button type="button" role="tab" class="shell-tab" [class.active]="tab() === 'tenders'" (click)="setTab('tenders')">
+      Tenders
+    </button>
+    <a routerLink="/ltl/consolidate" class="shell-tab">Consolidate</a>
+  </div>
+</nav>
+
+<section class="ltl page-shell">
   <div class="ltl-head">
     <div>
-      <h2>LTL Operating Console</h2>
+      <h1>LTL Operating Console</h1>
       <p class="subtitle">
         Search, match, assign and bill over live Alvys data &mdash; missing fields are surfaced,
         never invented. Alvys stays read-only; assignment is internal &amp; audited.
@@ -9,24 +27,9 @@
     </div>
   </div>
 
-  <!-- Tabs -->
-  <nav class="tabs" role="tablist">
-    <button type="button" role="tab" class="tab" [class.active]="tab() === 'search'" (click)="setTab('search')">
-      Search
-    </button>
-    <button type="button" role="tab" class="tab" [class.active]="tab() === 'billing'" (click)="setTab('billing')">
-      Billing Worklist
-    </button>
-    <button type="button" role="tab" class="tab" [class.active]="tab() === 'exceptions'" (click)="setTab('exceptions')">
-      Exceptions
-    </button>
-    <button type="button" role="tab" class="tab" [class.active]="tab() === 'tenders'" (click)="setTab('tenders')">
-      Tenders
-    </button>
-  </nav>
-
   <!-- ===================== SEARCH TAB ===================== -->
   @if (tab() === 'search') {
+    <div class="card">
     <!-- Saved views: shared presets + the dispatcher's own views -->
     <div class="saved-views" data-testid="saved-views">
       @if (savedViewsError(); as err) {
@@ -305,10 +308,12 @@
         </div>
       </div>
     }
+    </div>
   }
 
   <!-- ===================== BILLING WORKLIST TAB ===================== -->
   @if (tab() === 'billing') {
+    <div class="card">
     <div class="worklist-bar">
       <select name="worklistBadge" [ngModel]="worklistBadge()" (ngModelChange)="worklistBadge.set($event); loadWorklist()">
         <option value="">All needing attention</option>
@@ -368,10 +373,12 @@
         </table>
       </div>
     }
+    </div>
   }
 
   <!-- ===================== EXCEPTIONS TAB ===================== -->
   @if (tab() === 'exceptions') {
+    <div class="card">
     <div class="worklist-bar">
       <button type="button" (click)="loadExceptions()">Refresh</button>
       <span class="muted">Billing-blocking exceptions are listed first.</span>
@@ -408,10 +415,12 @@
         </table>
       </div>
     }
+    </div>
   }
 
   <!-- ===================== TENDERS TAB ===================== -->
   @if (tab() === 'tenders') {
+    <div class="card">
     <div class="worklist-bar">
       <label class="tender-filter">Status
         <select name="tenderStatus" [ngModel]="tenderStatus()" (ngModelChange)="tenderStatus.set($event)">
@@ -513,6 +522,7 @@
         </table>
       </div>
     }
+    </div>
   }
 </section>
 

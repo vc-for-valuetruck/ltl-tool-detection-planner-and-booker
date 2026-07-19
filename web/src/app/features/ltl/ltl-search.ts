@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { LtlService } from './ltl.service';
 import { AlvysOpsPanel } from './alvys-ops-panel';
 import { AlvysOpsService } from './alvys-ops.service';
@@ -86,7 +87,7 @@ interface AppliedFilter {
 @Component({
   selector: 'app-ltl-search',
   standalone: true,
-  imports: [FormsModule, DatePipe, DecimalPipe, AlvysOpsPanel],
+  imports: [FormsModule, DatePipe, DecimalPipe, AlvysOpsPanel, RouterLink],
   templateUrl: './ltl-search.html',
   styleUrls: ['./ltl-search.css', './ltl-saved-views.css'],
 })

@@ -1,34 +1,85 @@
+/*
+ * Global theme — Value Truck LTL Tool.
+ * CSS variables establish the design system used across the app shell and every feature
+ * component (ltl-search, consolidate, plan-detail, click-card, alvys-ops-panel).
+ */
+
 :root {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  color: #1a1a1a;
+  /* Palette */
+  --nav-bg: #0f172a;
+  --nav-text: #ffffff;
+  --nav-text-muted: rgba(255, 255, 255, 0.7);
+
+  --body-bg: #f8fafc;
+  --card-bg: #ffffff;
+  --card-border: #e2e8f0;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  --accent: #2563eb;
+  --accent-dark: #1d4ed8;
+
+  --success: #10b981;
+  --success-bg: #d1fae5;
+  --success-text: #065f46;
+  --success-row-bg: #f0fdf4;
+
+  --warning: #f59e0b;
+  --warning-bg: #fef3c7;
+  --warning-text: #92400e;
+
+  --danger: #ef4444;
+  --danger-bg: #fee2e2;
+  --danger-text: #991b1b;
+
+  --info-bg: #dbeafe;
+  --info-text: #1e40af;
+  --info-row-bg: #eff6ff;
+
+  --radius-card: 6px;
+  --radius-pill: 999px;
+
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: var(--body-bg);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.5rem;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.app-header h1 {
-  font-size: 1.25rem;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  line-height: 1.3;
+  font-weight: 600;
   margin: 0;
 }
 
-.auth-state {
-  font-size: 0.8rem;
-  color: #b00020;
+.mono {
+  font-family: 'JetBrains Mono', Menlo, Consolas, monospace;
 }
 
-.auth-state.ok {
-  color: #0a7d2c;
+/* Shared page shell utility — centers content at the mockup's max-width with standard gutters. */
+.page-shell {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
 }
 
-.app-main {
-  padding: 1.5rem;
+a {
+  color: var(--accent);
 }

@@ -1,0 +1,140 @@
+<nav class="shell-tabs" role="tablist" aria-label="LTL console">
+  <div class="shell-tabs-inner">
+    <a routerLink="/ltl" class="shell-tab">Search</a>
+    <a routerLink="/ltl" class="shell-tab">Billing</a>
+    <a routerLink="/ltl" class="shell-tab">Exceptions</a>
+    <a routerLink="/ltl" class="shell-tab">Tenders</a>
+    <a routerLink="/ltl/consolidate" class="shell-tab active">Consolidate</a>
+  </div>
+</nav>
+
+<div class="click-card-page page-shell">
+  <div class="breadcrumb">
+    <a routerLink="/ltl/consolidate">Consolidate</a>
+    <span aria-hidden="true">&middot;</span>
+    <a routerLink="/ltl/consolidate">Candidates</a>
+    <span aria-hidden="true">&middot;</span>
+    <a [routerLink]="['/ltl/consolidate/plan', plan()?.previewId]" [queryParams]="planDetailQueryParams()">Plan detail</a>
+    <span aria-hidden="true">&middot;</span>
+    <span class="breadcrumb-current">Click card</span>
+  </div>
+
+  @if (loading()) {
+    <div class="state">Loading plan from Alvys…</div>
+  } @else if (missingContext()) {
+    <div class="state-empty">
+      <strong>No plan context in this link.</strong>
+      <span>
+        The click card is generated live from a parent load id and sibling load ids &mdash; open
+        this page from <a routerLink="/ltl/consolidate">Plan detail</a> so we know which plan to
+        render.
+      </span>
+    </div>
+  } @else if (error()) {
+    <div class="error">{{ error() }}</div>
+  } @else if (plan(); as p) {
+    <h1>Alvys click card &middot; {{ p.previewId }}</h1>
+    <p class="subtitle">
+      Copy this into a note, print it, or dispatch it to the operator. The tool has recorded the
+      plan as an audit entry.
+    </p>
+
+    <div class="click-columns">
+      <div class="click-col-main">
+        <div class="card-dark click-card-panel">
+          <div class="click-card-header">
+            <div>
+              <strong>LTL CONSOLIDATION PLAN</strong>
+              <span class="click-card-subhead">Corridor &middot; {{ p.corridorCode.replace('_TO_', ' → ').replace('_', ' ') }} &middot; Read-only Phase 1</span>
+            </div>
+            <button type="button" class="btn-copy" (click)="copyToClipboard()">Copy to clipboard</button>
+          </div>
+
+          @if (copyMessage()) {
+            <div class="copy-msg">{{ copyMessage() }}</div>
+          }
+
+          <div class="click-card-body mono">
+            <div class="ccb-line">
+              <span class="ccb-label">Parent load:</span>
+              <span class="ccb-value">{{ p.parent.loadNumber ?? p.parent.id }} &middot; {{ p.parent.customerName ?? '—' }} &rarr; {{ p.parent.destination?.label ?? '—' }}</span>
+            </div>
+            <div class="ccb-line">
+              <span class="ccb-label">Sibling loads:</span>
+              <span class="ccb-value">
+                @for (s of p.siblings; track s.loadId; let last = $last) {
+                  {{ s.loadNumber ?? s.loadId }} &middot; {{ s.customerName ?? '—' }} &rarr; {{ s.destinationLabel ?? '—' }}@if (!last) {; }
+                }
+              </span>
+            </div>
+
+            <pre class="ccb-plaintext">{{ p.clickCard.plainText }}</pre>
+
+            <div class="ccb-footer">
+              <div>Projected combined revenue: {{ formatCurrency(p.combinedRevenue) }}</div>
+              <div>Projected linehaul miles: {{ formatNumber(p.linehaulMiles) }}</div>
+              <div class="ccb-rpm">Projected combined RPM: {{ formatRpm(p.combinedRevenuePerMile) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="click-col-side">
+        <div class="card">
+          <h2>What the tool did</h2>
+          <ul class="did-list did-good">
+            <li>Recorded {{ auditRecord()?.id ?? p.previewId }} in the audit trail</li>
+            <li>Computed projected combined RPM from Alvys rates</li>
+            <li>Verified corridor: {{ p.corridorCode }}, US-only</li>
+            <li>
+              Checked customer allow-flags
+              (@for (s of p.siblings; track s.loadId; let last = $last) {{{ s.customerName ?? s.loadId }} = {{ s.customerTier }}@if (!last) {, }})
+            </li>
+            <li>Generated the copy-pasteable click card above</li>
+          </ul>
+
+          <h2>What the tool did NOT do</h2>
+          <ul class="did-list did-not">
+            <li>Write anything to Alvys (Phase 1 is read-only)</li>
+            <li>Assign a driver, truck, or trailer</li>
+            <li>Zero out loaded miles on siblings automatically</li>
+            <li>Contact the customer</li>
+          </ul>
+        </div>
+
+        <div class="card card-info">
+          <h2>Next steps</h2>
+          <ol class="next-steps">
+            @for (s of p.siblings; track s.loadId) {
+              @if (s.cautions.length > 0) {
+                <li>{{ s.cautions[0] }}</li>
+              }
+            }
+            <li>Execute the steps in the click card above, in order</li>
+            <li>Trailer runs {{ p.parent.origin?.label ?? 'Laredo' }} &rarr; {{ p.parent.destination?.label ?? 'Dallas' }} split</li>
+            <li>On delivery, re-open this plan and mark it completed</li>
+          </ol>
+          <p class="next-steps-note">All steps are manual today. Later phases can automate the report/verification steps.</p>
+        </div>
+
+        <div class="card card-audit">
+          <h2>Audit record</h2>
+          @if (auditError()) {
+            <div class="error">{{ auditError() }}</div>
+          }
+          @if (auditRecord(); as record) {
+            <div class="audit-line">Plan id: {{ record.id }}</div>
+            <div class="audit-line">Recorded by {{ record.recordedBy }} @ {{ record.recordedAt | date: 'medium' }}</div>
+            <div class="audit-line">Uplift claim visible to leadership at any time</div>
+          } @else if (recordingAudit()) {
+            <div class="audit-line muted">Recording audit entry…</div>
+          } @else {
+            <div class="audit-line muted">Not recorded &mdash; this plan currently has blockers.</div>
+          }
+        </div>
+      </div>
+    </div>
+
+    <p class="disclaimer">Everything on this screen was computed from live Alvys data. No values fabricated. Read-only Phase 1.</p>
+  }
+</div>

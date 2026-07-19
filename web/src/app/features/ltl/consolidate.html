@@ -1,49 +1,56 @@
-<div class="consolidate">
-  <header class="header">
-    <div class="header-title">
-      <h1>Consolidate</h1>
-      <div class="corridor-picker" data-testid="corridor-picker">
-        @if (loadingCorridors()) {
-          <span class="corridor-name muted">Loading corridors…</span>
-        } @else if (corridors().length === 0) {
-          <span class="corridor-name">Laredo → Dallas pilot corridor</span>
-        } @else {
-          @for (row of corridors(); track row.code) {
-            <button
-              type="button"
-              class="corridor-chip"
-              [class.selected]="selectedCorridor() === row.code"
-              [attr.data-testid]="'corridor-chip-' + row.code"
-              (click)="selectCorridor(row.code)"
-            >
-              <span class="corridor-chip-name">{{ row.originName }} → {{ row.destinationName }}</span>
-              @if (row.openLoadCount === null) {
-                <span class="corridor-chip-count muted">…</span>
-              } @else {
-                <span class="corridor-chip-count" [class.zero]="row.openLoadCount === 0">
-                  {{ row.openLoadCount }} open
-                </span>
-              }
-            </button>
-          }
-        }
-        <span class="corridor-tag">Phase 1 · Pilot · Read-only</span>
-      </div>
-    </div>
-    <nav class="header-nav">
-      <a routerLink="/ltl">← Back to Search</a>
-    </nav>
-  </header>
+<nav class="shell-tabs" role="tablist" aria-label="LTL console">
+  <div class="shell-tabs-inner">
+    <a routerLink="/ltl" class="shell-tab">Search</a>
+    <a routerLink="/ltl" class="shell-tab">Billing</a>
+    <a routerLink="/ltl" class="shell-tab">Exceptions</a>
+    <a routerLink="/ltl" class="shell-tab">Tenders</a>
+    <a routerLink="/ltl/consolidate" class="shell-tab active">Consolidate</a>
+  </div>
+</nav>
 
-  <!-- Screen 1: seed input + candidate list -->
-  <section class="panel">
-    <div class="panel-title">
-      <h2>1. Find candidates for a seed load</h2>
-      <p class="panel-sub">
-        Enter a Laredo-origin load id or load number. We only show sibling loads whose origin sits
-        near the Laredo yard and whose destination sits near the Dallas 154-door yard.
-      </p>
+<div class="consolidate page-shell">
+  <div class="corridor-banner">
+    <div class="corridor-banner-text">
+      <span class="corridor-banner-title">
+        <strong>Laredo</strong> <span aria-hidden="true">→</span> <strong>Dallas pilot corridor</strong>
+      </span>
+      <span class="corridor-banner-sub">
+        Origin within 150 mi of Laredo yard &middot; Destination within 250 mi of Dallas yard &middot;
+        US-side only &middot; Read-only from Alvys
+      </span>
     </div>
+    <span class="phase-pill">Phase 1 &middot; Pilot</span>
+  </div>
+
+  @if (corridors().length > 1) {
+    <div class="corridor-picker" data-testid="corridor-picker">
+      @for (row of corridors(); track row.code) {
+        <button
+          type="button"
+          class="corridor-chip"
+          [class.selected]="selectedCorridor() === row.code"
+          [attr.data-testid]="'corridor-chip-' + row.code"
+          (click)="selectCorridor(row.code)"
+        >
+          <span class="corridor-chip-name">{{ row.originName }} → {{ row.destinationName }}</span>
+          @if (row.openLoadCount === null) {
+            <span class="corridor-chip-count muted">…</span>
+          } @else {
+            <span class="corridor-chip-count" [class.zero]="row.openLoadCount === 0">
+              {{ row.openLoadCount }} open
+            </span>
+          }
+        </button>
+      }
+    </div>
+  }
+
+  <!-- Filters / seed entry -->
+  <div class="filter-row">
+    <span class="filter-label">Filters:</span>
+    <span class="filter-chip">Pickup this week</span>
+    <span class="filter-chip">All customers</span>
+    <span class="filter-chip">Min 2 candidates</span>
 
     <form class="seed-form" data-testid="consolidate-seed-form" (ngSubmit)="loadCandidates()">
       <input
@@ -60,67 +67,84 @@
       </button>
     </form>
 
-    @if (candidateError()) {
-      <div class="error">{{ candidateError() }}</div>
+    @if (candidateResponse(); as r) {
+      <span class="filter-count">{{ r.candidates.length }} candidates found @if (r.scanTruncated) { · scan truncated }</span>
     }
+  </div>
 
-    @if (candidateResponse()?.scanTruncated) {
+  @if (candidateError()) {
+    <div class="error">{{ candidateError() }}</div>
+  }
+
+  @if (loadingCorridors() && !candidateResponse()) {
+    <div class="state muted">Loading corridor health…</div>
+  }
+
+  @if (candidateResponse(); as response) {
+    @if (!response.seed) {
       <div class="banner banner-warn">
-        Alvys sweep hit the scan bound — showing candidates from the first pages only.
+        Seed load could not be resolved in Alvys. Check the id and try again &mdash; nothing is
+        fabricated when Alvys has no match.
       </div>
-    }
-
-    @if (candidateResponse(); as response) {
-      @if (!response.seed) {
-        <div class="banner banner-warn">
-          Seed load could not be resolved in Alvys. Check the id and try again.
-        </div>
-      } @else {
-        <div class="seed-summary">
-          <div class="seed-summary-title">Seed load (parent) · {{ response.seed.loadNumber ?? response.seed.id }}</div>
-          <div class="seed-summary-row">
-            <span>{{ response.seed.customerName ?? '—' }}</span>
-            <span>{{ response.seed.origin?.label ?? '—' }} → {{ response.seed.destination?.label ?? '—' }}</span>
-            <span>{{ formatDate(response.seed.scheduledPickupAt) }}</span>
-            <span>{{ formatCurrency(response.seed.revenue) }}</span>
-          </div>
-        </div>
-
-        <div class="candidates">
-          <table>
+    } @else {
+      <div class="card candidates-card">
+        <div class="table-wrap">
+          <table class="grid">
             <thead>
               <tr>
                 <th></th>
                 <th>Load</th>
                 <th>Customer</th>
-                <th>Origin</th>
-                <th>Destination</th>
+                <th>Origin (near Laredo)</th>
+                <th>Destination (near Dallas)</th>
                 <th>Pickup</th>
                 <th>Weight / Pallets</th>
                 <th>Lane fit</th>
                 <th>Timing fit</th>
                 <th>Customer</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
+              <!-- Parent (seed) row — always shown first, highlighted green -->
+              <tr class="row-parent" data-testid="consolidate-parent-row">
+                <td><span class="rail rail-parent" aria-hidden="true"></span></td>
+                <td>
+                  <div class="load-cell">
+                    <strong>{{ response.seed.loadNumber ?? response.seed.id }}</strong>
+                    <span class="load-tag">Parent</span>
+                  </div>
+                </td>
+                <td>{{ response.seed.customerName ?? '—' }}</td>
+                <td>{{ response.seed.origin?.label ?? '—' }}</td>
+                <td>{{ response.seed.destination?.label ?? '—' }}</td>
+                <td>{{ formatDate(response.seed.scheduledPickupAt) }}</td>
+                <td>
+                  {{ response.seed.weightLbs ? (response.seed.weightLbs + ' lb') : '— lb · visual verify' }}
+                </td>
+                <td><span class="chip chip-good">Good</span></td>
+                <td><span class="chip chip-good">Good</span></td>
+                <td><span class="chip chip-good">Allowed</span></td>
+                <td><span class="action-label action-parent">Parent</span></td>
+              </tr>
+
               @for (candidate of response.candidates; track candidate.loadId) {
                 <tr
                   data-testid="consolidate-candidate-row"
-                  [class.blocked]="candidate.isBlocked"
-                  [class.selected]="isSelected(candidate.loadId)"
+                  [class.row-sibling]="isSelected(candidate.loadId)"
+                  [class.row-blocked]="candidate.isBlocked"
                 >
                   <td>
-                    <input
-                      type="checkbox"
-                      data-testid="consolidate-candidate-checkbox"
-                      [checked]="isSelected(candidate.loadId)"
-                      [disabled]="candidate.isBlocked"
-                      (change)="toggleSibling(candidate)"
-                    />
+                    @if (isSelected(candidate.loadId)) {
+                      <span class="rail rail-sibling" aria-hidden="true"></span>
+                    }
                   </td>
                   <td>
                     <div class="load-cell">
                       <strong>{{ candidate.loadNumber ?? candidate.loadId }}</strong>
+                      <span class="load-tag">
+                        {{ isSelected(candidate.loadId) ? 'Sibling · in plan' : (candidate.isBlocked ? 'Blocked' : 'Candidate') }}
+                      </span>
                     </div>
                   </td>
                   <td>{{ candidate.customerName ?? '—' }}</td>
@@ -145,186 +169,77 @@
                       {{ candidate.customerTier }}
                     </span>
                   </td>
+                  <td>
+                    @if (candidate.isBlocked) {
+                      <span class="action-label action-blocked">Blocked</span>
+                    } @else if (isSelected(candidate.loadId)) {
+                      <span class="action-label action-inplan">In plan</span>
+                    } @else {
+                      <button
+                        type="button"
+                        class="btn-add-sibling"
+                        data-testid="consolidate-candidate-checkbox"
+                        (click)="toggleSibling(candidate)"
+                      >
+                        Add sibling
+                      </button>
+                    }
+                  </td>
                 </tr>
               } @empty {
                 <tr>
-                  <td colspan="10" class="empty">
-                    No corridor-matching siblings for this seed. Try a different seed or wait for
-                    Alvys to receive more open loads.
+                  <td colspan="11" class="empty">
+                    No corridor-matching siblings for this seed. Try a different seed &mdash; we never
+                    invent candidates when Alvys returns none.
                   </td>
                 </tr>
               }
             </tbody>
           </table>
         </div>
-
-        <div class="candidates-footer">
-          <span class="selection-count">
-            {{ selectedSiblingIds().size }} selected
-          </span>
-          <button
-            type="button"
-            class="primary"
-            data-testid="consolidate-build-plan"
-            [disabled]="!canBuildPlan()"
-            (click)="buildPlan()"
-          >
-            {{ loadingPlan() ? 'Building…' : 'Build plan preview →' }}
-          </button>
-        </div>
-      }
-    }
-  </section>
-
-  <!-- Screen 2: plan preview -->
-  @if (plan(); as p) {
-    <section class="panel">
-      <div class="panel-title">
-        <h2>2. Plan preview · {{ p.parent.loadNumber ?? p.parent.id }} + {{ p.siblings.length }} sibling(s)</h2>
-        <p class="panel-sub">
-          Draft plan — nothing has been written to Alvys yet. The click card below tells the
-          dispatcher exactly what to click.
-        </p>
       </div>
 
-      @if (planError()) {
-        <div class="error">{{ planError() }}</div>
-      }
-
-      @if (p.blockers.length > 0) {
-        <div class="banner banner-danger">
-          <strong>Plan blocked:</strong>
-          <ul>
-            @for (b of p.blockers; track b) {
-              <li>{{ b }}</li>
-            }
-          </ul>
-        </div>
-      }
-
-      <div class="plan-grid">
-        <div class="plan-siblings">
-          <h3>Siblings in plan</h3>
-          <ul>
-            @for (s of p.siblings; track s.loadId) {
-              <li>
-                <div>
-                  <strong>{{ s.loadNumber ?? s.loadId }}</strong> · {{ s.customerName ?? '—' }}
-                  · {{ s.originLabel ?? '—' }} → {{ s.destinationLabel ?? '—' }}
-                </div>
-                <div class="sibling-meta">
-                  <span>{{ formatCurrency(s.revenue) }}</span>
-                  <span>·</span>
-                  <span>{{ s.weightLbs ? (s.weightLbs + ' lb') : '— lb visual verify' }}</span>
-                  <span>·</span>
-                  <span class="tier tier-{{ s.customerTier }}">{{ s.customerTier }}</span>
-                </div>
-                @if (s.cautions.length > 0) {
-                  <ul class="cautions">
-                    @for (c of s.cautions; track c) {
-                      <li>⚠ {{ c }}</li>
-                    }
-                  </ul>
-                }
-              </li>
-            }
-          </ul>
-        </div>
-
-        <div class="plan-economics">
-          <h3>Customer-side (billing)</h3>
-          <div class="econ-row">
-            <span>Parent revenue</span>
-            <strong>{{ formatCurrency(p.parent.revenue) }}</strong>
-          </div>
-          @for (s of p.siblings; track s.loadId) {
-            <div class="econ-row">
-              <span>{{ s.loadNumber ?? s.loadId }} revenue</span>
-              <strong>{{ formatCurrency(s.revenue) }}</strong>
+      <!-- Current plan summary -->
+      <div class="card current-plan-card">
+        <h3>Current plan</h3>
+        @if (!hasSelection()) {
+          <p class="muted">No siblings selected yet. Add a sibling above to start a plan.</p>
+        } @else {
+          <div class="current-plan-summary">
+            <div>Parent: {{ response.seed.loadNumber ?? response.seed.id }} ({{ response.seed.customerName ?? '—' }} &middot; {{ response.seed.destination?.label ?? '—' }})</div>
+            <div>
+              Siblings:
+              @for (id of selectedSiblingIds(); track id; let last = $last) {
+                {{ id }}@if (!last) {, }
+              }
             </div>
-          }
-          <div class="econ-row econ-total">
-            <span>Combined customer revenue</span>
-            <strong>{{ formatCurrency(p.combinedRevenue) }}</strong>
-          </div>
-          <div class="econ-row">
-            <span>Customer linehaul miles (parent)</span>
-            <strong>{{ formatNumber(p.linehaulMiles) }}</strong>
           </div>
 
-          <h3 class="econ-section-header" data-testid="driver-side-header">Driver-side (RPM math)</h3>
-          <div class="econ-row">
-            <span>Parent driver trip rate</span>
-            <strong>{{ formatCurrency(p.parent.driverTripRate) }}</strong>
-          </div>
-          @for (s of p.siblings; track s.loadId) {
-            <div class="econ-row">
-              <span>{{ s.loadNumber ?? s.loadId }} driver rate</span>
-              <strong>{{ formatCurrency(s.driverTripRate) }}</strong>
+          @if (planError()) {
+            <div class="error">{{ planError() }}</div>
+          }
+
+          @if (!plan()) {
+            <button type="button" class="primary" data-testid="consolidate-build-plan" [disabled]="!canBuildPlan()" (click)="buildPlan()">
+              {{ loadingPlan() ? 'Building…' : 'Build plan preview' }}
+            </button>
+          } @else {
+            <div class="current-plan-econ">
+              <div class="econ-row">
+                <span>Combined revenue</span>
+                <strong class="econ-value-positive">{{ formatCurrency(plan()!.combinedRevenue) }}</strong>
+              </div>
+              <div class="econ-row">
+                <span>Linehaul miles (parent only)</span>
+                <strong>{{ formatNumber(plan()!.linehaulMiles) }}</strong>
+              </div>
             </div>
+            <button type="button" class="link open-plan-link" data-testid="open-plan-detail" (click)="openPlanDetail()">
+              Open plan detail →
+            </button>
           }
-          <div class="econ-row econ-total">
-            <span>Combined driver trip value</span>
-            <strong>{{ formatCurrency(p.combinedDriverTripValue) }}</strong>
-          </div>
-          <div class="econ-row">
-            <span>Parent loaded miles</span>
-            <strong>{{ formatNumber(p.driverLoadedMiles) }}</strong>
-          </div>
-          <div class="econ-row econ-total">
-            <span>Combined driver RPM</span>
-            <strong>{{ formatCurrency(p.combinedRevenuePerMile) }} / mi</strong>
-          </div>
-          <div class="econ-note">
-            RPM = combined driver trip value ÷ parent loaded miles. Phase 1: dispatcher zeros
-            each child's loaded miles manually in Alvys per the click card.
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Screen 3: click card + audit -->
-    <section class="panel panel-dark">
-      <div class="panel-title">
-        <h2>3. Alvys click card · {{ p.previewId }}</h2>
-        <p class="panel-sub">
-          Copy this into a note, print it, or dispatch it to the operator. The instructions match
-          Poornima's Alvys walkthrough exactly.
-        </p>
-      </div>
-
-      <pre class="click-card" data-testid="click-card-text">{{ p.clickCard.plainText }}</pre>
-
-      <div class="click-actions">
-        <button type="button" class="primary" (click)="copyClickCard()">
-          Copy to clipboard
-        </button>
-        <button
-          type="button"
-          class="secondary"
-          [disabled]="!canRecordAudit()"
-          (click)="recordAudit()"
-        >
-          {{ recordingAudit() ? 'Recording…' : 'Record plan as audit entry' }}
-        </button>
-        @if (copyMessage()) {
-          <span class="copy-msg">{{ copyMessage() }}</span>
         }
       </div>
-
-      @if (auditError()) {
-        <div class="error">{{ auditError() }}</div>
-      }
-
-      @if (auditRecord(); as record) {
-        <div class="audit-card">
-          <strong>Audit saved</strong> — id <code>{{ record.id }}</code> · recorded by
-          {{ record.recordedBy }} · projected uplift
-          {{ formatCurrency(record.combinedRevenue) }} at
-          {{ formatCurrency(record.combinedRevenuePerMile) }} / mi ·
-          <em>Alvys writeback: {{ record.alvysWriteback }}</em>.
-        </div>
-      }
-    </section>
+    }
   }
 </div>

@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ConsolidationService } from './consolidation.service';
 import {
@@ -47,6 +47,7 @@ export interface CorridorPickerRow {
 })
 export class Consolidate implements OnInit {
   private readonly consolidation = inject(ConsolidationService);
+  private readonly router = inject(Router);
 
   // Corridor picker (loaded once on init).
   readonly loadingCorridors = signal(true);
@@ -225,6 +226,24 @@ export class Consolidate implements OnInit {
     } catch {
       this.copyMessage.set('Copy failed — select the card and copy manually.');
     }
+  }
+
+  /**
+   * Navigates to the routed Plan Detail screen for the current preview. The plan is re-fetched
+   * there from live Alvys data via parent/sibling ids carried as query params — nothing is
+   * cached across the route boundary, so a direct link (or refresh) still shows live data.
+   */
+  openPlanDetail(): void {
+    const seed = this.candidateResponse()?.seed;
+    const p = this.plan();
+    if (!seed || !p) return;
+    this.router.navigate(['/ltl/consolidate/plan', p.previewId], {
+      queryParams: {
+        parent: seed.id,
+        siblings: p.siblings.map((s) => s.loadId).join(','),
+        corridor: this.selectedCorridor(),
+      },
+    });
   }
 
   chipClass(fit: ConsolidationFit): string {

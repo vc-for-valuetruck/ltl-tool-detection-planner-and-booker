@@ -1,0 +1,53 @@
+:host {
+  display: block;
+  min-height: 100vh;
+  background: var(--body-bg);
+}
+
+.shell-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: var(--nav-bg);
+  color: var(--nav-text);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.shell-brand {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.shell-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--nav-text-muted);
+}
+
+.shell-demo-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--warning);
+  display: inline-block;
+}
+
+.shell-demo-label {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--nav-text);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.shell-main {
+  min-height: calc(100vh - 60px);
+}

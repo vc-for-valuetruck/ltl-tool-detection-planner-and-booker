@@ -1,27 +1,17 @@
 import { Component, inject } from '@angular/core';
-import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { RouterOutlet } from '@angular/router';
 import { RUNTIME_CONFIG, isAuthConfigured } from './runtime-config';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
-  template: `
-    <header class="app-header">
-      <h1>LTL Tool Detection, Planner, and Booker</h1>
-      <nav class="app-nav">
-        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Home</a>
-        <a routerLink="/ltl" routerLinkActive="active">LTL Console</a>
-      </nav>
-      <span class="auth-state" [class.ok]="authConfigured">
-        {{ authConfigured ? 'Auth configured' : 'Auth not configured' }}
-      </span>
-    </header>
-    <main class="app-main">
-      <router-outlet />
-    </main>
-  `,
+  imports: [RouterOutlet],
+  templateUrl: './app.html',
+  styleUrls: ['./app.css'],
 })
 export class App {
-  protected readonly authConfigured = isAuthConfigured(inject(RUNTIME_CONFIG));
+  private readonly config = inject(RUNTIME_CONFIG);
+  protected readonly authConfigured = isAuthConfigured(this.config);
+  /** Demo-mode identity shown top-right when Entra auth isn't configured for this environment. */
+  protected readonly demoEmail = 'demo@valuetruck.com';
 }
