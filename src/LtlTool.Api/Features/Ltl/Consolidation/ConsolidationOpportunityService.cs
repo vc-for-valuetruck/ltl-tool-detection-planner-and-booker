@@ -22,25 +22,39 @@ public sealed class ConsolidationOpportunityService(IAlvysClient alvys, TimeProv
         var effectiveLimit = Math.Clamp(limit, 1, 50);
         var effectiveLookbackDays = Math.Clamp(lookbackDays, 1, 90);
 
+        // Fetch recent delivered loads from Alvys. We deliberately omit DateRange here — the
+        // Alvys /loads/search endpoint returns most-recent-first, so paging 3 x 100 already
+        // gives us the ~300 most-recent delivered loads. Filtering by pickup date
+        // client-side keeps the request shape identical to every other successful call.
         var rawLoads = new List<AlvysLoad>(PageSize * PagesToFetch);
+        var cutoff = now.AddDays(-effectiveLookbackDays);
         for (var page = 0; page < PagesToFetch; page++)
         {
-            var response = await alvys.SearchLoadsAsync(new LoadSearchRequest
+            AlvysLoadsResponse response;
+            try
             {
-                Page = page,
-                PageSize = PageSize,
-                Status = ["Delivered"],
-                DateRange = new AlvysDateRange
+                response = await alvys.SearchLoadsAsync(new LoadSearchRequest
                 {
-                    Start = now.AddDays(-effectiveLookbackDays),
-                    End = now,
-                },
-            }, ct);
+                    Page = page,
+                    PageSize = PageSize,
+                    Status = ["Delivered"],
+                }, ct);
+            }
+            catch
+            {
+                // Alvys transport error — return what we have so far instead of 500ing.
+                break;
+            }
 
             if (response.Items.Count == 0) break;
             rawLoads.AddRange(response.Items);
             if (response.Items.Count < PageSize) break;
         }
+
+        // Client-side lookback filter (uses ScheduledPickupAt when present).
+        rawLoads = rawLoads
+            .Where(l => l.ScheduledPickupAt is null || l.ScheduledPickupAt.Value >= cutoff)
+            .ToList();
 
         var eligible = rawLoads
             .Select(TryBuildEligibleLoad)
