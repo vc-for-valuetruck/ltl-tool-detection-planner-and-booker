@@ -110,24 +110,24 @@ public class ConsolidationControllerHealthTests
     {
         Id = loadNumber,
         LoadNumber = loadNumber,
+        Status = "Available",
         // Minimum required for the LTL normalization to yield an origin/destination that
-        // matches the search filter. We only need OriginCity/OriginState/DestinationCity/
-        // DestinationState to survive normalization.
+        // matches the search filter. AlvysLoadStop carries city/state on the Address sub-object.
         Stops =
         [
-            new AlvysStop
+            new AlvysLoadStop
             {
-                Type = "Pickup",
-                City = oCity,
-                State = oState,
-                ScheduledArrivalAtStart = DateTimeOffset.UtcNow.AddDays(1),
+                StopType = "Pickup",
+                Sequence = 1,
+                Address = new AlvysAddress { City = oCity, State = oState },
+                ScheduledStart = DateTimeOffset.UtcNow.AddDays(1),
             },
-            new AlvysStop
+            new AlvysLoadStop
             {
-                Type = "Delivery",
-                City = dCity,
-                State = dState,
-                ScheduledArrivalAtStart = DateTimeOffset.UtcNow.AddDays(2),
+                StopType = "Delivery",
+                Sequence = 2,
+                Address = new AlvysAddress { City = dCity, State = dState },
+                ScheduledStart = DateTimeOffset.UtcNow.AddDays(2),
             },
         ],
     };
