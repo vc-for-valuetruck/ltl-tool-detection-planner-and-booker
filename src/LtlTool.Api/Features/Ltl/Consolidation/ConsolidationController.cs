@@ -2,6 +2,7 @@ using System.Security.Claims;
 using LtlTool.Api.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Features.Ltl.Consolidation;
 
@@ -17,8 +18,61 @@ namespace LtlTool.Api.Features.Ltl.Consolidation;
 public sealed class ConsolidationController(
     ConsolidationCandidateService candidates,
     ConsolidationPlanService plans,
-    IConsolidationAuditStore audits) : ControllerBase
+    IConsolidationAuditStore audits,
+    IOptions<ConsolidationOptions> options) : ControllerBase
 {
+    private readonly ConsolidationOptions _options = options.Value;
+
+    /// <summary>
+    /// Lists the consolidation corridors the planner recognises today, joined with each
+    /// corridor's origin and destination warehouse metadata. Read-only, honest projection of
+    /// static config — not a place to declare arbitrary new corridors at runtime. Any UI or
+    /// automation that needs to know "where can I plan?" reads from here.
+    ///
+    /// <para>Used by the demo-workflow Playwright suite to pick a corridor with live loads;
+    /// hardcoding LAREDO_TO_DALLAS in that suite would ossify the pilot's shape into E2E.</para>
+    /// </summary>
+    [HttpGet("corridors")]
+    [ProducesResponseType(typeof(IReadOnlyList<CorridorSummary>), StatusCodes.Status200OK)]
+    public ActionResult<IReadOnlyList<CorridorSummary>> GetCorridors()
+    {
+        // Build a warehouse-code -> warehouse lookup once so per-corridor projection is O(1).
+        var warehouseByCode = _options.Warehouses.ToDictionary(
+            w => w.Code, w => w, StringComparer.OrdinalIgnoreCase);
+
+        var summaries = _options.Corridors
+            .Where(c => warehouseByCode.ContainsKey(c.OriginWarehouseCode)
+                     && warehouseByCode.ContainsKey(c.DestinationWarehouseCode))
+            .Select(c =>
+            {
+                var origin = warehouseByCode[c.OriginWarehouseCode];
+                var destination = warehouseByCode[c.DestinationWarehouseCode];
+                return new CorridorSummary
+                {
+                    Code = c.Code,
+                    Origin = new WarehouseSummary
+                    {
+                        Code = origin.Code,
+                        Name = origin.Name,
+                        State = origin.State,
+                        NearbyCities = origin.NearbyCities,
+                    },
+                    Destination = new WarehouseSummary
+                    {
+                        Code = destination.Code,
+                        Name = destination.Name,
+                        State = destination.State,
+                        NearbyCities = destination.NearbyCities,
+                    },
+                    PickupWindowDays = c.PickupWindowDays,
+                    DeliveryWindowDays = c.DeliveryWindowDays,
+                };
+            })
+            .ToList();
+
+        return Ok(summaries);
+    }
+
     /// <summary>
     /// Returns ranked consolidation candidates for the given seed load along the specified
     /// corridor. Missing seed → 200 with a null Seed and empty candidate list.

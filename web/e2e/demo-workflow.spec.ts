@@ -106,25 +106,75 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     request,
   }) => {
     // This test only asserts the driver-RPM math surfaces IF a plan can be built end-to-end.
-    // We pick a seed from live Alvys via the API rather than hardcoding one that might not
-    // exist. If no live seed with siblings is available, the test is skipped — better than
-    // flaking against a tenant's current load state.
-    // Endpoint is /api/ltl/search (see LtlController.Search). We hit the same API the SPA
-    // uses so the spec picks a seed that will definitely resolve when the frontend queries.
-    const search = await request.get(
-      `${API_URL}/api/ltl/search?originCity=Laredo&destinationCity=Dallas`,
-    );
-    if (!search.ok()) {
-      test.skip(true, `LTL search API returned ${search.status()}; skipping plan-preview E2E.`);
+    // We look up the configured corridors from the API rather than hardcoding a city pair —
+    // that way the pilot's shape can widen (add more corridors to ConsolidationOptions) and
+    // this spec starts exercising them without any test code change.
+    //
+    // Fallback ladder: for each configured corridor, try each nearby-cities cross-product
+    // until we find a pair with a live seed. If none has a live seed, test.skip() cleanly.
+    // Better a skipped test than a flake against real load-state variance.
+    const corridorsResp = await request.get(`${API_URL}/api/ltl/consolidation/corridors`);
+    if (!corridorsResp.ok()) {
+      test.skip(true, `Corridors API returned ${corridorsResp.status()}; skipping plan-preview.`);
       return;
     }
-    const searchBody = await search.json();
-    const items = (searchBody.items ?? []) as Array<{ id: string; loadNumber?: string | null }>;
-    const seed = items.find(l => l.loadNumber || l.id);
+    const corridors = (await corridorsResp.json()) as Array<{
+      code: string;
+      origin: { nearbyCities: string[] };
+      destination: { nearbyCities: string[] };
+    }>;
+    if (corridors.length === 0) {
+      test.skip(true, 'No consolidation corridors configured; skipping plan-preview.');
+      return;
+    }
+
+    // Walk each configured corridor and each origin/destination city pair inside it, taking
+    // the first live seed we find. "First" is arbitrary — the pilot corridor is
+    // LAREDO_TO_DALLAS so that's where matches will land 95% of the time, but we don't
+    // hardcode that assumption.
+    type Seed = { loadNumber?: string | null; id: string };
+    let seed: Seed | undefined;
+    let matchedCorridor = '';
+    let matchedOrigin = '';
+    let matchedDest = '';
+    for (const corridor of corridors) {
+      for (const originCity of corridor.origin.nearbyCities) {
+        for (const destCity of corridor.destination.nearbyCities) {
+          const search = await request.get(
+            `${API_URL}/api/ltl/search?originCity=${encodeURIComponent(originCity)}&destinationCity=${encodeURIComponent(destCity)}`,
+          );
+          if (!search.ok()) continue;
+          const body = await search.json();
+          const items = (body.items ?? []) as Seed[];
+          const candidate = items.find(l => l.loadNumber || l.id);
+          if (candidate) {
+            seed = candidate;
+            matchedCorridor = corridor.code;
+            matchedOrigin = originCity;
+            matchedDest = destCity;
+            break;
+          }
+        }
+        if (seed) break;
+      }
+      if (seed) break;
+    }
+
     if (!seed) {
-      test.skip(true, 'No Laredo → Dallas loads currently open in Alvys; skipping plan-preview E2E.');
+      const total = corridors.reduce(
+        (n, c) => n + c.origin.nearbyCities.length * c.destination.nearbyCities.length,
+        0,
+      );
+      test.skip(
+        true,
+        `No live loads found across ${corridors.length} corridors / ${total} city pairs; skipping plan-preview.`,
+      );
       return;
     }
+
+    console.log(
+      `  ▸ Using seed ${seed.loadNumber ?? seed.id} from corridor ${matchedCorridor} (${matchedOrigin} → ${matchedDest})`,
+    );
 
     await pauseSoOperatorCanSee(page, `Seeding Consolidate with load ${seed.loadNumber ?? seed.id}`);
     await page.goto('/ltl/consolidate');
