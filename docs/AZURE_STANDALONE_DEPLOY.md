@@ -7,7 +7,59 @@ real public Azure URL right away, without waiting on Entra Contributor role
 assignment. Flipping to EntraId later is a one-command reconfigure — no
 rebuild.
 
-## Why standalone
+Three paths, pick one:
+
+1. **[Azure Cloud Shell one-shot](#option-a-cloud-shell-one-shot-recommended)** —
+   no local Docker, no Windows PowerShell, browser-only. **Recommended for the
+   first run.**
+2. **[Windows PowerShell two-step](#option-b-windows-powershell-two-step)** —
+   if you want to run from your local box (needs Docker Desktop).
+3. **Manual** — read the Bicep template and app-settings script and adapt.
+
+## Option A: Cloud Shell one-shot (recommended)
+
+Open [https://shell.azure.com](https://shell.azure.com) in your browser —
+Bash mode. You're already authenticated as your Azure user. Then:
+
+```bash
+curl -O https://raw.githubusercontent.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/main/scripts/cloud-shell-deploy.sh
+chmod +x cloud-shell-deploy.sh
+./cloud-shell-deploy.sh
+```
+
+The script:
+
+1. Verifies your Azure login + subscription.
+2. Prompts (hidden input) for your **Alvys va336 client secret** and a
+   **new SQL admin password**.
+3. Clones the repo into `~/ltl-tool-detection-planner-and-booker` in your
+   Cloud Shell home.
+4. Creates `ltl-standalone-rg` in `centralus` and deploys the Bicep template
+   (ACR, SQL server + DB, App Service Plan, two App Services, Log Analytics,
+   App Insights). Takes 4-8 minutes.
+5. Builds the API + Web images via **ACR Tasks** (`az acr build`) — no local
+   Docker needed. Takes 3-5 minutes per image.
+6. Points the two App Services at the fresh images.
+7. Writes app settings for `AccessPolicy:Mode=Demo` + live Alvys + writeback
+   disabled.
+8. Restarts the App Services.
+9. Polls `/api/health` until it reports `authMode: Demo` (up to 4 min).
+10. Prints the public web URL, API URL, and health URL.
+
+**Total time: ~10-15 min.** Re-run any time to pick up new code from `main`.
+
+### Optional overrides (Cloud Shell)
+
+Set env vars before running:
+
+```bash
+export LOCATION=eastus2
+export BASE_NAME=ltl-pilot-01
+export REPO_REF=feat/some-branch     # deploy a branch instead of main
+export ACCESS_POLICY_MODE=EntraId    # when you have Entra ready
+```
+
+## Why standalone (applies to both options)
 
 `ltl-uat-rg` was blocked all week on the Entra Contributor role. The
 standalone RG side-steps that entirely:
@@ -32,7 +84,9 @@ production-facing surface:
 4. `DemoAuthenticationHandler` is a separate `.cs` file, only wired into the
    pipeline when the mode gate matches.
 
-## Prerequisites
+## Option B: Windows PowerShell two-step
+
+### Prerequisites
 
 - Azure CLI on the Windows box you're running from (`winget install -e --id Microsoft.AzureCLI`).
 - Docker Desktop running locally (used to build the container images).
@@ -43,7 +97,7 @@ production-facing surface:
   subscription temporarily, or on a parent management group.
 - Your va336 Alvys client secret (same one the local demo runner uses).
 
-## Step 1: provision infrastructure
+### Step 1: provision infrastructure
 
 From the LTL repo root in PowerShell:
 
@@ -71,7 +125,7 @@ Optional switches:
 .\scripts\setup-ltl-standalone.ps1 -BaseName ltl-pilot-01
 ```
 
-## Step 2: build + deploy images
+### Step 2: build + deploy images
 
 ```powershell
 $env:ALVYS_CLIENT_SECRET = "<your va336 client secret>"
@@ -94,7 +148,7 @@ The script will:
 
 Expect ~5-10 minutes total (mostly Docker build + push).
 
-## Step 3: verify
+### Step 3: verify
 
 ```powershell
 # Wait ~90s after the script prints "Deployed" so App Service pulls the images.
