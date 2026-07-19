@@ -6,15 +6,15 @@ server {
 
     location /api/ {
         # Azure App Service does host-based routing on the front door. Passing the
-        # web app's Host header upstream yields 400. Rewrite Host to the API host
-        # so App Service routes the request to the API app correctly.
+        # web app's Host header upstream yields 400. Use $proxy_host (nginx's own
+        # extracted host from proxy_pass) to rewrite Host and SNI to the upstream.
         proxy_pass ${API_UPSTREAM}/api/;
-        proxy_set_header Host ${API_HOST};
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host $host;
         proxy_ssl_server_name on;
-        proxy_ssl_name ${API_HOST};
+        proxy_ssl_name $proxy_host;
     }
 
     location / {

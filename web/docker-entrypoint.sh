@@ -5,10 +5,6 @@
 set -e
 
 export API_UPSTREAM="${API_UPSTREAM:-http://api:8080}"
-# Extract hostname (without scheme, port, or path) so the nginx proxy can
-# rewrite the Host header. Azure App Service does host-based routing on the
-# public front door — passing the wrong Host yields 400.
-export API_HOST="$(echo "$API_UPSTREAM" | sed -E 's#^https?://##; s#/.*##; s#:[0-9]+$##')"
 
 cat > /usr/share/nginx/html/runtime-config.json <<EOF
 {
