@@ -25,8 +25,17 @@ public sealed class AlvysClient(
     /// <summary>Named client used for Alvys API (non-auth) calls.</summary>
     public const string ApiHttpClientName = "AlvysApi";
 
-    private static readonly JsonSerializerOptions JsonOptions =
-        new(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var opts = new JsonSerializerOptions(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true };
+        // Tolerant wire-shape converters — Alvys returns numerics as strings, tender
+        // DateImported as a plain string vs the documented wrapper, etc. Without these
+        // a real tender response 500s the /alvys/tenders/search boundary.
+        AlvysWireConverters.AddToOptions(opts);
+        return opts;
+    }
 
     private readonly AlvysOptions _options = options.Value;
 
