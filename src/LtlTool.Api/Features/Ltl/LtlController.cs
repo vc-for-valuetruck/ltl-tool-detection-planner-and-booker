@@ -42,11 +42,25 @@ public sealed class LtlController(
     public async Task<IActionResult> GetOpportunities(
         [FromQuery] int limit = 10,
         [FromQuery] int lookbackDays = 14,
+        [FromQuery] bool debug = false,
         CancellationToken ct = default)
     {
-        var opportunities = await consolidationOpportunityService
-            .FindOpportunitiesAsync(limit, lookbackDays, ct);
-        return Ok(opportunities);
+        try
+        {
+            var opportunities = await consolidationOpportunityService
+                .FindOpportunitiesAsync(limit, lookbackDays, ct);
+            return Ok(opportunities);
+        }
+        catch (Exception ex) when (debug)
+        {
+            return StatusCode(500, new
+            {
+                error = ex.GetType().FullName,
+                message = ex.Message,
+                stack = ex.StackTrace,
+                inner = ex.InnerException?.Message
+            });
+        }
     }
 
     [HttpPost("consolidation/audit")]
