@@ -2,8 +2,31 @@
   <header class="header">
     <div class="header-title">
       <h1>Consolidate</h1>
-      <div class="corridor-banner">
-        <span class="corridor-name">Laredo → Dallas pilot corridor</span>
+      <div class="corridor-picker" data-testid="corridor-picker">
+        @if (loadingCorridors()) {
+          <span class="corridor-name muted">Loading corridors…</span>
+        } @else if (corridors().length === 0) {
+          <span class="corridor-name">Laredo → Dallas pilot corridor</span>
+        } @else {
+          @for (row of corridors(); track row.code) {
+            <button
+              type="button"
+              class="corridor-chip"
+              [class.selected]="selectedCorridor() === row.code"
+              [attr.data-testid]="'corridor-chip-' + row.code"
+              (click)="selectCorridor(row.code)"
+            >
+              <span class="corridor-chip-name">{{ row.originName }} → {{ row.destinationName }}</span>
+              @if (row.openLoadCount === null) {
+                <span class="corridor-chip-count muted">…</span>
+              } @else {
+                <span class="corridor-chip-count" [class.zero]="row.openLoadCount === 0">
+                  {{ row.openLoadCount }} open
+                </span>
+              }
+            </button>
+          }
+        }
         <span class="corridor-tag">Phase 1 · Pilot · Read-only</span>
       </div>
     </div>

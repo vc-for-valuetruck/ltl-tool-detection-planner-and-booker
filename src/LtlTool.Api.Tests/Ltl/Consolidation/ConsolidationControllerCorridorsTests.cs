@@ -86,12 +86,13 @@ public class ConsolidationControllerCorridorsTests
 
     private static ConsolidationController BuildController(ConsolidationOptions options)
     {
-        // Endpoint doesn't touch these; nulls are fine for direct-construction unit tests.
-        // If the endpoint ever grows to invoke them, this test will crash and we'll fix it.
+        // /corridors doesn't touch candidates/plans/audits/loads; nulls are fine for this
+        // direct-construction test. Health-endpoint tests use BuildControllerWithLoads.
         return new ConsolidationController(
             candidates: null!,
             plans: null!,
             audits: null!,
-            options: Microsoft.Extensions.Options.Options.Create(options));
+            options: Microsoft.Extensions.Options.Options.Create(options),
+            loads: null!);
     }
 }

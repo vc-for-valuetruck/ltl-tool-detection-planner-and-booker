@@ -128,6 +128,25 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
       return;
     }
 
+    // Cheap early-exit: if the corridor-health endpoint reports zero open loads across all
+    // configured corridors, don't bother crawling nearby-cities cross-products — skip clean
+    // with a specific reason.
+    const healthResp = await request.get(`${API_URL}/api/ltl/consolidation/corridors/health`);
+    if (healthResp.ok()) {
+      const healths = (await healthResp.json()) as Array<{
+        code: string;
+        openLoadCount: number | null;
+      }>;
+      const total = healths.reduce((n, h) => n + (h.openLoadCount ?? 0), 0);
+      if (total === 0) {
+        test.skip(
+          true,
+          `Corridor health reports 0 open loads across ${healths.length} corridors; skipping plan-preview.`,
+        );
+        return;
+      }
+    }
+
     // Walk each configured corridor and each origin/destination city pair inside it, taking
     // the first live seed we find. "First" is arbitrary — the pilot corridor is
     // LAREDO_TO_DALLAS so that's where matches will land 95% of the time, but we don't

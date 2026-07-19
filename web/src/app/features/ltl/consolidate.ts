@@ -1,7 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { forkJoin } from 'rxjs';
 import { ConsolidationService } from './consolidation.service';
 import {
   ConsolidationAuditRecord,
@@ -10,7 +11,22 @@ import {
   ConsolidationFactor,
   ConsolidationFit,
   ConsolidationPlanResponse,
+  CorridorHealth,
+  CorridorSummary,
 } from './consolidation.models';
+
+/** Merged view of a corridor + its live open-load count, ready to render in the picker. */
+export interface CorridorPickerRow {
+  code: string;
+  originName: string;
+  destinationName: string;
+  /**
+   * `null` when the corridors-health call degraded or hasn't completed yet. Distinct from
+   * `0` (which means "we asked Alvys and there are no open loads right now").
+   */
+  openLoadCount: number | null;
+  loadedCleanly: boolean;
+}
 
 /**
  * Phase 1 pilot: Laredo → Dallas consolidation planner. Three screens on one route:
@@ -29,8 +45,13 @@ import {
   templateUrl: './consolidate.html',
   styleUrls: ['./consolidate.css'],
 })
-export class Consolidate {
+export class Consolidate implements OnInit {
   private readonly consolidation = inject(ConsolidationService);
+
+  // Corridor picker (loaded once on init).
+  readonly loadingCorridors = signal(true);
+  readonly corridors = signal<CorridorPickerRow[]>([]);
+  readonly selectedCorridor = signal<string>('LAREDO_TO_DALLAS');
 
   // Screen 1: candidate search
   readonly seedInput = signal('');
@@ -58,6 +79,46 @@ export class Consolidate {
     () => !!this.plan() && (this.plan()?.blockers.length ?? 0) === 0 && !this.recordingAudit(),
   );
 
+  ngOnInit(): void {
+    // Fire both calls in parallel. /corridors is static config and cheap; /corridors/health
+    // hits Alvys per corridor. Merged into a single picker row so we can display counts
+    // alongside labels the moment both land. If /corridors returns first and /health is
+    // still in flight we render with openLoadCount=null ("…") and let it fill in.
+    forkJoin({
+      corridors: this.consolidation.getCorridors(),
+      health: this.consolidation.getCorridorHealth(),
+    }).subscribe({
+      next: ({ corridors, health }) => {
+        const healthByCode = new Map<string, CorridorHealth>(health.map(h => [h.code, h]));
+        this.corridors.set(
+          corridors.map(c => ({
+            code: c.code,
+            originName: c.origin.name,
+            destinationName: c.destination.name,
+            openLoadCount: healthByCode.get(c.code)?.openLoadCount ?? null,
+            loadedCleanly: healthByCode.has(c.code) && healthByCode.get(c.code)?.openLoadCount !== null,
+          })),
+        );
+        this.loadingCorridors.set(false);
+      },
+      error: () => {
+        // Corridors are non-essential for the seed-based workflow — the picker's absence is
+        // not fatal; the dispatcher can still type a seed and hit Find candidates. Degrade
+        // silently and let the rest of the tab work.
+        this.corridors.set([]);
+        this.loadingCorridors.set(false);
+      },
+    });
+  }
+
+  selectCorridor(code: string): void {
+    this.selectedCorridor.set(code);
+    // Clear any stale candidates/plan when the corridor changes.
+    this.candidateResponse.set(null);
+    this.selectedSiblingIds.set(new Set<string>());
+    this.plan.set(null);
+  }
+
   loadCandidates(): void {
     const seed = this.seedInput().trim();
     if (!seed) return;
@@ -70,7 +131,7 @@ export class Consolidate {
     this.auditRecord.set(null);
     this.copyMessage.set(null);
 
-    this.consolidation.getCandidates(seed).subscribe({
+    this.consolidation.getCandidates(seed, this.selectedCorridor()).subscribe({
       next: (response) => {
         this.candidateResponse.set(response);
         this.loadingCandidates.set(false);

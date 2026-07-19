@@ -96,7 +96,7 @@ internal class FakeAlvysClient : IAlvysClient
         int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
         => throw new NotSupportedException();
 
-    public Task<AlvysLoadsResponse> SearchLoadsAsync(LoadSearchRequest request, CancellationToken ct = default)
+    public virtual Task<AlvysLoadsResponse> SearchLoadsAsync(LoadSearchRequest request, CancellationToken ct = default)
     {
         // Honor paging so the sweep terminates: serve one page from the configured list.
         var items = Loads.Skip(request.Page * request.PageSize).Take(request.PageSize).ToList();
