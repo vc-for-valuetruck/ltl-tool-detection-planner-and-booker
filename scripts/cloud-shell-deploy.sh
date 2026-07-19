@@ -128,27 +128,12 @@ if [[ -z "${ALVYS_CLIENT_SECRET:-}" ]]; then
     exit 1
 fi
 
-if [[ -z "${SQL_ADMIN_PASSWORD:-}" ]]; then
-    echo ""
-    echo "Choose a SQL admin password (8-128 chars; three of upper/lower/digit/symbol):"
-    read -rs SQL_ADMIN_PASSWORD
-    echo ""
-    echo "Confirm:"
-    read -rs SQL_ADMIN_PASSWORD_CONFIRM
-    echo ""
-    if [[ "$SQL_ADMIN_PASSWORD" != "$SQL_ADMIN_PASSWORD_CONFIRM" ]]; then
-        err "Passwords do not match."
-        exit 1
-    fi
-    if [[ ${#SQL_ADMIN_PASSWORD} -lt 8 ]]; then
-        err "SQL admin password must be at least 8 characters."
-        exit 1
-    fi
-    if [[ "$SQL_ADMIN_PASSWORD" == *"ltlsqladmin"* ]]; then
-        err "SQL admin password must not contain 'ltlsqladmin'."
-        exit 1
-    fi
-fi
+# Stable SQL admin password for the ltl-standalone pilot. Keeping this fixed lets
+# subsequent runs be fully non-interactive; Bicep is idempotent so re-passing the
+# same value is a no-op after the first provision. Override by exporting
+# SQL_ADMIN_PASSWORD before running the script. Meets Azure SQL rules:
+# 8-128 chars, three of upper/lower/digit/symbol, no 'ltlsqladmin'.
+SQL_ADMIN_PASSWORD="${SQL_ADMIN_PASSWORD:-Vt#Ltl-Pilot-2026$Az}"
 
 if [[ "$ACCESS_POLICY_MODE" == "EntraId" && -z "${AZURE_AD_CLIENT_SECRET:-}" ]]; then
     err "ACCESS_POLICY_MODE=EntraId requires AZURE_AD_CLIENT_SECRET (env var)."
