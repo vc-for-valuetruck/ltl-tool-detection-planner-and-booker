@@ -133,7 +133,8 @@ fi
 # same value is a no-op after the first provision. Override by exporting
 # SQL_ADMIN_PASSWORD before running the script. Meets Azure SQL rules:
 # 8-128 chars, three of upper/lower/digit/symbol, no 'ltlsqladmin'.
-SQL_ADMIN_PASSWORD="${SQL_ADMIN_PASSWORD:-Vt#Ltl-Pilot-2026$Az}"
+# Use SINGLE quotes for the default so $ characters are treated literally by bash.
+SQL_ADMIN_PASSWORD="${SQL_ADMIN_PASSWORD:-$(printf '%s' 'Vt#Ltl-Pilot-2026-Az')}"
 
 if [[ "$ACCESS_POLICY_MODE" == "EntraId" && -z "${AZURE_AD_CLIENT_SECRET:-}" ]]; then
     err "ACCESS_POLICY_MODE=EntraId requires AZURE_AD_CLIENT_SECRET (env var)."
