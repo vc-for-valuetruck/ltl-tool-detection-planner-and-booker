@@ -6,16 +6,9 @@ import { RouterLink } from '@angular/router';
  * plan detail) so the navigation is visible from the `/ltl` landing — previously it only
  * appeared on the Consolidate board (issue #79).
  *
-<<<<<<< HEAD
- * Search and Consolidate are live destinations: Search routes to the `/ltl` live search
- * workbench, Consolidate to the `/ltl/consolidate` board. Billing / Exceptions / Tenders are
- * Phase 2 stubs: their backend endpoints exist but no screen is wired yet, so they are rendered
- * as non-navigating tabs carrying a "Phase 2" badge rather than links that mislead the dispatcher
-=======
  * Search and Consolidate are live destinations. Billing / Exceptions / Tenders remain Phase 2
  * stubs: their backend endpoints exist but no screen is wired yet, so they render as
  * non-navigating tabs carrying a "Phase 2" badge rather than links that mislead the dispatcher
->>>>>>> origin/main
  * into a dead redirect.
  */
 @Component({
