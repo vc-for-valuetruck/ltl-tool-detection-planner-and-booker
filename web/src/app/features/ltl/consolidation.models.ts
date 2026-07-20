@@ -157,6 +157,51 @@ export interface WarehouseSummary {
 }
 
 /**
+ * One live consolidation opportunity discovered by the "Today's consolidations" sweep
+ * (`GET /ltl/consolidation/opportunities`). Every field is a live Alvys read grouped by
+ * same-customer / same-day / same-lane — never fabricated. Reused by the Consolidate board to
+ * discover live lanes (across all lanes, not just the pilot corridor) so the demo can walk the
+ * full workflow against real data even when the pilot corridor has no open loads today.
+ */
+export interface ConsolidationOpportunityLoad {
+  loadNumber: string;
+  loadId: string;
+  customerName: string;
+  originCity: string;
+  originState: string;
+  destinationCity: string;
+  destinationState: string;
+  linehaulAmount: number;
+  miles: number;
+  rpm: number;
+  weightPounds: number | null;
+}
+
+export interface ConsolidationOpportunity {
+  rank: number;
+  originState: string;
+  destinationState: string;
+  originCity: string;
+  destinationCity: string;
+  pickupDate: string;
+  customerName: string;
+  combinedRevenue: number;
+  parentLinehaulMiles: number;
+  combinedRpm: number;
+  projectedUplift: number;
+  parent: ConsolidationOpportunityLoad;
+  siblings: ConsolidationOpportunityLoad[];
+}
+
+export interface ConsolidationOpportunitiesResponse {
+  opportunities: ConsolidationOpportunity[];
+  totalScanned: number;
+  totalPairsFound: number;
+  generatedAt: string;
+  dataSource: string;
+}
+
+/**
  * Live per-corridor open-load count. `openLoadCount === null` means the Alvys read
  * degraded — the UI must show "unknown" honestly rather than a misleading zero.
  */

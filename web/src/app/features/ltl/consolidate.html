@@ -37,6 +37,14 @@
     }
   </div>
 
+  @if (selectedIsOutsidePilot()) {
+    <div class="live-lane-note" data-testid="consolidate-live-lane-note">
+      <strong>Live lane — outside pilot corridor.</strong>
+      Discovered from today's live Alvys loads so the full workflow can be walked against real data.
+      Same-customer / same-day / same-lane grouping · read-only.
+    </div>
+  }
+
   <!-- Filters / seed entry -->
   <div class="filter-row">
     <span class="filter-label">Filters:</span>
@@ -131,7 +139,13 @@
                 </td>
                 <td><span class="chip chip-good">Good</span></td>
                 <td><span class="chip chip-good">Good</span></td>
-                <td><span class="chip chip-good">Allowed</span></td>
+                <td>
+                  @if (liveLaneMode()) {
+                    <span class="chip chip-unknown" title="Consolidation policy tier not read here — confirm with the account owner.">Unknown</span>
+                  } @else {
+                    <span class="chip chip-good">Allowed</span>
+                  }
+                </td>
                 <td><span class="action-label action-parent">Parent</span></td>
               </tr>
 
@@ -288,5 +302,8 @@
 
   <div class="consolidate-footer muted" data-testid="consolidate-footer">
     Source: Live Alvys · Corridor: {{ selectedCorridorLabel() }} · Read-only
+    @if (totalScanned() !== null) {
+      <span aria-hidden="true"> · </span>{{ totalScanned() }} loads scanned<span aria-hidden="true"> · </span>updated {{ generatedAt() ? (generatedAt() | date: 'short') : '—' }}
+    }
   </div>
 </div>

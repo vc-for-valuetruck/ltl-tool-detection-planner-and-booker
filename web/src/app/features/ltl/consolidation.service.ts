@@ -5,6 +5,7 @@ import { RUNTIME_CONFIG } from '../../runtime-config';
 import {
   ConsolidationAuditRecord,
   ConsolidationCandidateResponse,
+  ConsolidationOpportunitiesResponse,
   ConsolidationPlanRequest,
   ConsolidationPlanResponse,
   CorridorSummary,
@@ -63,4 +64,45 @@ export class ConsolidationService {
   getCorridorHealth(): Observable<CorridorHealth[]> {
     return this.http.get<CorridorHealth[]>(`${this.base}/corridors/health`);
   }
+
+  /**
+   * The "Today's consolidations" sweep: same-customer / same-day / same-lane opportunities
+   * discovered from live Alvys loads across ALL lanes (not just the pilot corridor). The
+   * Consolidate board reuses this to surface live lanes in the corridor picker so the workflow
+   * can be walked against real data when the pilot corridor is empty. Read-only.
+   */
+  getOpportunities(limit = 25): Observable<ConsolidationOpportunitiesResponse> {
+    const params = new HttpParams().set('limit', limit);
+    return this.http.get<ConsolidationOpportunitiesResponse>(
+      `${this.base}/opportunities`,
+      { params },
+    );
+  }
+
+  /**
+   * Records a live-lane plan (outside the pilot corridor) as an internal audit entry via the
+   * ungated audit endpoint the click-card screen also uses. The corridor-gated
+   * {@link recordPlanAudit} rejects non-pilot lanes by design, so live lanes use this path.
+   * Read-only against Alvys — the audit store is internal-only.
+   */
+  recordLiveAudit(request: LiveAuditRequest): Observable<LiveAuditResponse> {
+    return this.http.post<LiveAuditResponse>(`${this.base}/audit`, request);
+  }
+}
+
+export interface LiveAuditRequest {
+  parentLoadNumber: string;
+  siblingLoadNumbers: string[];
+  combinedRevenue?: number | null;
+  combinedRpm?: number | null;
+}
+
+export interface LiveAuditResponse {
+  auditId: string;
+  recordedAt: string;
+  recordedBy: string;
+  parentLoadNumber: string;
+  siblingLoadNumbers: string[];
+  combinedRevenue?: number | null;
+  combinedRpm?: number | null;
 }
