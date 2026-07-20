@@ -202,11 +202,19 @@ public sealed class LtlLoadService(
     /// <summary>Raw + documents resolution used by detail and matching.</summary>
     public async Task<AlvysLoad?> ResolveLoadAsync(string idOrNumber, CancellationToken ct)
     {
-        // id, loadNumber and orderNumber are all accepted by the Alvys detail lookup; pass the
-        // value as all three so the caller doesn't need to know which identifier they hold.
-        var lookup = new LoadLookup { Id = idOrNumber, LoadNumber = idOrNumber, OrderNumber = idOrNumber };
+        // Alvys's /loads detail endpoint rejects requests that include more than one of
+        // id / loadNumber / orderNumber (HTTP 400: "Only one of 'id', 'loadNumber' or
+        // 'orderNumber' should be provided."). Discriminate up front: values shaped like a
+        // UUID are treated as an Alvys Id; everything else falls through to loadNumber, which
+        // is the shape the LTL UI links use (L-1001805 → "1001805"). Callers that hold an
+        // orderNumber can call GetLoadAsync directly with an explicit LoadLookup.
+        var lookup = LooksLikeGuid(idOrNumber)
+            ? new LoadLookup { Id = idOrNumber }
+            : new LoadLookup { LoadNumber = idOrNumber };
         return await alvys.GetLoadAsync(lookup, ct);
     }
+
+    private static bool LooksLikeGuid(string s) => Guid.TryParse(s, out _);
 
     /// <summary>
     /// Billing worklist: normalized loads that still need billing attention (not yet invoiced),
