@@ -67,7 +67,22 @@ jobs:
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          # allow-no-subscriptions: the SP has no subscription-scope role assignments,
+          # but does have direct resource-scope roles on the ACR + App Services. Skipping
+          # sub discovery lets the login succeed; subsequent az commands scoped to a
+          # specific resource id work because Azure evaluates RBAC at the resource level.
+          allow-no-subscriptions: true
+
+      - name: Configure subscription context
+        shell: bash
+        env:
+          SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          # Even without a role assignment on the sub, we can set it as the default context
+          # for subsequent az commands. Individual resource operations still evaluate RBAC
+          # on the specific target resource.
+          az account set --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
+          az account show --output none 2>/dev/null || echo "Note: no subscription visibility; scoped resource ops will still work."
 
       - name: Resolve image tag
         id: vars
