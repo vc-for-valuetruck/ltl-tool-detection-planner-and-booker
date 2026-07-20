@@ -36,6 +36,9 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/consolidation/candidates?loadId=100&corridor=LAREDO_TO_DALLAS")]
     [InlineData("/api/ltl/consolidation/plan/audits")]
     [InlineData("/api/ltl/consolidation/plan/audits?parentLoadId=L-100234")]
+    [InlineData("/api/ltl/notifications")]
+    [InlineData("/api/ltl/notifications?max=25")]
+    [InlineData("/api/ltl/notifications/channels")]
     public async Task Ltl_get_routes_are_mapped_and_protected(string route)
     {
         var client = _factory.CreateClient();

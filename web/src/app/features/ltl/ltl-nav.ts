@@ -35,6 +35,9 @@ import { RouterLink } from '@angular/router';
         <a routerLink="/ltl/consolidate" class="shell-tab" [class.active]="active === 'consolidate'" role="tab">
           Consolidate
         </a>
+        <a routerLink="/ltl/notifications" class="shell-tab" [class.active]="active === 'notifications'" role="tab">
+          Notifications
+        </a>
       </div>
     </nav>
   `,
@@ -99,5 +102,13 @@ import { RouterLink } from '@angular/router';
 })
 export class LtlNav {
   /** Which tab is currently active; null on screens outside the strip. */
-  @Input() active: 'search' | 'loads' | 'consolidate' | 'billing' | 'exceptions' | 'tenders' | null = null;
+  @Input() active:
+    | 'search'
+    | 'loads'
+    | 'consolidate'
+    | 'billing'
+    | 'exceptions'
+    | 'tenders'
+    | 'notifications'
+    | null = null;
 }

@@ -105,4 +105,19 @@ describe('LtlNav', () => {
     fixture.detectChanges();
     expect(tabByText('Tenders')!.classList).toContain('active');
   });
+
+  it('renders Notifications as a live link to /ltl/notifications, no Phase 2 badge', () => {
+    fixture.detectChanges();
+
+    const notifications = tabByText('Notifications');
+    expect(notifications!.tagName).toBe('A');
+    expect(notifications!.getAttribute('href')).toBe('/ltl/notifications');
+    expect(notifications!.querySelector('.phase-badge')).toBeNull();
+  });
+
+  it('highlights the Notifications tab when active="notifications"', () => {
+    fixture.componentInstance.active = 'notifications';
+    fixture.detectChanges();
+    expect(tabByText('Notifications')!.classList).toContain('active');
+  });
 });
