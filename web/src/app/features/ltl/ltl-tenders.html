@@ -41,6 +41,9 @@
               <th>Lane</th>
               <th>Equipment</th>
               <th>Weight</th>
+              <th title="From the EDI tender order lines">Pieces</th>
+              <th title="From the EDI tender (aggregate or summed order lines)">Volume</th>
+              <th title="Counted EDI QtyPallets, else a volume-based est.">Pallets</th>
               <th>Rate</th>
             </tr>
           </thead>
@@ -60,6 +63,15 @@
                 <td>{{ row.origin }} → {{ row.destination }}</td>
                 <td>{{ row.equipment }}</td>
                 <td>{{ formatWeight(row.weight) }}</td>
+                <td data-testid="tenders-pieces">{{ formatPieces(row.pieces) }}</td>
+                <td data-testid="tenders-volume">{{ formatVolume(row.volumeCuFt) }}</td>
+                <td data-testid="tenders-pallets" [attr.title]="palletTitle(row)">
+                  <span
+                    [class.pallets-est]="row.pallets?.estimated"
+                    [class.text-muted]="!row.pallets"
+                    >{{ formatPallets(row.pallets) }}</span
+                  >
+                </td>
                 <td>{{ formatRate(row.rate) }}</td>
               </tr>
             }
@@ -69,7 +81,9 @@
     </div>
 
     <div class="worklist-footer" data-testid="tenders-footer">
-      Source: Live Alvys · Tenders (New) · Read-only
+      Source: Live Alvys · Tenders (New) · Read-only. Pieces, volume and pallet counts come from the
+      EDI tender; pallets marked <span class="pallets-est">est.</span> are derived from volume, not a
+      counted pallet — verify at dock.
     </div>
   }
 </div>
