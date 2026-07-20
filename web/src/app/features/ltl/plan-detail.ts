@@ -85,6 +85,25 @@ export class PlanDetail implements OnInit {
   /** True when the fit verdict came back clean. */
   readonly trailerFitOk = computed(() => this.trailerFit()?.verdict === 'Fits');
 
+  /**
+   * Human verdict chip for the fit panel (Phase 7.1). Maps the server verdict to the dispatcher
+   * vocabulary the demo uses:
+   *   - PASS         — packer arranged the plan within capacity (verdict 'Fits').
+   *   - OVER         — combined weight/pallets exceed the trailer maximum (verdict 'DoesNotFit'
+   *                    with capacityExceeded), a pure-arithmetic veto that holds even when the
+   *                    packing sidecar is unreachable.
+   *   - DOES NOT FIT — packer could not arrange the pieces though capacity was not exceeded.
+   *   - UNVERIFIED   — dimensions unavailable or the fit engine is off/unreachable; the panel
+   *                    tells the dispatcher to verify at the dock rather than implying a check ran.
+   */
+  readonly fitVerdictLabel = computed<'PASS' | 'OVER' | 'DOES NOT FIT' | 'UNVERIFIED'>(() => {
+    const fit = this.trailerFit();
+    if (!fit) return 'UNVERIFIED';
+    if (fit.verdict === 'Fits') return 'PASS';
+    if (fit.verdict === 'DoesNotFit') return fit.capacityExceeded ? 'OVER' : 'DOES NOT FIT';
+    return 'UNVERIFIED';
+  });
+
   readonly allLoads = computed(() => {
     const parent = this.parent();
     return parent ? [parent, ...this.siblings()] : [];
