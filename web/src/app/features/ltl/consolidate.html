@@ -22,28 +22,28 @@
     <span class="phase-pill">Phase 1 &middot; Pilot</span>
   </div>
 
-  @if (corridors().length > 1) {
-    <div class="corridor-picker" data-testid="corridor-picker">
-      @for (row of corridors(); track row.code) {
-        <button
-          type="button"
-          class="corridor-chip"
-          [class.selected]="selectedCorridor() === row.code"
-          [attr.data-testid]="'corridor-chip-' + row.code"
-          (click)="selectCorridor(row.code)"
-        >
-          <span class="corridor-chip-name">{{ row.originName }} → {{ row.destinationName }}</span>
-          @if (row.openLoadCount === null) {
-            <span class="corridor-chip-count muted">…</span>
-          } @else {
-            <span class="corridor-chip-count" [class.zero]="row.openLoadCount === 0">
-              {{ row.openLoadCount }} open
-            </span>
-          }
-        </button>
-      }
-    </div>
-  }
+  <div class="corridor-picker" data-testid="corridor-picker">
+    @for (row of corridors(); track row.code) {
+      <button
+        type="button"
+        class="corridor-chip"
+        [class.selected]="selectedCorridor() === row.code"
+        [attr.data-testid]="'corridor-chip-' + row.code"
+        (click)="selectCorridor(row.code)"
+      >
+        <span class="corridor-chip-name">{{ row.originName }} → {{ row.destinationName }}</span>
+        @if (row.openLoadCount === null) {
+          <span class="corridor-chip-count muted">…</span>
+        } @else {
+          <span class="corridor-chip-count" [class.zero]="row.openLoadCount === 0">
+            {{ row.openLoadCount }} open
+          </span>
+        }
+      </button>
+    } @empty {
+      <span class="corridor-chip-count muted">Corridors unavailable — seed search still works.</span>
+    }
+  </div>
 
   <!-- Filters / seed entry -->
   <div class="filter-row">
