@@ -6,8 +6,9 @@ import { RouterLink } from '@angular/router';
  * plan detail) so the navigation is visible from the `/ltl` landing — previously it only
  * appeared on the Consolidate board (issue #79).
  *
- * Search, Consolidate, Billing, Exceptions and Tenders are all live destinations. Every tab is a
- * real routerLink; there is no Phase 2 stub left in the strip.
+ * Search (the `/ltl` consolidation queue), Loads (the `/ltl/loads` operating console), Billing,
+ * Exceptions, Tenders and Consolidate are all live destinations. Every tab is a real routerLink;
+ * there is no Phase 2 stub left in the strip.
  */
 @Component({
   selector: 'app-ltl-nav',
@@ -18,6 +19,9 @@ import { RouterLink } from '@angular/router';
       <div class="shell-tabs-inner">
         <a routerLink="/ltl" class="shell-tab" [class.active]="active === 'search'" role="tab">
           Search
+        </a>
+        <a routerLink="/ltl/loads" class="shell-tab" [class.active]="active === 'loads'" role="tab">
+          Loads
         </a>
         <a routerLink="/ltl/billing" class="shell-tab" [class.active]="active === 'billing'" role="tab">
           Billing
@@ -95,5 +99,5 @@ import { RouterLink } from '@angular/router';
 })
 export class LtlNav {
   /** Which tab is currently active; null on screens outside the strip. */
-  @Input() active: 'search' | 'consolidate' | 'billing' | 'exceptions' | 'tenders' | null = null;
+  @Input() active: 'search' | 'loads' | 'consolidate' | 'billing' | 'exceptions' | 'tenders' | null = null;
 }

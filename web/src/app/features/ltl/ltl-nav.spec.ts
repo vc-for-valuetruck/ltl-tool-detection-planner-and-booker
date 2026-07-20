@@ -52,6 +52,24 @@ describe('LtlNav', () => {
     expect(tabByText('Search')!.classList).not.toContain('active');
   });
 
+  it('renders Loads as a live link to /ltl/loads, no Phase 2 badge', () => {
+    fixture.detectChanges();
+
+    const loads = tabByText('Loads');
+    expect(loads).toBeTruthy();
+    expect(loads!.tagName).toBe('A');
+    expect(loads!.getAttribute('href')).toBe('/ltl/loads');
+    expect(loads!.querySelector('.phase-badge')).toBeNull();
+  });
+
+  it('highlights the Loads tab when active="loads"', () => {
+    fixture.componentInstance.active = 'loads';
+    fixture.detectChanges();
+
+    expect(tabByText('Loads')!.classList).toContain('active');
+    expect(tabByText('Search')!.classList).not.toContain('active');
+  });
+
   it('renders Billing and Exceptions as live links, no Phase 2 badge', () => {
     fixture.detectChanges();
 
