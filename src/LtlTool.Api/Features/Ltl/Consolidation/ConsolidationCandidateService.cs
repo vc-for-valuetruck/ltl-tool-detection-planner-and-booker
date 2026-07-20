@@ -65,9 +65,13 @@ public sealed class ConsolidationCandidateService(
 
         // Sweep the load list once through the shared search pipeline; then filter locally so
         // corridor + candidate ranking are deterministic and testable without extra Alvys calls.
+        // Status is pinned to Open: the Alvys loads/search endpoint returns nothing for a
+        // filterless request (it requires at least one filter), and Phase-2 planning only
+        // consolidates freight that is still open for assignment.
         var search = await _loads.SearchAsync(
             new LtlSearchQuery
             {
+                Status = ["Open"],
                 PageSize = Math.Max(_ltl.AlvysPageSize, 100),
                 Page = 1,
             },
@@ -298,17 +302,31 @@ public sealed class ConsolidationCandidateService(
     private static bool IsNear(LtlPlace? place, ConsolidationWarehouseOptions warehouse)
     {
         if (place is null) return false;
-        if (!string.IsNullOrWhiteSpace(place.State)
-            && string.Equals(place.State, warehouse.State, StringComparison.OrdinalIgnoreCase))
+
+        // An explicit nearby-city hit counts regardless of state: the corridor's NearbyCities
+        // list is a curated whitelist and legitimately spans the border (e.g. the LAREDO yard
+        // lists the Monterrey cluster — Santa Catarina, NL — whose freight crosses at Laredo).
+        // Requiring state equality first structurally excluded that freight (NL != TX) and made
+        // the Monterrey-cluster extension unreachable.
+        if (!string.IsNullOrWhiteSpace(place.City))
         {
-            if (warehouse.NearbyCities.Count == 0) return true;
-            if (string.IsNullOrWhiteSpace(place.City)) return true;
             foreach (var city in warehouse.NearbyCities)
             {
                 if (place.City.Contains(city, StringComparison.OrdinalIgnoreCase)) return true;
                 if (city.Contains(place.City, StringComparison.OrdinalIgnoreCase)) return true;
             }
         }
+
+        // Same-state fallback keeps the original behavior for in-state freight with no explicit
+        // city hit (empty city list = whole-state match; blank candidate city = honest benefit
+        // of the doubt within the state).
+        if (!string.IsNullOrWhiteSpace(place.State)
+            && string.Equals(place.State, warehouse.State, StringComparison.OrdinalIgnoreCase))
+        {
+            if (warehouse.NearbyCities.Count == 0) return true;
+            if (string.IsNullOrWhiteSpace(place.City)) return true;
+        }
+
         return false;
     }
 
