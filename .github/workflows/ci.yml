@@ -109,6 +109,28 @@ jobs:
       # Angular's @angular/build:karma builder picks up the Chrome binary automatically.
       - run: npm test
 
+  trailer-fit:
+    # Phase 2 M2 packing sidecar (services/trailer-fit). Pure-Python FastAPI wrapper
+    # around the vendored MIT ytl optimizer — independent of the .NET/Angular jobs.
+    name: Trailer-Fit Sidecar (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/trailer-fit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Lint (ruff)
+        run: ruff check
+      - name: Test (pytest)
+        run: pytest
+
   e2e-demo:
     # End-to-end walkthrough of the demo stack against live Alvys reads. Boots the same
     # docker-compose the local runbook uses (scripts/demo-up.sh -> AccessPolicy:Mode=Demo),

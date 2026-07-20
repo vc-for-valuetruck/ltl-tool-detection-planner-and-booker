@@ -1,0 +1,7 @@
+# Runtime dependencies for the trailer-fit sidecar. Pinned for reproducible builds.
+# numpy MUST stay <2: the vendored ytl code and its numpy-2 patches are validated
+# against the 1.26 line; py3dbp + ytl use APIs that changed in numpy 2.x.
+numpy==1.26.4
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4

@@ -1,0 +1,19 @@
+[project]
+name = "trailer-fit"
+version = "0.1.0"
+description = "Value Truck LTL trailer-fit packing sidecar (FastAPI wrapper around vendored ytl)."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+# The vendored ytl/ package is upstream MIT code (tabs, upstream style) and is patched
+# only minimally; linting it would be noise. Lint our own code (app/, tests/, scripts/).
+extend-exclude = ["ytl"]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B"]
