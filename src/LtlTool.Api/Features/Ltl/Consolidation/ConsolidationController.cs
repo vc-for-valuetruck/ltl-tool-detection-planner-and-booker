@@ -129,22 +129,52 @@ public sealed class ConsolidationController(
                 continue;
             }
 
-            LtlSearchResponse response;
-            try
+            // Walk every origin nearby-city against the canonical destination city (each a tiny
+            // PageSize=1 read) rather than only the yard's own name. This is what makes the pilot
+            // queue auto-populate reliably: the seed hint is found whenever ANY legal origin city
+            // (e.g. Encinal, not just "Laredo") has a live parent to the destination — the common
+            // case in the live tenant. We stay one-dimensional (origin cities only, against the
+            // canonical destination) to keep reads bounded; the full nearby-cities cross-product
+            // still happens once the dispatcher seeds a load and we walk siblings.
+            var totalCount = 0;
+            var anyTruncated = false;
+            var successfulReads = 0;
+            LtlLoadSummary? seed = null;
+            foreach (var oCity in origin.NearbyCities.Where(c => !string.IsNullOrWhiteSpace(c)))
             {
-                response = await _loads.SearchAsync(new LtlSearchQuery
+                LtlSearchResponse response;
+                try
                 {
-                    OriginCity = originCity,
-                    DestinationCity = destinationCity,
-                    Page = 0,
-                    // PageSize=1 keeps Alvys payloads tiny — we only need Total.
-                    PageSize = 1,
-                }, ct);
+                    response = await _loads.SearchAsync(new LtlSearchQuery
+                    {
+                        OriginCity = oCity,
+                        DestinationCity = destinationCity,
+                        Page = 0,
+                        // PageSize=1 keeps Alvys payloads tiny — we only need Total + a seed hint.
+                        PageSize = 1,
+                    }, ct);
+                }
+                catch (Exception)
+                {
+                    // One city's read failing must not take the picker down; skip it and let the
+                    // rest of the walk contribute. Only if EVERY city read fails do we report the
+                    // corridor as "unknown" below.
+                    continue;
+                }
+
+                successfulReads++;
+                totalCount += response.Total;
+                anyTruncated |= response.Truncated;
+                // First open load found becomes the default seed hint so the UI can populate the
+                // pilot queue on tab-load without app-settings. Honest: stays null when every lane
+                // is empty. Never fabricated.
+                seed ??= response.Items.FirstOrDefault();
             }
-            catch (Exception)
+
+            if (successfulReads == 0)
             {
-                // A degraded Alvys read must not take the whole picker down. Return a null-
-                // signal for this corridor and let the caller show "unknown" honestly.
+                // Every origin-city read degraded — return a null signal so the caller shows
+                // "unknown" honestly rather than a false zero.
                 healths.Add(new CorridorHealth
                 {
                     Code = corridor.Code,
@@ -156,16 +186,11 @@ public sealed class ConsolidationController(
                 continue;
             }
 
-            // First open load on the canonical lane, used purely as a default seed hint so the
-            // UI can populate the pilot queue on tab-load without app-settings. Honest: null when
-            // the lane is empty. PageSize=1 already fetched it, so no extra Alvys read.
-            var seed = response.Items.FirstOrDefault();
-
             healths.Add(new CorridorHealth
             {
                 Code = corridor.Code,
-                OpenLoadCount = response.Total,
-                Truncated = response.Truncated,
+                OpenLoadCount = totalCount,
+                Truncated = anyTruncated,
                 OriginCity = originCity,
                 DestinationCity = destinationCity,
                 SeedLoadId = seed?.Id,

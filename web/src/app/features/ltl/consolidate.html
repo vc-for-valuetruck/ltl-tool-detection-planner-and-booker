@@ -72,6 +72,18 @@
     <div class="state muted">Loading corridor health…</div>
   }
 
+  @if (corridorReadyNoQueue()) {
+    <div class="card queue-empty" data-testid="consolidate-empty-state">
+      <h3>No live parent on {{ selectedCorridorLabel() }} right now</h3>
+      <p class="muted">
+        Alvys has no open load on this corridor lane at the moment, so there is nothing to
+        auto-plan. This is an honest empty state — nothing is fabricated. Enter a seed load id or
+        load number above and hit <strong>Find candidates</strong> to plan against a specific load,
+        or pick another corridor once more lanes come online.
+      </p>
+    </div>
+  }
+
   @if (candidateResponse(); as response) {
     @if (!response.seed) {
       <div class="banner banner-warn">
@@ -275,6 +287,6 @@
   }
 
   <div class="consolidate-footer muted" data-testid="consolidate-footer">
-    Source: Live Alvys · Corridor: Laredo → Dallas · Read-only
+    Source: Live Alvys · Corridor: {{ selectedCorridorLabel() }} · Read-only
   </div>
 </div>

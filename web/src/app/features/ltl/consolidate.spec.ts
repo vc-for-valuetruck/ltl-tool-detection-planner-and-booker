@@ -324,5 +324,16 @@ describe('Consolidate default auto-seed', () => {
     c.ngOnInit();
     expect(c.seedInput()).toBe('');
     expect(c.candidateResponse()).toBeNull();
+    // With corridors loaded but no seed, the honest empty state drives the UI instead of a
+    // blank screen — banner/picker/footer stay visible; the queue shows "nothing to plan today".
+    expect(c.corridorReadyNoQueue()).toBeTrue();
+    expect(c.selectedCorridorLabel()).toBe('Laredo → Dallas');
+  });
+
+  it('clears the empty-state flag once the queue auto-seeds', () => {
+    const c = componentWith(makeStubService());
+    c.ngOnInit();
+    expect(c.candidateResponse()).not.toBeNull();
+    expect(c.corridorReadyNoQueue()).toBeFalse();
   });
 });

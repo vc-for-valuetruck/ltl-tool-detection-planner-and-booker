@@ -84,6 +84,28 @@ export class Consolidate implements OnInit {
   private autoSeeded = false;
 
   readonly hasSelection = computed(() => this.selectedSiblingIds().size > 0);
+
+  /**
+   * True once corridors have loaded but the queue is still empty — i.e. the default auto-seed
+   * could not fire because no configured corridor lane has a live open parent right now. Drives
+   * an honest in-corridor empty state (banner + picker + footer stay visible) instead of a blank
+   * screen. Distinct from an error and from the still-loading state so we never imply a failure
+   * where Alvys simply has nothing to plan today.
+   */
+  readonly corridorReadyNoQueue = computed(
+    () =>
+      !this.loadingCorridors() &&
+      !this.loadingCandidates() &&
+      !this.candidateError() &&
+      !this.candidateResponse(),
+  );
+
+  /** Display label for the selected corridor, e.g. "Laredo → Dallas". Falls back to the pilot lane. */
+  readonly selectedCorridorLabel = computed(() => {
+    const row = this.corridors().find((r) => r.code === this.selectedCorridor());
+    return row ? `${row.originName} → ${row.destinationName}` : 'Laredo → Dallas';
+  });
+
   readonly canBuildPlan = computed(
     () => !!this.candidateResponse()?.seed && this.hasSelection() && !this.loadingPlan(),
   );

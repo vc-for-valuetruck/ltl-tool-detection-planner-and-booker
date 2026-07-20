@@ -42,6 +42,41 @@ public class ConsolidationControllerHealthTests
     }
 
     [Fact]
+    public async Task GetCorridorHealth_seed_hint_walks_non_canonical_origin_cities()
+    {
+        // The pilot queue must auto-populate whenever ANY legal origin city has a live parent —
+        // not only the yard's own name. Here the only open load originates in Encinal (a Laredo
+        // nearby-city), not "Laredo" proper. The seed hint must still surface it so the queue
+        // auto-seeds instead of showing a blank screen in the live tenant.
+        var client = new FakeAlvysClient();
+        client.Loads.Add(BuildLoad("L-9", "Encinal", "TX", "Dallas", "TX"));
+
+        var opts = new ConsolidationOptions
+        {
+            Warehouses =
+            [
+                new() { Code = "LAREDO", Name = "Laredo yard", State = "TX", NearbyCities = ["Laredo", "Encinal"] },
+                new() { Code = "DALLAS", Name = "Dallas 154-door yard", State = "TX", NearbyCities = ["Dallas"] },
+            ],
+            Corridors =
+            [
+                new() { Code = "LAREDO_TO_DALLAS", OriginWarehouseCode = "LAREDO", DestinationWarehouseCode = "DALLAS", PickupWindowDays = 2, DeliveryWindowDays = 3 },
+            ],
+        };
+
+        var controller = BuildController(client, opts);
+        var result = await controller.GetCorridorHealth(default);
+        var healths = Assert.IsAssignableFrom<IReadOnlyList<CorridorHealth>>(
+            ((OkObjectResult)result.Result!).Value);
+
+        var only = Assert.Single(healths);
+        Assert.Equal(1, only.OpenLoadCount);
+        // Seed hint found via the Encinal → Dallas lane even though "Laredo" proper is empty.
+        Assert.Equal("L-9", only.SeedLoadId);
+        Assert.Equal("L-9", only.SeedLoadNumber);
+    }
+
+    [Fact]
     public async Task GetCorridorHealth_returns_zero_when_no_matching_loads()
     {
         var client = new FakeAlvysClient();
