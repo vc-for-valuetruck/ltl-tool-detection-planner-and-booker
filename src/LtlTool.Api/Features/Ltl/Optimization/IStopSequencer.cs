@@ -3,7 +3,7 @@ namespace LtlTool.Api.Features.Ltl.Optimization;
 /// <summary>
 /// Phase 2 stop-sequencing engine: order a consolidation plan's parent + sibling stops into a
 /// sensible route before the click-card text is emitted (today waypoints are listed in input
-/// order). Selected at startup by <c>Ltl:Optimization:AgentCommands:Enabled</c> — when disabled
+/// order). Selected at startup by <c>Ltl:Optimization:Solver:Enabled</c> — when disabled
 /// the <see cref="NullStopSequencer"/> is registered and the input order is preserved.
 ///
 /// <para>Pure compute: all stop data is Alvys-derived and supplied by the API.</para>
@@ -37,7 +37,7 @@ public sealed record StopSequenceResult(
     DateTimeOffset SequencedAt);
 
 /// <summary>
-/// No-op <see cref="IStopSequencer"/> registered when <c>Ltl:Optimization:AgentCommands:Enabled = false</c>
+/// No-op <see cref="IStopSequencer"/> registered when <c>Ltl:Optimization:Solver:Enabled = false</c>
 /// (the default). Preserves the input order and reports <see cref="StopSequenceResult.Optimized"/> = false.
 /// </summary>
 public sealed class NullStopSequencer(TimeProvider timeProvider) : IStopSequencer

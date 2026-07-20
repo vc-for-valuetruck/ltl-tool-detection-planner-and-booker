@@ -37,7 +37,8 @@ public sealed class ConsolidationPlanServiceTests
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
             LtlTestFactory.StaticPolicyReader(overrides ?? DefaultOptions()),
-            new NullTrailerFitService(TimeProvider.System));
+            new NullTrailerFitService(TimeProvider.System),
+            new LtlTool.Api.Features.Ltl.Optimization.NullStopSequencer(LtlTestFactory.Clock()));
     }
 
     private static AlvysLoad Load(
@@ -212,7 +213,8 @@ public sealed class ConsolidationPlanServiceTests
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
             LtlTestFactory.StaticPolicyReader(options),
-            new NullTrailerFitService(TimeProvider.System));
+            new NullTrailerFitService(TimeProvider.System),
+            new LtlTool.Api.Features.Ltl.Optimization.NullStopSequencer(LtlTestFactory.Clock()));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -272,7 +274,8 @@ public sealed class ConsolidationPlanServiceTests
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
             LtlTestFactory.StaticPolicyReader(options),
-            new NullTrailerFitService(TimeProvider.System));
+            new NullTrailerFitService(TimeProvider.System),
+            new LtlTool.Api.Features.Ltl.Optimization.NullStopSequencer(LtlTestFactory.Clock()));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -319,7 +322,8 @@ public sealed class ConsolidationPlanServiceTests
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
             LtlTestFactory.StaticPolicyReader(DefaultOptions()),
-            new NullTrailerFitService(TimeProvider.System));
+            new NullTrailerFitService(TimeProvider.System),
+            new LtlTool.Api.Features.Ltl.Optimization.NullStopSequencer(LtlTestFactory.Clock()));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -357,7 +361,8 @@ public sealed class ConsolidationPlanServiceTests
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
             LtlTestFactory.StaticPolicyReader(DefaultOptions()),
-            new NullTrailerFitService(TimeProvider.System));
+            new NullTrailerFitService(TimeProvider.System),
+            new LtlTool.Api.Features.Ltl.Optimization.NullStopSequencer(LtlTestFactory.Clock()));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -402,7 +407,8 @@ public sealed class ConsolidationPlanServiceTests
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
             LtlTestFactory.StaticPolicyReader(options),
-            new NullTrailerFitService(TimeProvider.System));
+            new NullTrailerFitService(TimeProvider.System),
+            new LtlTool.Api.Features.Ltl.Optimization.NullStopSequencer(LtlTestFactory.Clock()));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -453,7 +459,8 @@ public sealed class ConsolidationPlanServiceTests
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
             LtlTestFactory.StaticPolicyReader(options),
-            new NullTrailerFitService(TimeProvider.System));
+            new NullTrailerFitService(TimeProvider.System),
+            new LtlTool.Api.Features.Ltl.Optimization.NullStopSequencer(LtlTestFactory.Clock()));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest

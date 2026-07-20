@@ -26,7 +26,12 @@ public sealed class LtlControllerTests
         var validation = new AssignmentValidationService(options, LtlTestFactory.Clock());
         var controller = new LtlController(
             loadService, matchService, validation, store ?? new InMemoryAssignmentAuditStore(),
-            new ConsolidationOpportunityService(client, LtlTestFactory.Clock(), NullLogger<ConsolidationOpportunityService>.Instance),
+            new ConsolidationOpportunityService(
+                client,
+                LtlTestFactory.Clock(),
+                new LtlTool.Api.Features.Ltl.Optimization.NullCapacityCostSolver(LtlTestFactory.Clock()),
+                Microsoft.Extensions.Options.Options.Create(new LtlTool.Api.Features.Ltl.Optimization.CapacityCostSolverOptions()),
+                NullLogger<ConsolidationOpportunityService>.Instance),
             NullLogger<LtlController>.Instance);
 
         var identity = user is null ? new ClaimsIdentity() : new ClaimsIdentity([new Claim("preferred_username", user)], "test");
