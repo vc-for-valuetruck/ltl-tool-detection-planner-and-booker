@@ -408,6 +408,28 @@ describe('chooseDefaultSelection', () => {
     expect(chooseDefaultSelection(pilot, live)).toBe('LAREDO_TO_DALLAS');
   });
 
+  it('prefers a viable live pair over a singleton pilot seed (findings #5)', () => {
+    // Pilot lane has a seed but only ONE open load — it can be seeded yet never consolidated,
+    // so it must not beat a live lane that yields a real pair.
+    const pilot = [pilotRow({ seedLoadNumber: 'L-100234', openLoadCount: 1 })];
+    const live = buildLiveLaneRows(
+      {
+        opportunities: [
+          makeOpportunity({
+            originState: 'TX',
+            destinationState: 'SC',
+            originCity: 'Laredo',
+            destinationCity: 'Greer',
+            siblings: [makeOppLoad('S1'), makeOppLoad('S2')],
+          }),
+        ],
+      } as any,
+      new Set(),
+    );
+    const chosen = chooseDefaultSelection(pilot, live);
+    expect(chosen).toContain('LIVE::');
+  });
+
   it('falls back to the busiest live lane when the pilot corridor is empty', () => {
     const pilot = [pilotRow({ seedLoadId: null, seedLoadNumber: null, openLoadCount: 0 })];
     const live = buildLiveLaneRows(
@@ -479,7 +501,7 @@ describe('buildLiveLaneRows', () => {
 });
 
 describe('Consolidate live-lane walkthrough', () => {
-  function liveStub(recordLiveAudit?: jasmine.Spy): ConsolidationService {
+  function liveStub(recordPlanAudit?: jasmine.Spy): ConsolidationService {
     return {
       getCorridors: () => of([]),
       getCorridorHealth: () => of([]),
@@ -491,16 +513,7 @@ describe('Consolidate live-lane walkthrough', () => {
           generatedAt: '2026-07-20T10:00:00Z',
           dataSource: 'Alvys va336 (live)',
         } as ConsolidationOpportunitiesResponse),
-      recordLiveAudit:
-        recordLiveAudit ??
-        (() =>
-          of({
-            auditId: 'AUD-1',
-            recordedAt: '2026-07-20T10:05:00Z',
-            recordedBy: 'demo',
-            parentLoadNumber: 'LN-P1',
-            siblingLoadNumbers: ['LN-S1', 'LN-S2'],
-          })),
+      recordPlanAudit: recordPlanAudit ?? (() => of({ id: 'AUD-1' })),
     } as unknown as ConsolidationService;
   }
 
@@ -535,26 +548,53 @@ describe('Consolidate live-lane walkthrough', () => {
     expect(c.generatedAt()).toBe('2026-07-20T10:00:00Z');
   });
 
-  it('records a live-lane audit through the ungated endpoint (load numbers, not ids)', () => {
-    const spy = jasmine.createSpy('recordLiveAudit').and.returnValue(
-      of({
-        auditId: 'AUD-9',
-        recordedAt: 'now',
-        recordedBy: 'demo',
-        parentLoadNumber: 'LN-P1',
-        siblingLoadNumbers: ['LN-S1', 'LN-S2'],
-      }),
-    );
+  it('treats a live lane as a delivered example: view-only, not actionable', () => {
+    const spy = jasmine.createSpy('recordPlanAudit');
     const c = componentWith(liveStub(spy));
     c.ngOnInit();
+    // The opportunity sweep sources DELIVERED loads, so the lane is a replayed example — the
+    // Generate click card / Save as audit actions must be disabled (findings #1/#4)…
+    expect(c.isDeliveredExample()).toBeTrue();
+    expect(c.canGenerateClickCard()).toBeFalse();
+    expect(c.canRecordAudit()).toBeFalse();
+    // …and calling recordAudit() directly is a no-op — nothing is recorded for delivered freight.
     c.recordAudit();
-    expect(spy).toHaveBeenCalledWith(
-      jasmine.objectContaining({
-        parentLoadNumber: 'LN-P1',
-        siblingLoadNumbers: ['LN-S1', 'LN-S2'],
-      }),
-    );
-    expect(c.auditRecord()?.id).toBe('AUD-9');
+    expect(spy).not.toHaveBeenCalled();
+    expect(c.auditRecord()).toBeNull();
+  });
+
+  it('shows an honest Lane fit chip: same-city sibling is Good, different-city is verify (findings #3)', () => {
+    const stub = {
+      getCorridors: () => of([]),
+      getCorridorHealth: () => of([]),
+      getOpportunities: () =>
+        of({
+          opportunities: [
+            makeOpportunity({
+              parent: makeOppLoad('P1', { originCity: 'Laredo', destinationCity: 'Dallas' }),
+              siblings: [
+                // Same city as parent → true same-lane match.
+                makeOppLoad('S1', { originCity: 'Laredo', destinationCity: 'Dallas' }),
+                // Same origin/dest STATE as the parent (default NL→IL) but a different dest city.
+                makeOppLoad('S2', { originCity: 'Laredo', destinationCity: 'Houston' }),
+              ],
+              originCity: 'Laredo',
+              destinationCity: 'Dallas',
+            }),
+          ],
+          totalScanned: 10,
+          totalPairsFound: 1,
+          generatedAt: 'now',
+          dataSource: 'Alvys va336 (live)',
+        } as ConsolidationOpportunitiesResponse),
+    } as unknown as ConsolidationService;
+    const c = componentWith(stub);
+    c.ngOnInit();
+    const cands = c.candidateResponse()!.candidates;
+    const laneFit = (loadId: string) =>
+      cands.find((x) => x.loadId === loadId)!.factors.find((f) => f.name === 'Lane fit')!.fit;
+    expect(laneFit('S1')).toBe('Good');
+    expect(laneFit('S2')).not.toBe('Good');
   });
 
   it('recomputes revenue from the remaining siblings when one is removed', () => {

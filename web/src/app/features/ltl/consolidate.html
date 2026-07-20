@@ -38,10 +38,12 @@
   </div>
 
   @if (selectedIsOutsidePilot()) {
-    <div class="live-lane-note" data-testid="consolidate-live-lane-note">
-      <strong>Live lane — outside pilot corridor.</strong>
-      Discovered from today's live Alvys loads so the full workflow can be walked against real data.
-      Same-customer / same-day / same-lane grouping · read-only.
+    <div class="live-lane-note live-lane-note-example" data-testid="consolidate-live-lane-note">
+      <strong>Recent delivered example — not open freight.</strong>
+      Discovered from recently <em>delivered</em> Alvys loads (grouped by state + day + customer) so
+      the workflow can be walked against real data. Lane fit is verified per-load, not assumed.
+      Because these loads are already delivered, <strong>Generate click card</strong> and
+      <strong>Save as audit</strong> are disabled — nothing here is plannable or writable. Read-only.
     </div>
   }
 
@@ -274,7 +276,7 @@
             </button>
 
             <div class="current-plan-actions">
-              <button type="button" class="primary" data-testid="consolidate-generate-card" (click)="openPlanDetail()">
+              <button type="button" class="primary" data-testid="consolidate-generate-card" [disabled]="!canGenerateClickCard()" (click)="openPlanDetail()">
                 Generate click card →
               </button>
               <button type="button" class="secondary" data-testid="consolidate-save-audit" [disabled]="!canRecordAudit()" (click)="recordAudit()">
