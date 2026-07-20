@@ -25,8 +25,23 @@ internal static class AlvysWireConverters
 }
 
 /// <summary>
-/// Reads decimals from either a JSON number OR a JSON string (Alvys returns Weight, Rate,
-/// Volume, Quantity as quoted strings — sometimes empty). Empty strings become null.
+/// Reads decimals from four empirical Alvys shapes so scalar consumers keep working when
+/// the wire diverges from the documented schema:
+/// <list type="bullet">
+///   <item>JSON number → direct.</item>
+///   <item>JSON string (Weight/Rate/Volume/Quantity are quoted, sometimes empty) → parsed,
+///         empty becomes null; trailing unit-suffixes like <c>53'</c> or <c>lb</c> stripped.</item>
+///   <item>JSON object with a numeric <c>Amount</c> field (money shape:
+///         <c>{"Amount":575.0,"Currency":840}</c>) → returns <c>Amount</c>. Applies to
+///         Linehaul / FuelSurcharge / CustomerAccessorials / CustomerRate / TotalPaid.</item>
+///   <item>JSON object with a numeric <c>Value</c> field (weight/volume shape:
+///         <c>{"Value":10000.0,"UnitOfMeasure":"Pounds"}</c>) → returns <c>Value</c>.</item>
+///   <item>JSON object with a nested <c>Distance</c> object (mileage shape:
+///         <c>{"Distance":{"Value":10.0,"UnitOfMeasure":"Miles"},"Source":"Engine"}</c>) →
+///         returns <c>Distance.Value</c>. Applies to CustomerMileage.</item>
+/// </list>
+/// Any other object shape is skipped and returns null instead of throwing — that keeps
+/// consolidation/search endpoints resilient to Alvys shipping new nested fields.
 /// </summary>
 internal sealed class TolerantDecimalConverter : JsonConverter<decimal?>
 {
@@ -44,7 +59,86 @@ internal sealed class TolerantDecimalConverter : JsonConverter<decimal?>
                 if (decimal.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
                     return d;
                 return null;
-            default: return null;
+            case JsonTokenType.StartObject:
+                return ReadFromObject(ref reader);
+            default:
+                reader.Skip();
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Walks a Money/Weight/Volume/Mileage wrapper object and returns the first meaningful
+    /// decimal we can extract. Prefers <c>Amount</c> (money), then <c>Value</c>
+    /// (weight/volume), then nested <c>Distance.Value</c> (mileage). Unknown properties are
+    /// skipped so we don't drop into deserializer recursion.
+    /// </summary>
+    private static decimal? ReadFromObject(ref Utf8JsonReader reader)
+    {
+        decimal? amount = null;
+        decimal? value = null;
+        decimal? distanceValue = null;
+
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject) break;
+            if (reader.TokenType != JsonTokenType.PropertyName) continue;
+
+            var name = reader.GetString();
+            reader.Read();
+
+            if (string.Equals(name, "Amount", StringComparison.OrdinalIgnoreCase))
+            {
+                amount = ReadScalarDecimal(ref reader);
+            }
+            else if (string.Equals(name, "Value", StringComparison.OrdinalIgnoreCase))
+            {
+                value = ReadScalarDecimal(ref reader);
+            }
+            else if (string.Equals(name, "Distance", StringComparison.OrdinalIgnoreCase)
+                     && reader.TokenType == JsonTokenType.StartObject)
+            {
+                // Nested {"Distance":{"Value":10.0,"UnitOfMeasure":"Miles"}} — walk it directly.
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.EndObject) break;
+                    if (reader.TokenType != JsonTokenType.PropertyName) continue;
+                    var inner = reader.GetString();
+                    reader.Read();
+                    if (string.Equals(inner, "Value", StringComparison.OrdinalIgnoreCase))
+                    {
+                        distanceValue = ReadScalarDecimal(ref reader);
+                    }
+                    else
+                    {
+                        reader.Skip();
+                    }
+                }
+            }
+            else
+            {
+                reader.Skip();
+            }
+        }
+
+        return amount ?? value ?? distanceValue;
+    }
+
+    /// <summary>Reads a decimal from a Number or numeric-String token; nulls/anything else → null.</summary>
+    private static decimal? ReadScalarDecimal(ref Utf8JsonReader reader)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Number: return reader.GetDecimal();
+            case JsonTokenType.String:
+                var s = reader.GetString();
+                if (string.IsNullOrWhiteSpace(s)) return null;
+                if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+                    return d;
+                return null;
+            default:
+                reader.Skip();
+                return null;
         }
     }
 
