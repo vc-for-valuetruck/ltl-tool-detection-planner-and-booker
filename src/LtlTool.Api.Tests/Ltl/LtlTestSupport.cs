@@ -58,17 +58,19 @@ internal sealed class StaticLtlPolicyReader(ConsolidationOptions options) : ICus
 {
     private readonly ConsolidationOptions _opts = options;
 
-    public Task<CustomerConsolidationTier> ResolveAsync(
+    public Task<CustomerPolicyResolution> ResolveAsync(
         string? customerId,
         string? customerName,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(customerName))
-            return Task.FromResult(CustomerConsolidationTier.Unknown);
+            return Task.FromResult(CustomerPolicyResolution.Unknown);
 
         var policy = _opts.CustomerPolicies.FirstOrDefault(
             p => string.Equals(p.Customer, customerName, StringComparison.OrdinalIgnoreCase));
-        return Task.FromResult(policy?.Tier ?? CustomerConsolidationTier.Unknown);
+        return Task.FromResult(policy is null
+            ? CustomerPolicyResolution.Unknown
+            : new CustomerPolicyResolution(policy.Tier, CustomerPolicySource.DefaultPolicy));
     }
 }
 

@@ -249,7 +249,7 @@ public sealed class ConsolidationCandidateService(
     private async Task<(ConsolidationFactor Factor, CustomerConsolidationTier Tier)>
         EvaluateCustomerFitAsync(LtlLoadSummary candidate, CancellationToken ct)
     {
-        var tier = await _policyReader.ResolveAsync(candidate.CustomerId, candidate.CustomerName, ct);
+        var tier = (await _policyReader.ResolveAsync(candidate.CustomerId, candidate.CustomerName, ct)).Tier;
         var factor = tier switch
         {
             CustomerConsolidationTier.Allowed => new ConsolidationFactor

@@ -540,6 +540,7 @@ export class Consolidate implements OnInit {
         revenue: s.linehaulAmount,
         loadedMiles: s.miles,
         customerTier: 'Unknown',
+        customerPolicySource: 'None',
         cautions: [],
       })),
       combinedRevenue: opp.combinedRevenue,

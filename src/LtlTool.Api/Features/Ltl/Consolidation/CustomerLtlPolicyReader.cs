@@ -20,11 +20,38 @@ namespace LtlTool.Api.Features.Ltl.Consolidation;
 /// </summary>
 public interface ICustomerLtlPolicyReader
 {
-    /// <summary>Resolve tier for a customer, given whatever identifiers we know from the load.</summary>
-    Task<CustomerConsolidationTier> ResolveAsync(
+    /// <summary>Resolve tier + source for a customer, given whatever identifiers we know from the load.</summary>
+    Task<CustomerPolicyResolution> ResolveAsync(
         string? customerId,
         string? customerName,
         CancellationToken ct);
+}
+
+/// <summary>Where a resolved consolidation tier came from — so the UI can badge it honestly.</summary>
+public enum CustomerPolicySource
+{
+    /// <summary>No policy found in either the customer's Alvys notes or static config.</summary>
+    None = 0,
+
+    /// <summary>Resolved from an <c>LTL_TIER=</c>/<c>LTL_ALLOW=</c> line in the Alvys customer notes.</summary>
+    CustomerNote = 1,
+
+    /// <summary>Resolved from the static <see cref="ConsolidationOptions.CustomerPolicies"/> fallback.</summary>
+    DefaultPolicy = 2,
+}
+
+/// <summary>
+/// A resolved consolidation tier together with its provenance. The tier drives the Never blocker;
+/// the source lets the UI distinguish "from customer note" from "default policy — no customer note"
+/// so a dispatcher knows whether the policy is customer-authored or a static fallback.
+/// </summary>
+public sealed record CustomerPolicyResolution(
+    CustomerConsolidationTier Tier,
+    CustomerPolicySource Source)
+{
+    /// <summary>No tier and no source — nothing on file anywhere.</summary>
+    public static readonly CustomerPolicyResolution Unknown =
+        new(CustomerConsolidationTier.Unknown, CustomerPolicySource.None);
 }
 
 /// <summary>
@@ -63,7 +90,7 @@ public sealed class CustomerNotesLtlPolicyReader(
     private readonly IAlvysClient _alvys = alvys;
     private readonly ConsolidationOptions _opts = options.Value;
     private readonly ILogger<CustomerNotesLtlPolicyReader> _logger = logger;
-    private readonly ConcurrentDictionary<string, CustomerConsolidationTier> _cache =
+    private readonly ConcurrentDictionary<string, CustomerPolicyResolution> _cache =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Matches an <c>LTL_TIER=…</c> line anywhere in note text. Case-insensitive.</summary>
@@ -76,7 +103,7 @@ public sealed class CustomerNotesLtlPolicyReader(
         @"\bLTL_ALLOW\s*=\s*(true|false)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public async Task<CustomerConsolidationTier> ResolveAsync(
+    public async Task<CustomerPolicyResolution> ResolveAsync(
         string? customerId,
         string? customerName,
         CancellationToken ct)
@@ -84,7 +111,7 @@ public sealed class CustomerNotesLtlPolicyReader(
         // If we have neither an id nor a name we can't look anything up. Static config keys on
         // name only, so with no name we're at Unknown.
         if (string.IsNullOrWhiteSpace(customerId) && string.IsNullOrWhiteSpace(customerName))
-            return CustomerConsolidationTier.Unknown;
+            return CustomerPolicyResolution.Unknown;
 
         // Cache key: prefer id (stable), fall back to name. Different customers with same name
         // will share a slot; that's acceptable given the Phase 1 pilot scale and the fact that
@@ -97,14 +124,15 @@ public sealed class CustomerNotesLtlPolicyReader(
         var notesTier = await TryReadNotesTierAsync(customerId, customerName, ct);
         if (notesTier is not null)
         {
-            _cache[cacheKey] = notesTier.Value;
-            return notesTier.Value;
+            var fromNote = new CustomerPolicyResolution(notesTier.Value, CustomerPolicySource.CustomerNote);
+            _cache[cacheKey] = fromNote;
+            return fromNote;
         }
 
         // Fall back to static config \u2014 the ConsolidationOptions.CustomerPolicies list.
-        var staticTier = ResolveStaticTier(customerName);
-        _cache[cacheKey] = staticTier;
-        return staticTier;
+        var staticResolution = ResolveStaticResolution(customerName);
+        _cache[cacheKey] = staticResolution;
+        return staticResolution;
     }
 
     private async Task<CustomerConsolidationTier?> TryReadNotesTierAsync(
@@ -199,11 +227,13 @@ public sealed class CustomerNotesLtlPolicyReader(
         return null;
     }
 
-    private CustomerConsolidationTier ResolveStaticTier(string? customerName)
+    private CustomerPolicyResolution ResolveStaticResolution(string? customerName)
     {
-        if (string.IsNullOrWhiteSpace(customerName)) return CustomerConsolidationTier.Unknown;
+        if (string.IsNullOrWhiteSpace(customerName)) return CustomerPolicyResolution.Unknown;
         var policy = _opts.CustomerPolicies.FirstOrDefault(
             p => string.Equals(p.Customer, customerName, StringComparison.OrdinalIgnoreCase));
-        return policy?.Tier ?? CustomerConsolidationTier.Unknown;
+        return policy is null
+            ? CustomerPolicyResolution.Unknown
+            : new CustomerPolicyResolution(policy.Tier, CustomerPolicySource.DefaultPolicy);
     }
 }

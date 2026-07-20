@@ -258,7 +258,13 @@ describe('PlanDetail', () => {
 
   describe('lane-rate + customer-policy context (Phase 7.4)', () => {
     function sibling(partial: Partial<ConsolidationPlanSibling>): ConsolidationPlanSibling {
-      return { loadId: 'S', customerTier: 'Unknown', cautions: [], ...partial } as ConsolidationPlanSibling;
+      return {
+        loadId: 'S',
+        customerTier: 'Unknown',
+        customerPolicySource: 'None',
+        cautions: [],
+        ...partial,
+      } as ConsolidationPlanSibling;
     }
     function laneRate(partial: Partial<LaneRateContext>): LaneRateContext {
       return {
@@ -283,17 +289,40 @@ describe('PlanDetail', () => {
       expect(c.planCautions()).toEqual(['Notify customer first', 'Weight missing']);
     });
 
-    it('derives one policy chip per distinct customer with its tier', () => {
+    it('derives one policy chip per distinct customer with its tier and source', () => {
       const c = newComponent();
       c.planSiblings.set([
-        sibling({ loadId: 'S1', customerName: 'Masonite', customerTier: 'NotifyRequired' }),
-        sibling({ loadId: 'S2', customerName: 'Masonite', customerTier: 'NotifyRequired' }),
-        sibling({ loadId: 'S3', customerName: 'Acme', customerTier: 'Allowed' }),
+        sibling({
+          loadId: 'S1',
+          customerName: 'Masonite',
+          customerTier: 'NotifyRequired',
+          customerPolicySource: 'DefaultPolicy',
+        }),
+        sibling({
+          loadId: 'S2',
+          customerName: 'Masonite',
+          customerTier: 'NotifyRequired',
+          customerPolicySource: 'DefaultPolicy',
+        }),
+        sibling({
+          loadId: 'S3',
+          customerName: 'Acme',
+          customerTier: 'Allowed',
+          customerPolicySource: 'CustomerNote',
+        }),
       ]);
       const policies = c.customerPolicies();
       expect(policies.length).toBe(2);
-      expect(policies[0]).toEqual({ customerName: 'Masonite', tier: 'NotifyRequired' });
-      expect(policies[1]).toEqual({ customerName: 'Acme', tier: 'Allowed' });
+      expect(policies[0]).toEqual({
+        customerName: 'Masonite',
+        tier: 'NotifyRequired',
+        source: 'DefaultPolicy',
+      });
+      expect(policies[1]).toEqual({
+        customerName: 'Acme',
+        tier: 'Allowed',
+        source: 'CustomerNote',
+      });
     });
 
     it('reports a computable lane-rate range only when a median is present', () => {
@@ -311,6 +340,13 @@ describe('PlanDetail', () => {
       expect(c.tierLabel('NotifyRequired')).toBe('Notify customer first');
       expect(c.tierLabel('Never')).toBe('Consolidation not allowed');
       expect(c.tierLabel('Unknown')).toBe('No policy on file');
+    });
+
+    it('badges the policy source, hiding the badge when nothing is on file', () => {
+      const c = newComponent();
+      expect(c.policySourceLabel('CustomerNote')).toBe('from customer note');
+      expect(c.policySourceLabel('DefaultPolicy')).toBe('default policy — no customer note');
+      expect(c.policySourceLabel('None')).toBeNull();
     });
   });
 

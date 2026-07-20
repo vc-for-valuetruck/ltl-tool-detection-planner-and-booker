@@ -129,7 +129,8 @@ public sealed class ConsolidationPlanService(
             }
 
             // Customer policy gate.
-            var tier = await _policyReader.ResolveAsync(sibling.CustomerId, sibling.CustomerName, ct);
+            var policy = await _policyReader.ResolveAsync(sibling.CustomerId, sibling.CustomerName, ct);
+            var tier = policy.Tier;
             if (tier == CustomerConsolidationTier.Never)
             {
                 blockers.Add(
@@ -154,6 +155,7 @@ public sealed class ConsolidationPlanService(
                 DriverTripRate = sibling.DriverTripRate,
                 LoadedMiles = sibling.LoadedMiles,
                 CustomerTier = tier,
+                CustomerPolicySource = policy.Source,
                 Cautions = cautions,
             });
         }

@@ -260,6 +260,9 @@
                 >
                   <strong>{{ policy.customerName }}</strong>
                   <span>{{ tierLabel(policy.tier) }}</span>
+                  @if (policySourceLabel(policy.source); as sourceLabel) {
+                    <span class="policy-source" data-testid="policy-source">{{ sourceLabel }}</span>
+                  }
                 </li>
               }
             </ul>
