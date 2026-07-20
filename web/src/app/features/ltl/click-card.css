@@ -267,16 +267,20 @@
   position: relative;
 }
 
-.did-good li::before {
-  /* U+2713 CHECK MARK — CSS content requires a single-backslash Unicode escape.
-     Double-escaping produced the literal string '\2713' next to each bullet in
-     the click-card sidebar. Direct character kept for redundancy. */
-  content: '✓';
+/* Bullet marker now comes from an inline <span class="bullet"> in the HTML,
+   not a CSS ::before content string. Angular's CSS pipeline was double-escaping
+   the Unicode content (produced literal '\2713' text instead of ✓ on the
+   click-card sidebar), and no escape form survived the pipeline reliably.
+   Inline HTML lets the checkmark ship as a real UTF-8 character. */
+.did-good li .bullet,
+.did-not li .bullet {
   position: absolute;
   left: 0;
-  color: var(--success);
   font-weight: 700;
 }
+
+.did-good li .bullet { color: var(--success); }
+.did-not li .bullet { color: var(--text-muted); }
 
 .did-not li {
   color: var(--text-muted);
@@ -284,13 +288,7 @@
   position: relative;
 }
 
-.did-not li::before {
-  /* U+2013 EN DASH — direct character avoids the same double-escape trap. */
-  content: '–';
-  position: absolute;
-  left: 0;
-  color: var(--text-muted);
-}
+/* .did-not markers moved to inline HTML span (same reason as .did-good above). */
 
 .card-info {
   background: var(--info-row-bg);
