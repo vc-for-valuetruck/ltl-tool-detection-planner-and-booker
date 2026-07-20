@@ -1,0 +1,207 @@
+<app-ltl-nav active="loads" />
+
+<div class="worklist page-shell">
+  <div class="worklist-head">
+    <h1>LTL Operating Console</h1>
+    <span class="worklist-sub">
+      Search live Alvys freight — filter, sort, and save dispatch views. Read-only; nothing is
+      written to Alvys. Missing values show as “—”, never coerced to zero.
+    </span>
+  </div>
+
+  <form class="search-panel card" (ngSubmit)="search()" data-testid="console-filters">
+    <div class="field-grid">
+      <label class="field">
+        <span>Keyword</span>
+        <input type="text" name="keyword" data-testid="console-keyword"
+          [(ngModel)]="filters.keyword" (ngModelChange)="onFilterChange()"
+          placeholder="Load / order / PO #" />
+      </label>
+      <label class="field">
+        <span>Customer</span>
+        <input type="text" name="customer" [(ngModel)]="filters.customer" (ngModelChange)="onFilterChange()" />
+      </label>
+      <label class="field">
+        <span>Origin city</span>
+        <input type="text" name="originCity" data-testid="console-origin-city"
+          [(ngModel)]="filters.originCity" (ngModelChange)="onFilterChange()" />
+      </label>
+      <label class="field field-sm">
+        <span>Origin state</span>
+        <input type="text" name="originState" maxlength="2"
+          [(ngModel)]="filters.originState" (ngModelChange)="onFilterChange()" />
+      </label>
+      <label class="field">
+        <span>Dest city</span>
+        <input type="text" name="destinationCity" data-testid="console-dest-city"
+          [(ngModel)]="filters.destinationCity" (ngModelChange)="onFilterChange()" />
+      </label>
+      <label class="field field-sm">
+        <span>Dest state</span>
+        <input type="text" name="destinationState" maxlength="2"
+          [(ngModel)]="filters.destinationState" (ngModelChange)="onFilterChange()" />
+      </label>
+      <label class="field">
+        <span>Equipment</span>
+        <input type="text" name="equipmentType" [(ngModel)]="filters.equipmentType"
+          (ngModelChange)="onFilterChange()" placeholder="e.g. Dry Van" />
+      </label>
+      <label class="field">
+        <span>Assignment</span>
+        <select name="assignment" [(ngModel)]="filters.assignment" (ngModelChange)="onFilterChange()">
+          @for (o of assignmentOptions; track o.value) {
+            <option [value]="o.value">{{ o.label }}</option>
+          }
+        </select>
+      </label>
+      <label class="field">
+        <span>Workflow stage</span>
+        <select name="stage" [(ngModel)]="filters.stage" (ngModelChange)="onFilterChange()">
+          @for (o of stageOptions; track o.value) {
+            <option [value]="o.value">{{ o.label }}</option>
+          }
+        </select>
+      </label>
+      <label class="field">
+        <span>Billing badge</span>
+        <select name="billingBadge" [(ngModel)]="filters.billingBadge" (ngModelChange)="onFilterChange()">
+          @for (o of billingBadgeOptions; track o.value) {
+            <option [value]="o.value">{{ o.label }}</option>
+          }
+        </select>
+      </label>
+      <label class="field field-sm">
+        <span>Pickup from</span>
+        <input type="date" name="pickupFrom" [(ngModel)]="filters.pickupFrom" (ngModelChange)="onFilterChange()" />
+      </label>
+      <label class="field field-sm">
+        <span>Pickup to</span>
+        <input type="date" name="pickupTo" [(ngModel)]="filters.pickupTo" (ngModelChange)="onFilterChange()" />
+      </label>
+      <label class="field field-sm">
+        <span>Delivery from</span>
+        <input type="date" name="deliveryFrom" [(ngModel)]="filters.deliveryFrom" (ngModelChange)="onFilterChange()" />
+      </label>
+      <label class="field field-sm">
+        <span>Delivery to</span>
+        <input type="date" name="deliveryTo" [(ngModel)]="filters.deliveryTo" (ngModelChange)="onFilterChange()" />
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <span class="filter-label">Quick filters:</span>
+      @for (t of quickToggles; track t.key) {
+        <button type="button" class="badge-filter" [class.selected]="isQuickActive(t.key)"
+          [attr.data-testid]="'console-quick-' + t.key" (click)="toggleQuick(t.key)">{{ t.label }}</button>
+      }
+    </div>
+
+    <div class="action-row">
+      <button type="submit" class="btn btn-primary" data-testid="console-search">Search</button>
+      <button type="button" class="btn" (click)="clearFilters()">Clear</button>
+      <button type="button" class="btn" data-testid="console-save-view" (click)="saveCurrentView()">
+        Save current view
+      </button>
+    </div>
+
+    @if (presets().length || views().length) {
+      <div class="views-row">
+        <span class="filter-label">Views:</span>
+        @for (v of presets(); track v.id) {
+          <button type="button" class="view-chip" [class.selected]="activeViewId() === v.id"
+            [title]="v.description ?? v.name" (click)="applyView(v)">{{ v.name }}</button>
+        }
+        @for (v of views(); track v.id) {
+          <button type="button" class="view-chip view-own" [class.selected]="activeViewId() === v.id"
+            (click)="applyView(v)">
+            {{ v.name }}
+            <span class="view-del" title="Delete view" (click)="deleteView(v, $event)">✕</span>
+          </button>
+        }
+      </div>
+    }
+  </form>
+
+  @if (loading()) {
+    <div class="state" data-testid="console-loading">Searching Alvys…</div>
+  } @else if (error()) {
+    <div class="state state-error" data-testid="console-error">
+      <strong>Couldn't reach Alvys.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="search()">Retry</button>
+    </div>
+  } @else if (!hasLoads()) {
+    <div class="state" data-testid="console-empty">
+      No loads match these filters right now. Nothing is fabricated when Alvys returns none.
+    </div>
+  } @else {
+    @if (truncated()) {
+      <div class="truncation" data-testid="console-truncated">
+        Showing a bounded slice of the Alvys result. Narrow your filters to see more specific loads.
+      </div>
+    }
+    <div class="filter-row">
+      <span class="filter-count" data-testid="console-count">
+        {{ loads().length }} of {{ total() }} loads
+      </span>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              @for (col of columns; track col.field) {
+                <th class="sortable" [attr.data-testid]="'console-sort-' + col.field"
+                  (click)="sortBy(col.field)">{{ col.label }} {{ sortIndicator(col.field) }}</th>
+              }
+              <th>Assignment</th>
+              <th>Flags</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (load of loads(); track load.id) {
+              <tr data-testid="console-row">
+                <td>
+                  <div class="load-cell">
+                    <a [routerLink]="['/ltl/loads', load.loadNumber ?? load.id]">
+                      {{ load.loadNumber ?? load.id }}
+                    </a>
+                    <span class="load-tag">
+                      {{ load.customerName ?? '—' }} · {{ place(load.origin) }} → {{ place(load.destination) }}
+                    </span>
+                  </div>
+                </td>
+                <td>{{ load.scheduledPickupAt ? (load.scheduledPickupAt | date: 'MMM d') : '—' }}</td>
+                <td>{{ load.scheduledDeliveryAt ? (load.scheduledDeliveryAt | date: 'MMM d') : '—' }}</td>
+                <td>{{ weightLabel(load) }}</td>
+                <td>{{ formatCurrency(load.revenue) }}</td>
+                <td>{{ rpmLabel(load) }}</td>
+                <td>{{ load.status }}</td>
+                <td>
+                  <div class="chip-row">
+                    @for (badge of load.billing.badges; track badge) {
+                      <span class="chip chip-neutral">{{ badge }}</span>
+                    } @empty {
+                      <span class="muted">—</span>
+                    }
+                  </div>
+                </td>
+                <td><span [class]="assignmentClass(load.assignment)">{{ load.assignment }}</span></td>
+                <td>
+                  <div class="chip-row">
+                    @if (load.hasExceptions) { <span class="chip chip-danger">Exception</span> }
+                    @if (load.isLtl) { <span class="chip chip-neutral">LTL</span> }
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="worklist-footer" data-testid="console-footer">
+      Source: Live Alvys · LTL Operating Console · Read-only
+    </div>
+  }
+</div>

@@ -1,0 +1,136 @@
+/* LTL Operating Console — filter panel, sortable headers, and saved-view chips. */
+.search-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.field.field-sm {
+  max-width: 140px;
+}
+
+.field span {
+  font-weight: 600;
+}
+
+.field input,
+.field select {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 9px;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--card-border);
+  padding-top: 14px;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.views-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.view-chip {
+  appearance: none;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill, 999px);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.view-chip.selected {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  background: var(--info-bg, #eff6ff);
+}
+
+.view-del {
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.view-del:hover {
+  color: var(--danger-text);
+}
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+th.sortable:hover {
+  color: var(--accent);
+}
+
+.truncation {
+  font-size: 12px;
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-radius: 6px;
+  padding: 8px 12px;
+}

@@ -22,6 +22,10 @@ export const routes: Routes = [
     loadComponent: () => import('./features/ltl/ltl-tenders').then((m) => m.LtlTenders),
   },
   {
+    path: 'ltl/loads',
+    loadComponent: () => import('./features/ltl/ltl-console').then((m) => m.LtlConsole),
+  },
+  {
     path: 'ltl/loads/:loadNumber',
     loadComponent: () => import('./features/ltl/ltl-load-detail').then((m) => m.LtlLoadDetail),
   },
