@@ -7,11 +7,15 @@ name: Deploy standalone images
 # Pipeline:
 #   1. Docker login to ACR with admin credentials
 #   2. Build API image (docker buildx) and push to ACR
-#   3. Build Web image (docker buildx) and push to ACR
-#   4. Update each App Service container config via the Kudu REST API,
+#   3. When optimization_flags=on, build a thin overlay on the API image that bakes
+#      the solver + agent-command flags into ENV, and push it as :latest (Kudu app
+#      settings do not persist on this Linux App Service, so the image is the only
+#      reliable channel — see the overlay step for the verification details).
+#   4. Build Web image (docker buildx) and push to ACR
+#   5. Update each App Service container config via the Kudu REST API,
 #      pointing it at the new image tag
-#   5. Restart both App Services via Kudu
-#   6. Smoke test /api/health for authMode=Demo
+#   6. Restart both App Services via Kudu
+#   7. Smoke test /api/health for authMode=Demo
 
 on:
   push:
@@ -95,6 +99,41 @@ jobs:
             ${{ secrets.ACR_LOGIN_SERVER }}/ltl-api:${{ steps.vars.outputs.image_tag }}
             ${{ secrets.ACR_LOGIN_SERVER }}/ltl-api:latest
 
+      - name: Build + push API optimization-flags overlay image
+        # Only when optimization_flags=on. Push events carry no input, so default to
+        # "on" to match the API config step below.
+        if: ${{ (github.event.inputs.optimization_flags || 'on') == 'on' }}
+        env:
+          ACR_LOGIN: ${{ secrets.ACR_LOGIN_SERVER }}
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+        run: |
+          # Why an overlay image instead of app settings: the Kudu /api/settings POST
+          # does NOT persist site app settings on this Linux App Service (verified in
+          # deploy run 29751123024 — the POST returned 2xx and logged the flags, the
+          # restart ran, yet /api/health/optimization still reported every flag false).
+          # The only channel that actually reaches the running container is the image
+          # it pulls on restart (:latest). So when optimization_flags=on we bake the
+          # solver + agent-command flags into a thin overlay on top of the API image we
+          # just pushed, then publish it as :latest so the restart picks it up.
+          #
+          # TrailerFit stays unset (=> disabled) on purpose: it needs its OR-Tools
+          # sidecar App Service, and there is no sidecar host in the standalone RG (no
+          # ARM/OIDC in this stack to provision one). With no sidecar the TrailerFit
+          # verdict is Null — surfaced honestly as "verify at dock", never coerced.
+          BASE="${ACR_LOGIN}/ltl-api:${IMAGE_TAG}"
+          echo "Building optimization-flags overlay on top of $BASE"
+          docker buildx build \
+            --push \
+            --build-arg BASE_IMAGE="$BASE" \
+            -t "${ACR_LOGIN}/ltl-api:${IMAGE_TAG}-flags" \
+            -t "${ACR_LOGIN}/ltl-api:latest" \
+            -f - . <<'DOCKERFILE'
+          ARG BASE_IMAGE
+          FROM ${BASE_IMAGE}
+          ENV Ltl__Optimization__Solver__Enabled=true
+          ENV Ltl__Optimization__AgentCommands__Enabled=true
+          DOCKERFILE
+
       - name: Build + push Web image
         uses: docker/build-push-action@v5
         with:
@@ -113,35 +152,22 @@ jobs:
           ACR_USER: ${{ secrets.ACR_USERNAME }}
           ACR_PASS: ${{ secrets.ACR_PASSWORD }}
           ACR_LOGIN: ${{ secrets.ACR_LOGIN_SERVER }}
-          # workflow_dispatch input; empty on push (defaults to "on" below).
-          OPTIMIZATION_FLAGS: ${{ github.event.inputs.optimization_flags }}
         run: |
-          # Use SCM basic auth to hit the Kudu REST API and update WEBSITES_PORT/DOCKER_* env
+          # Use SCM basic auth to hit the Kudu REST API and update the DOCKER_* env
           # vars. Docker image name is set via DOCKER_CUSTOM_IMAGE_NAME setting.
           IMG="${ACR_LOGIN}/ltl-api:${IMAGE_TAG}"
           AUTH="Basic $(printf '$%s:%s' "$APP" "$SCM_PASS" | base64 -w0)"
           echo "Setting $APP image to $IMG"
 
-          # LTL optimization feature flags are merged into the same Kudu settings dict.
-          # These are plain app settings (reversible without a redeploy by re-running
-          # this workflow with optimization_flags=off). Push events carry no input, so
-          # default to "on".
-          OPT="${OPTIMIZATION_FLAGS:-on}"
-          if [ "$OPT" = "on" ]; then
-            SOLVER_ENABLED=true
-            AGENT_ENABLED=true
-          else
-            SOLVER_ENABLED=false
-            AGENT_ENABLED=false
-          fi
-          # TrailerFit stays disabled in the standalone RG regardless of the toggle:
-          # its OR-Tools sidecar is a separate App Service, and Kudu SCM basic auth
-          # cannot create App Services (no ARM/OIDC in this stack). With no sidecar the
-          # TrailerFit verdict is Null — surfaced honestly as "verify at dock", never
-          # coerced to a pass/fail. Re-enable only once the sidecar is hostable here.
-          TRAILERFIT_ENABLED=false
-          echo "optimization_flags=$OPT -> Solver=$SOLVER_ENABLED AgentCommands=$AGENT_ENABLED TrailerFit=$TRAILERFIT_ENABLED"
-
+          # NOTE: the Ltl__Optimization__* feature flags are intentionally NOT sent
+          # here. Kudu /api/settings does NOT persist site app settings on this Linux
+          # App Service (verified in deploy run 29751123024 — POST returned 2xx and the
+          # restart ran, but /api/health/optimization still reported every flag false).
+          # The flags are instead baked into the API image itself (see the
+          # "Build + push API optimization-flags overlay image" step above), which the
+          # container reliably picks up via the :latest pull on restart. Only the
+          # DOCKER_* registry/image settings are pushed here.
+          #
           # Update the image via the ARM proxy exposed on the SCM host — the
           # /api/settings endpoint on Kudu takes a settings dict. Writeback and
           # Alvys__InternalApi settings are intentionally NOT touched here.
@@ -153,10 +179,7 @@ jobs:
               \"DOCKER_CUSTOM_IMAGE_NAME\": \"$IMG\",
               \"DOCKER_REGISTRY_SERVER_URL\": \"https://${ACR_LOGIN}\",
               \"DOCKER_REGISTRY_SERVER_USERNAME\": \"${ACR_USER}\",
-              \"DOCKER_REGISTRY_SERVER_PASSWORD\": \"${ACR_PASS}\",
-              \"Ltl__Optimization__Solver__Enabled\": \"$SOLVER_ENABLED\",
-              \"Ltl__Optimization__AgentCommands__Enabled\": \"$AGENT_ENABLED\",
-              \"Ltl__Optimization__TrailerFit__Enabled\": \"$TRAILERFIT_ENABLED\"
+              \"DOCKER_REGISTRY_SERVER_PASSWORD\": \"${ACR_PASS}\"
             }" || echo "::warning::Kudu settings POST failed — will rely on 'latest' tag pull"
 
       - name: Update Web App Service container config
