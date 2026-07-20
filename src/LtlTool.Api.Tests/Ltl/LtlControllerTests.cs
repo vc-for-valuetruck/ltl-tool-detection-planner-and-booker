@@ -33,6 +33,10 @@ public sealed class LtlControllerTests
                 Microsoft.Extensions.Options.Options.Create(new LtlTool.Api.Features.Ltl.Optimization.CapacityCostSolverOptions()),
                 NullLogger<ConsolidationOpportunityService>.Instance),
             new CapacitySnapshotService(client, options, LtlTestFactory.Clock()),
+            new LtlTool.Api.Features.Ltl.Arrivals.LaredoArrivalsService(
+                client, options,
+                Microsoft.Extensions.Options.Options.Create(new ConsolidationOptions()),
+                LtlTestFactory.Clock()),
             NullLogger<LtlController>.Instance);
 
         var identity = user is null ? new ClaimsIdentity() : new ClaimsIdentity([new Claim("preferred_username", user)], "test");

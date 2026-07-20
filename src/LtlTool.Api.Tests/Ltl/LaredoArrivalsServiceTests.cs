@@ -23,7 +23,7 @@ public sealed class LaredoArrivalsServiceTests
         new(
             client,
             LtlTestFactory.Options(ltl),
-            Options.Create(consolidation ?? new ConsolidationOptions()),
+            Microsoft.Extensions.Options.Options.Create(consolidation ?? new ConsolidationOptions()),
             LtlTestFactory.Clock());
 
     private static AlvysTripStop Stop(
