@@ -166,4 +166,7 @@ export interface CorridorHealth {
   truncated: boolean;
   originCity: string;
   destinationCity: string;
+  /** First open load on the lane — used to auto-seed the queue by default. Absent when empty. */
+  seedLoadId?: string | null;
+  seedLoadNumber?: string | null;
 }

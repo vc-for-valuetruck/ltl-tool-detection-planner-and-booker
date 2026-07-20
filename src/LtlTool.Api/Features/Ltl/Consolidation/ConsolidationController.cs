@@ -156,6 +156,11 @@ public sealed class ConsolidationController(
                 continue;
             }
 
+            // First open load on the canonical lane, used purely as a default seed hint so the
+            // UI can populate the pilot queue on tab-load without app-settings. Honest: null when
+            // the lane is empty. PageSize=1 already fetched it, so no extra Alvys read.
+            var seed = response.Items.FirstOrDefault();
+
             healths.Add(new CorridorHealth
             {
                 Code = corridor.Code,
@@ -163,6 +168,8 @@ public sealed class ConsolidationController(
                 Truncated = response.Truncated,
                 OriginCity = originCity,
                 DestinationCity = destinationCity,
+                SeedLoadId = seed?.Id,
+                SeedLoadNumber = seed?.LoadNumber,
             });
         }
 

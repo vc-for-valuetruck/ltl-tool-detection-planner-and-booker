@@ -8,6 +8,7 @@ import { ConsolidationService } from './consolidation.service';
 import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
+import { of } from 'rxjs';
 import { RUNTIME_CONFIG, RuntimeConfig } from '../../runtime-config';
 
 const TEST_RUNTIME_CONFIG: RuntimeConfig = {
@@ -226,5 +227,102 @@ describe('Consolidate component', () => {
       siblings: [],
     } as unknown as ConsolidationPlanResponse);
     expect(c.upliftText()).toContain('—');
+  });
+});
+
+/**
+ * Regression guard for the config-gating bug: the pilot queue must populate BY DEFAULT on
+ * tab-load — no manual seed required — so the corridor banner, fit chips, and Current plan
+ * panel are all visible without any app-settings. These tests drive ngOnInit with a stubbed
+ * service that returns a corridor whose health carries a seed load.
+ */
+describe('Consolidate default auto-seed', () => {
+  function makeStubService(overrides: Partial<ConsolidationService> = {}): ConsolidationService {
+    const seededCandidate = makeCandidate({ loadId: 'S1', loadNumber: 'L-2' });
+    return {
+      getCorridors: () =>
+        of([
+          {
+            code: 'LAREDO_TO_DALLAS',
+            origin: { code: 'LRD', name: 'Laredo', state: 'TX', nearbyCities: [] },
+            destination: { code: 'DAL', name: 'Dallas', state: 'TX', nearbyCities: [] },
+            pickupWindowDays: 3,
+            deliveryWindowDays: 3,
+          },
+        ]),
+      getCorridorHealth: () =>
+        of([
+          {
+            code: 'LAREDO_TO_DALLAS',
+            openLoadCount: 4,
+            truncated: false,
+            originCity: 'Laredo',
+            destinationCity: 'Dallas',
+            seedLoadId: 'SEED',
+            seedLoadNumber: 'L-100234',
+          },
+        ]),
+      getCandidates: () =>
+        of({
+          corridorCode: 'LAREDO_TO_DALLAS',
+          seed: { id: 'SEED', loadNumber: 'L-100234' } as any,
+          candidates: [seededCandidate],
+          scanTruncated: false,
+        } as ConsolidationCandidateResponse),
+      buildPlan: () =>
+        of({
+          previewId: 'preview-1',
+          corridorCode: 'LAREDO_TO_DALLAS',
+          parent: { id: 'SEED' } as any,
+          siblings: [{ loadId: 'S1' }],
+          combinedRevenue: 8000,
+          linehaulMiles: 1000,
+          clickCard: { plainText: 'x', tripReferenceValue: 'LTL=X', mainLoadIdReferenceValue: 'X' },
+          blockers: [],
+        } as unknown as ConsolidationPlanResponse),
+      ...overrides,
+    } as unknown as ConsolidationService;
+  }
+
+  function componentWith(stub: ConsolidationService): Consolidate {
+    TestBed.configureTestingModule({
+      imports: [HttpClientTestingModule],
+      providers: [
+        provideRouter([]),
+        { provide: RUNTIME_CONFIG, useValue: TEST_RUNTIME_CONFIG },
+        { provide: ConsolidationService, useValue: stub },
+      ],
+    });
+    return TestBed.runInInjectionContext(() => new Consolidate());
+  }
+
+  it('auto-seeds the queue and selects the first sibling on tab-load (no manual seed)', () => {
+    const c = componentWith(makeStubService());
+    c.ngOnInit();
+    expect(c.seedInput()).toBe('L-100234');
+    expect(c.candidateResponse()?.seed?.id).toBe('SEED');
+    expect(c.isSelected('S1')).toBeTrue();
+    expect(c.hasSelection()).toBeTrue();
+  });
+
+  it('does not auto-seed when the corridor lane is empty (seed absent)', () => {
+    const stub = makeStubService({
+      getCorridorHealth: () =>
+        of([
+          {
+            code: 'LAREDO_TO_DALLAS',
+            openLoadCount: 0,
+            truncated: false,
+            originCity: 'Laredo',
+            destinationCity: 'Dallas',
+            seedLoadId: null,
+            seedLoadNumber: null,
+          },
+        ]) as any,
+    });
+    const c = componentWith(stub);
+    c.ngOnInit();
+    expect(c.seedInput()).toBe('');
+    expect(c.candidateResponse()).toBeNull();
   });
 });
