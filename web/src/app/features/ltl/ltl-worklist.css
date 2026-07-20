@@ -123,6 +123,15 @@ table.grid td {
   color: var(--text-muted);
 }
 
+.text-muted {
+  color: var(--text-muted);
+}
+
+.pallets-est {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .chip-row {
   display: flex;
   flex-wrap: wrap;

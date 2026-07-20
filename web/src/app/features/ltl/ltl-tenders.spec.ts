@@ -104,6 +104,81 @@ describe('LtlTenders', () => {
     expect(c['formatRate'](824)).toBe('$824');
   });
 
+  it('sums pieces from the EDI order lines across stops', () => {
+    const c = build({
+      search: () =>
+        of(
+          response([
+            tender({
+              Id: 'X',
+              Stops: [
+                { StopId: '1', Type: 'Pickup', Orders: [{ Quantity: 5 }, { Quantity: 3 }] },
+                { StopId: '2', Type: 'Delivery', Orders: [{ Quantity: 2 }] },
+              ],
+            }),
+          ]),
+        ),
+    });
+    c.ngOnInit();
+    expect(c['rows']()[0].pieces).toBe(10);
+    expect(c['formatPieces'](10)).toBe('10');
+  });
+
+  it('leaves pieces null (em dash) when no order line reports a quantity', () => {
+    const c = build({
+      search: () =>
+        of(response([tender({ Id: 'X', Stops: [{ StopId: '1', Type: 'Pickup', Orders: [{}] }] })])),
+    });
+    c.ngOnInit();
+    expect(c['rows']()[0].pieces).toBeNull();
+    expect(c['formatPieces'](null)).toBe('—');
+  });
+
+  it('prefers the tender aggregate volume when present', () => {
+    const c = build({ search: () => of(response([tender({ Id: 'X', Volume: 900 })])) });
+    c.ngOnInit();
+    expect(c['rows']()[0].volumeCuFt).toBe(900);
+    expect(c['formatVolume'](900)).toBe('900 ft³');
+  });
+
+  it('sums order-line volume when the tender has no aggregate', () => {
+    const c = build({
+      search: () =>
+        of(
+          response([
+            tender({
+              Id: 'Y',
+              Stops: [{ StopId: '1', Type: 'Pickup', Orders: [{ Volume: 400 }, { Volume: 200 }] }],
+            }),
+          ]),
+        ),
+    });
+    c.ngOnInit();
+    expect(c['rows']()[0].volumeCuFt).toBe(600);
+  });
+
+  it('uses counted QtyPallets as a non-estimated pallet figure', () => {
+    const c = build({ search: () => of(response([tender({ Id: 'X', QtyPallets: 12, Volume: 900 })])) });
+    c.ngOnInit();
+    expect(c['rows']()[0].pallets).toEqual({ count: 12, estimated: false });
+    expect(c['formatPallets']({ count: 12, estimated: false })).toBe('12');
+  });
+
+  it('estimates pallets from volume when no QtyPallets, badged est.', () => {
+    // 900 / 96 = 9.375 → ceil 10
+    const c = build({ search: () => of(response([tender({ Id: 'X', Volume: 900 })])) });
+    c.ngOnInit();
+    expect(c['rows']()[0].pallets).toEqual({ count: 10, estimated: true });
+    expect(c['formatPallets']({ count: 10, estimated: true })).toBe('10 est.');
+  });
+
+  it('leaves pallets null (em dash) with neither a count nor volume', () => {
+    const c = build({ search: () => of(response([tender({ Id: 'X' })])) });
+    c.ngOnInit();
+    expect(c['rows']()[0].pallets).toBeNull();
+    expect(c['formatPallets'](null)).toBe('—');
+  });
+
   it('surfaces an Alvys error and clears loading', () => {
     const c = build({ search: () => throwError(() => ({ message: 'boom' })) });
     c.ngOnInit();
