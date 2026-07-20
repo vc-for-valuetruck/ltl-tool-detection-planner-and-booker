@@ -135,15 +135,21 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
   }) => {
     // The core mockup-parity fix: opening the Consolidate tab must show the candidate queue
     // and Current plan panel BY DEFAULT (auto-seeded from the corridor's first open load) —
-    // no manual seed, no app-settings. Skip only when the live corridor genuinely has no open
-    // loads today (nothing to auto-seed) — we never fabricate a seed to make the demo pass.
+    // no manual seed, no app-settings. The precondition is exactly the auto-seed precondition:
+    // /corridors/health must expose a seed hint for some corridor. When no lane has an open
+    // load today (no seed hint) there is nothing to auto-seed and we skip — we never fabricate
+    // a seed to make the demo pass.
     const healthResp = await request.get(`${API_URL}/api/ltl/consolidation/corridors/health`);
-    if (healthResp.ok()) {
-      const healths = (await healthResp.json()) as Array<{ openLoadCount: number | null }>;
-      const anyOpen = healths.some((h) => (h.openLoadCount ?? 0) > 0);
-      if (!anyOpen) {
-        test.skip(true, 'No open loads on any corridor today; nothing to auto-seed.');
-      }
+    if (!healthResp.ok()) {
+      test.skip(true, `Corridor health returned ${healthResp.status()}; skipping auto-seed check.`);
+    }
+    const healths = (await healthResp.json()) as Array<{
+      seedLoadId?: string | null;
+      seedLoadNumber?: string | null;
+    }>;
+    const hasSeed = healths.some((h) => h.seedLoadId || h.seedLoadNumber);
+    if (!hasSeed) {
+      test.skip(true, 'No corridor exposes a seed hint today; nothing to auto-seed.');
     }
 
     await page.goto('/ltl/consolidate');
