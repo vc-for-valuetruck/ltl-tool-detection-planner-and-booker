@@ -356,6 +356,22 @@ flags billing readiness and exceptions.
 | `GET /api/ltl/loads/{idOrNumber}/assignments` | internal assignment audit trail for a load |
 | `GET /api/ltl/billing/worklist?badge=` | loads needing billing attention, readiness-first |
 | `GET /api/ltl/exceptions` | loads carrying operational/billing exceptions |
+| `GET /api/ltl/agent/commands` | tool-style catalog of the read-only agent commands (schema discovery) |
+| `POST /api/ltl/agent/commands/{command}` | dispatch one read-only agent command (feature-gated; 404 when disabled) |
+
+#### Agent command surface (Phase 2 M4, read-only)
+
+Feature-gated behind `Ltl:Optimization:AgentCommands:Enabled` (default **false** — the
+catalog is always served for discovery, but POST dispatch returns 404 until the flag is on).
+Every command is **read-only against Alvys**: it reuses the existing decision-support services
+and writes nothing upstream. The catalog is shaped like an LLM function-calling tool list so a
+future function-calling layer can advertise it verbatim. Commands: `list-opportunities`,
+`explain-plan`, `check-fit`, `sequence-stops`, `estimate-quote`, `report-incident`. Each
+invocation is audited (command, SHA-256 args hash, acting user, timestamp) via
+`IAgentCommandAuditStore`. `estimate-quote` returns a clearly-labeled **reference-only** rate/CO₂
+estimate from a static rate card — never an Alvys rate or mileage; `report-incident` records an
+in-memory corridor planning signal that raises that estimate's surge factor and never touches
+Alvys.
 
 ### Assignment boundary (no Alvys writeback)
 

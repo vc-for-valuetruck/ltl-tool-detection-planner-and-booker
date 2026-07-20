@@ -1,4 +1,5 @@
 using LtlTool.Api.Features.Integrations.Alvys;
+using LtlTool.Api.Features.Ltl.Agent;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.Optimization;
@@ -124,6 +125,11 @@ public static class LtlServiceCollectionExtensions
         // Tool-local dispatcher saved views, persisted durably in AppDbContext (server-side, never
         // browser storage). Scoped to match the DbContext lifetime. Owner-scoped; no Alvys writeback.
         services.AddScoped<ISavedViewStore, EfSavedViewStore>();
+
+        // Phase 2 M4 agent command surface (tool-style catalog + read-only dispatch). Feature-gated
+        // behind Ltl:Optimization:AgentCommands:Enabled with a Null dispatcher fallback; every command
+        // reuses the decision-support services above and writes nothing to Alvys.
+        services.AddLtlAgentCommands(configuration);
 
         return services;
     }
