@@ -107,12 +107,18 @@ public sealed class AlvysReadinessServiceTests
     }
 
     [Fact]
-    public void Operations_cover_the_full_registry()
+    public void Operations_cover_the_public_registry()
     {
         var status = Service().GetStatus();
 
-        Assert.Equal(AlvysWriteOperationRegistry.All.Count, status.Operations.Count);
+        // Readiness surfaces Public-API operations only; internal-API operations (observed-not-
+        // contracted, decision #10) are intentionally excluded from the readiness surface.
+        var expected = AlvysWriteOperationRegistry.All
+            .Count(op => op.Surface == AlvysWriteApiSurface.Public);
+
+        Assert.Equal(expected, status.Operations.Count);
         Assert.Contains(status.Operations, o => o.Code == "create-load-note");
         Assert.Contains(status.Operations, o => o.Code == "load-update" && o.RequiresEtag);
+        Assert.DoesNotContain(status.Operations, o => o.Code == "set-trip-references");
     }
 }

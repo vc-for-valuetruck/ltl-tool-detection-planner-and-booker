@@ -61,6 +61,37 @@ public enum AlvysWriteOperationKind
     TripDispatch,
     /// <summary>Update a carrier's operational status (optimistic-concurrency / ETag gated).</summary>
     CarrierStatusUpdate,
+
+    // --- Phase-2 consolidation writes (internal API — observed, not contracted; decision #10) ---
+
+    /// <summary>Create a Waypoint / extended stop on the parent trip (internal API).</summary>
+    AddExtendedStop,
+    /// <summary>Zero a child trip's dispatch (loaded) mileage, preserving customer miles (internal API).</summary>
+    ZeroChildDispatchMiles,
+    /// <summary>Set trip references — the <c>LTL</c> boolean and <c>main_load_id</c> string (internal API).</summary>
+    SetTripReferences,
+}
+
+/// <summary>
+/// Which Alvys API surface an operation is dispatched against. The two surfaces authenticate
+/// differently and have different safety postures (decision #10 in
+/// <c>docs/ALVYS_API_DECISIONS.md</c>).
+/// </summary>
+public enum AlvysWriteApiSurface
+{
+    /// <summary>
+    /// The Alvys <b>Public</b> API — client-credentials (machine-to-machine) auth. Routes/verbs are
+    /// contracted in the Alvys API docs. All pre-Phase-2 write operations use this surface.
+    /// </summary>
+    Public,
+
+    /// <summary>
+    /// The Alvys <b>internal</b> API (the endpoints the Alvys web app calls) — per-acting-user Auth0
+    /// session-token auth. Endpoints are <b>observed, not contracted</b> and can change without
+    /// notice, so every internal call site requires a snapshot regression test. Phase-2
+    /// consolidation writes use this surface.
+    /// </summary>
+    Internal,
 }
 
 /// <summary>
@@ -92,6 +123,14 @@ public sealed class AlvysWriteOperationDescriptor
 
     /// <summary>The Search → Match → Assign → Bill stage this operation supports.</summary>
     public required string WorkflowStage { get; init; }
+
+    /// <summary>
+    /// Which Alvys API surface this operation dispatches against. Defaults to
+    /// <see cref="AlvysWriteApiSurface.Public"/>; Phase-2 consolidation writes set
+    /// <see cref="AlvysWriteApiSurface.Internal"/>. The readiness surface only reports Public
+    /// operations; internal operations are gated by <see cref="AlvysInternalApiOptions"/>.
+    /// </summary>
+    public AlvysWriteApiSurface Surface { get; init; } = AlvysWriteApiSurface.Public;
 
     /// <summary>True when the operation mutates an existing record and needs an ETag to be safe.</summary>
     public bool RequiresEtag { get; init; }
@@ -213,6 +252,65 @@ public static class AlvysWriteOperationRegistry
             RequiresEtag = true,
             LiveSupport = AlvysLiveSupport.Supported,
             RequiredToEnable = null,
+        },
+
+        // --- Phase-2 consolidation writes (internal API surface) ---------------------------------
+        // These are SCAFFOLDING. The internal-API endpoints are observed-not-contracted and their
+        // exact routes are still pending discovery (see the discovered-endpoints table in
+        // docs/ALVYS_API_DECISIONS.md, decision #10). They are marked Unsupported so live execution
+        // is impossible until a real endpoint + session-token contract is confirmed; the wiring
+        // proves the acquire/gate/build/record flow end-to-end against a fake handler only.
+        new()
+        {
+            Code = "add-extended-stop",
+            Kind = AlvysWriteOperationKind.AddExtendedStop,
+            Title = "Add extended stop (Waypoint)",
+            Description =
+                "Create a Waypoint / extended stop on the parent trip during consolidation. " +
+                "Dispatched against the Alvys internal API (observed, not contracted).",
+            WorkflowStage = "Assign",
+            RequiresEtag = false,
+            Surface = AlvysWriteApiSurface.Internal,
+            LiveSupport = AlvysLiveSupport.Unsupported,
+            RequiredToEnable =
+                "Confirm the internal-API Waypoint-create endpoint (route + verb + body) from the " +
+                "discovered-endpoints table in docs/ALVYS_API_DECISIONS.md (decision #10) and " +
+                "confirm session-token access.",
+        },
+        new()
+        {
+            Code = "zero-child-dispatch-miles",
+            Kind = AlvysWriteOperationKind.ZeroChildDispatchMiles,
+            Title = "Zero child dispatch miles",
+            Description =
+                "Zero a consolidated child trip's dispatch (loaded) mileage while preserving " +
+                "customer miles. Dispatched against the Alvys internal API (observed, not contracted).",
+            WorkflowStage = "Assign",
+            RequiresEtag = false,
+            Surface = AlvysWriteApiSurface.Internal,
+            LiveSupport = AlvysLiveSupport.Unsupported,
+            RequiredToEnable =
+                "Confirm the internal-API trip-mileage update endpoint (route + verb + body) from " +
+                "the discovered-endpoints table in docs/ALVYS_API_DECISIONS.md (decision #10) and " +
+                "confirm session-token access.",
+        },
+        new()
+        {
+            Code = "set-trip-references",
+            Kind = AlvysWriteOperationKind.SetTripReferences,
+            Title = "Set trip references (LTL / main load id)",
+            Description =
+                "Set the LTL boolean and main_load_id references on a consolidated trip (both " +
+                "transported as strings). Dispatched against the Alvys internal API (observed, not " +
+                "contracted).",
+            WorkflowStage = "Assign",
+            RequiresEtag = false,
+            Surface = AlvysWriteApiSurface.Internal,
+            LiveSupport = AlvysLiveSupport.Unsupported,
+            RequiredToEnable =
+                "Confirm the internal-API trip-references update endpoint (route + verb + body) from " +
+                "the discovered-endpoints table in docs/ALVYS_API_DECISIONS.md (decision #10) and " +
+                "confirm session-token access.",
         },
     ];
 

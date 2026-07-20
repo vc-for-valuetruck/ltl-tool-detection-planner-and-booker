@@ -84,7 +84,11 @@ public sealed class AlvysReadinessService(
         var topBlockers = SandboxConfigBlockers();
         var sandboxConfigured = _write.Mode == AlvysWritebackMode.Sandbox && topBlockers.Count == 0;
 
+        // Only the Public-API surface is reported here — its eligibility is the sandbox posture below.
+        // Internal-API (Phase-2 consolidation) operations have a distinct gate
+        // (AlvysInternalApiOptions) and are surfaced separately, not through this sandbox panel.
         var operations = AlvysWriteOperationRegistry.All
+            .Where(op => op.Surface == AlvysWriteApiSurface.Public)
             .Select(op => BuildOperationReadiness(op, topBlockers, sandboxConfigured))
             .ToList();
 

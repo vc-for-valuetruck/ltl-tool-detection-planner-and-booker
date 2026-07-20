@@ -112,6 +112,8 @@ public sealed class AlvysOperationsController(
             AlvysOperationDisposition.Blocked => UnprocessableEntity(response),
             // The sandbox call was attempted but Alvys rejected it — surface a gateway error.
             AlvysOperationDisposition.SandboxFailed => StatusCode(StatusCodes.Status502BadGateway, response),
+            // The internal-API call (incl. the token_expired path) failed — never a false success.
+            AlvysOperationDisposition.InternalFailed => StatusCode(StatusCodes.Status502BadGateway, response),
             _ => Ok(response),
         };
     }

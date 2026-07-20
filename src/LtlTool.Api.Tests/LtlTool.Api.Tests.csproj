@@ -21,4 +21,10 @@
     <ProjectReference Include="..\LtlTool.Api\LtlTool.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Snapshot fixtures for the internal-API (observed-not-contracted) write call sites. Copied to
+         the test output so the regression tests fail loudly if request/response serialization drifts. -->
+    <None Include="Alvys\Fixtures\internal\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
