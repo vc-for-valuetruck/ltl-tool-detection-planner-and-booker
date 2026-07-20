@@ -40,7 +40,17 @@ public sealed class ConsolidationOptions
             Code = "LAREDO",
             Name = "Laredo yard",
             State = "TX",
-            NearbyCities = ["Laredo", "Nuevo Laredo", "Encinal"],
+            // Laredo proper plus the Monterrey-area cluster that crosses at Laredo. Live pilot
+            // freight (Vertiv, etc.) originates in the Monterrey metro (Santa Catarina, San
+            // Nicolás de los Garza, Apodaca, Guadalupe) and physically crosses through Laredo,
+            // so those cities are legal origins for this corridor. Cross-border origins keep the
+            // honest cross-border posture — the region gate still flags a non-US state.
+            NearbyCities =
+            [
+                "Laredo", "Nuevo Laredo", "Encinal",
+                "Monterrey", "Santa Catarina", "San Nicolás de los Garza",
+                "Apodaca", "Guadalupe",
+            ],
         },
         new ConsolidationWarehouseOptions
         {

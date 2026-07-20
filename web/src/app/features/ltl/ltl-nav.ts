@@ -6,10 +6,10 @@ import { RouterLink } from '@angular/router';
  * plan detail) so the navigation is visible from the `/ltl` landing — previously it only
  * appeared on the Consolidate board (issue #79).
  *
- * Search / Billing / Exceptions / Tenders are Phase 2 stubs: their backend endpoints exist
- * but no screen is wired yet, so they are rendered as non-navigating tabs carrying a "Phase 2"
- * badge rather than links that mislead the dispatcher into a dead redirect. Consolidate is the
- * only live destination today.
+ * Search and Consolidate are live destinations. Billing / Exceptions / Tenders remain Phase 2
+ * stubs: their backend endpoints exist but no screen is wired yet, so they render as
+ * non-navigating tabs carrying a "Phase 2" badge rather than links that mislead the dispatcher
+ * into a dead redirect.
  */
 @Component({
   selector: 'app-ltl-nav',
@@ -18,16 +18,9 @@ import { RouterLink } from '@angular/router';
   template: `
     <nav class="shell-tabs" role="tablist" aria-label="LTL console">
       <div class="shell-tabs-inner">
-        <span
-          class="shell-tab shell-tab-stub"
-          [class.active]="active === 'search'"
-          role="tab"
-          aria-disabled="true"
-          title="Coming in Phase 2"
-        >
+        <a routerLink="/ltl" class="shell-tab" [class.active]="active === 'search'" role="tab">
           Search
-          <span class="phase-badge">Phase 2</span>
-        </span>
+        </a>
         <span class="shell-tab shell-tab-stub" role="tab" aria-disabled="true" title="Coming in Phase 2">
           Billing
           <span class="phase-badge">Phase 2</span>

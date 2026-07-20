@@ -189,13 +189,15 @@ public sealed class ConsolidationCandidateService(
         LtlLoadSummary candidate,
         ConsolidationCorridorOptions corridor)
     {
-        if (seed.ScheduledPickupAt is null || candidate.ScheduledPickupAt is null)
+        if (!HasComparablePickup(seed.ScheduledPickupAt) || !HasComparablePickup(candidate.ScheduledPickupAt))
         {
             return new ConsolidationFactor
             {
                 Name = "Timing fit",
                 Fit = ConsolidationFit.Unknown,
-                Rationale = "Pickup time missing on seed or candidate — visual verify at dock.",
+                Rationale =
+                    "Pickup appointment not set on seed or candidate (missing or Alvys " +
+                    "\"no appointment\" sentinel window) — confirm timing before consolidating.",
             };
         }
 
@@ -312,7 +314,7 @@ public sealed class ConsolidationCandidateService(
 
     private static double TimingDeltaMinutes(LtlLoadSummary seed, ConsolidationCandidate candidate)
     {
-        if (seed.ScheduledPickupAt is null || candidate.ScheduledPickupAt is null)
+        if (!HasComparablePickup(seed.ScheduledPickupAt) || !HasComparablePickup(candidate.ScheduledPickupAt))
         {
             return double.MaxValue;
         }
@@ -320,4 +322,16 @@ public sealed class ConsolidationCandidateService(
             .Duration()
             .TotalMinutes;
     }
+
+    /// <summary>
+    /// A pickup timestamp is comparable only when it is present AND not an Alvys "no appointment
+    /// set" sentinel. Alvys emits far-future sentinel dates (e.g. 9999-12-31) for unset stop
+    /// windows; treating those as a real date makes an unscheduled load look impossibly far from
+    /// the seed and blocks it. We treat any year at/after <see cref="SentinelYearThreshold"/> as
+    /// "not set" so timing degrades honestly to Unknown rather than a false Blocked/exclusion.
+    /// </summary>
+    private static bool HasComparablePickup(DateTimeOffset? pickup) =>
+        pickup is { } value && value.Year < SentinelYearThreshold;
+
+    private const int SentinelYearThreshold = 9000;
 }
