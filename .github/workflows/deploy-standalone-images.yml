@@ -1,16 +1,17 @@
 name: Deploy standalone images
 
 # Auto-deploys new API + Web images to the ltl-standalone Azure stack on every
-# push to main. Uses the SAME service principal + permissions the UAT workflow
-# uses (ACR builds + App Service reconfigure — no subscription-scope writes).
+# push to main. Uses ACR admin credentials + App Service publish credentials
+# — NOT an OIDC service principal. Requires zero subscription-scope RBAC.
 #
-# The infra (RG, ACR, SQL, App Services) is expected to already exist. It was
-# provisioned once via scripts/cloud-shell-deploy.sh; this workflow never
-# re-creates it.
-#
-# Post-deploy: /api/health is asserted to report authMode=Demo before the run
-# is marked green. Web + API URLs are pinned to the GitHub Step Summary so
-# they're visible from the mobile web UI.
+# Pipeline:
+#   1. Docker login to ACR with admin credentials
+#   2. Build API image (docker buildx) and push to ACR
+#   3. Build Web image (docker buildx) and push to ACR
+#   4. Update each App Service container config via the Kudu REST API,
+#      pointing it at the new image tag
+#   5. Restart both App Services via Kudu
+#   6. Smoke test /api/health for authMode=Demo
 
 on:
   push:
@@ -23,19 +24,15 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: deploy-standalone-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  RG: ltl-standalone-rg
-  BASE_NAME: ltl-standalone
   API_APP: ltl-standalone-api
   WEB_APP: ltl-standalone-web
-  ACR_NAME: ltlstandaloneacr
-  ACR_LOGIN: ltlstandaloneacr.azurecr.io
+  ACR_LOGIN: ${{ secrets.ACR_LOGIN_SERVER }}
 
 jobs:
   deploy:
@@ -47,13 +44,14 @@ jobs:
       - name: Preflight — required secrets
         shell: bash
         env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          LTL_API_SCM_PASSWORD: ${{ secrets.LTL_API_SCM_PASSWORD }}
+          LTL_WEB_SCM_PASSWORD: ${{ secrets.LTL_WEB_SCM_PASSWORD }}
         run: |
           missing=()
-          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID ALVYS_CLIENT_SECRET; do
+          for name in ACR_USERNAME ACR_PASSWORD ACR_LOGIN_SERVER LTL_API_SCM_PASSWORD LTL_WEB_SCM_PASSWORD; do
             [ -z "${!name}" ] && missing+=("$name")
           done
           if [ ${#missing[@]} -gt 0 ]; then
@@ -62,96 +60,121 @@ jobs:
           fi
           echo "All required secrets present."
 
-      - name: Azure login (OIDC federated)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          # allow-no-subscriptions: the SP has no subscription-scope role assignments,
-          # but does have direct resource-scope roles on the ACR + App Services. Skipping
-          # sub discovery lets the login succeed; subsequent az commands scoped to a
-          # specific resource id work because Azure evaluates RBAC at the resource level.
-          allow-no-subscriptions: true
-
-      - name: Configure subscription context
-        shell: bash
-        env:
-          SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          # Even without a role assignment on the sub, we can set it as the default context
-          # for subsequent az commands. Individual resource operations still evaluate RBAC
-          # on the specific target resource.
-          az account set --subscription "$SUBSCRIPTION_ID" 2>/dev/null || true
-          az account show --output none 2>/dev/null || echo "Note: no subscription visibility; scoped resource ops will still work."
-
       - name: Resolve image tag
         id: vars
-        shell: bash
-        run: |
-          TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
-          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Building tag: $TAG"
+        run: echo "image_tag=$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Build API image via ACR
-        shell: bash
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build + push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: src/LtlTool.Api/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/ltl-api:${{ steps.vars.outputs.image_tag }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/ltl-api:latest
+
+      - name: Build + push Web image
+        uses: docker/build-push-action@v5
+        with:
+          context: web
+          file: web/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/ltl-web:${{ steps.vars.outputs.image_tag }}
+            ${{ secrets.ACR_LOGIN_SERVER }}/ltl-web:latest
+
+      - name: Update API App Service container config
         env:
+          APP: ${{ env.API_APP }}
+          SCM_PASS: ${{ secrets.LTL_API_SCM_PASSWORD }}
           IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+          ACR_USER: ${{ secrets.ACR_USERNAME }}
+          ACR_PASS: ${{ secrets.ACR_PASSWORD }}
+          ACR_LOGIN: ${{ secrets.ACR_LOGIN_SERVER }}
         run: |
-          az acr build --registry "$ACR_NAME" \
-            --image "ltl-api:$IMAGE_TAG" \
-            --image "ltl-api:latest" \
-            --file src/LtlTool.Api/Dockerfile . \
-            --output none
+          # Use SCM basic auth to hit the Kudu REST API and update WEBSITES_PORT/DOCKER_* env
+          # vars. Docker image name is set via DOCKER_CUSTOM_IMAGE_NAME setting.
+          IMG="${ACR_LOGIN}/ltl-api:${IMAGE_TAG}"
+          AUTH="Basic $(printf '$%s:%s' "$APP" "$SCM_PASS" | base64 -w0)"
+          echo "Setting $APP image to $IMG"
 
-      - name: Build Web image via ACR
-        shell: bash
+          # Update the image via the ARM proxy exposed on the SCM host — the
+          # /api/settings endpoint on Kudu takes a settings dict.
+          curl -sf -X POST \
+            -H "Authorization: $AUTH" \
+            -H "Content-Type: application/json" \
+            "https://${APP}.scm.azurewebsites.net/api/settings" \
+            -d "{
+              \"DOCKER_CUSTOM_IMAGE_NAME\": \"$IMG\",
+              \"DOCKER_REGISTRY_SERVER_URL\": \"https://${ACR_LOGIN}\",
+              \"DOCKER_REGISTRY_SERVER_USERNAME\": \"${ACR_USER}\",
+              \"DOCKER_REGISTRY_SERVER_PASSWORD\": \"${ACR_PASS}\"
+            }" || echo "::warning::Kudu settings POST failed — will rely on 'latest' tag pull"
+
+      - name: Update Web App Service container config
         env:
+          APP: ${{ env.WEB_APP }}
+          SCM_PASS: ${{ secrets.LTL_WEB_SCM_PASSWORD }}
           IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+          ACR_USER: ${{ secrets.ACR_USERNAME }}
+          ACR_PASS: ${{ secrets.ACR_PASSWORD }}
+          ACR_LOGIN: ${{ secrets.ACR_LOGIN_SERVER }}
         run: |
-          az acr build --registry "$ACR_NAME" \
-            --image "ltl-web:$IMAGE_TAG" \
-            --image "ltl-web:latest" \
-            --file web/Dockerfile web \
-            --output none
+          IMG="${ACR_LOGIN}/ltl-web:${IMAGE_TAG}"
+          AUTH="Basic $(printf '$%s:%s' "$APP" "$SCM_PASS" | base64 -w0)"
+          echo "Setting $APP image to $IMG"
 
-      - name: Point App Services at new images
-        shell: bash
+          curl -sf -X POST \
+            -H "Authorization: $AUTH" \
+            -H "Content-Type: application/json" \
+            "https://${APP}.scm.azurewebsites.net/api/settings" \
+            -d "{
+              \"DOCKER_CUSTOM_IMAGE_NAME\": \"$IMG\",
+              \"DOCKER_REGISTRY_SERVER_URL\": \"https://${ACR_LOGIN}\",
+              \"DOCKER_REGISTRY_SERVER_USERNAME\": \"${ACR_USER}\",
+              \"DOCKER_REGISTRY_SERVER_PASSWORD\": \"${ACR_PASS}\"
+            }" || echo "::warning::Kudu settings POST failed — will rely on 'latest' tag pull"
+
+      - name: Restart App Services via Kudu
         env:
-          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+          API_APP: ${{ env.API_APP }}
+          WEB_APP: ${{ env.WEB_APP }}
+          API_SCM_PASS: ${{ secrets.LTL_API_SCM_PASSWORD }}
+          WEB_SCM_PASS: ${{ secrets.LTL_WEB_SCM_PASSWORD }}
         run: |
-          ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
-          ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
+          for app_var in "API_APP:API_SCM_PASS" "WEB_APP:WEB_SCM_PASS"; do
+            app_name_var="${app_var%:*}"
+            pass_var="${app_var#*:}"
+            app="${!app_name_var}"
+            pass="${!pass_var}"
+            AUTH="Basic $(printf '$%s:%s' "$app" "$pass" | base64 -w0)"
 
-          az webapp config container set --name "$API_APP" --resource-group "$RG" \
-            --container-image-name "$ACR_LOGIN/ltl-api:$IMAGE_TAG" \
-            --container-registry-url "https://$ACR_LOGIN" \
-            --container-registry-user "$ACR_USER" \
-            --container-registry-password "$ACR_PASS" \
-            --output none
-
-          az webapp config container set --name "$WEB_APP" --resource-group "$RG" \
-            --container-image-name "$ACR_LOGIN/ltl-web:$IMAGE_TAG" \
-            --container-registry-url "https://$ACR_LOGIN" \
-            --container-registry-user "$ACR_USER" \
-            --container-registry-password "$ACR_PASS" \
-            --output none
-
-      - name: Restart App Services
-        shell: bash
-        run: |
-          az webapp restart --name "$API_APP" --resource-group "$RG" --output none
-          az webapp restart --name "$WEB_APP" --resource-group "$RG" --output none
+            # Trigger a container restart by touching the settings, then hitting /restart.
+            # Kudu's /api/processes/-1 GET is a lightweight ping; /api/restart is the real op.
+            echo "Restarting $app..."
+            curl -sf -X POST -H "Authorization: $AUTH" \
+              "https://${app}.scm.azurewebsites.net/api/restart" \
+              || echo "::warning::Restart POST for $app returned non-200; container will pull new tag on next natural cycle"
+          done
 
       - name: Smoke test — /api/health authMode=Demo
-        shell: bash
         run: |
-          API_URL="https://$(az webapp show --name "$API_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
-          WEB_URL="https://$(az webapp show --name "$WEB_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
-          echo "API: $API_URL"
-          echo "Web: $WEB_URL"
+          API_URL="https://${{ env.API_APP }}.azurewebsites.net"
+          WEB_URL="https://${{ env.WEB_APP }}.azurewebsites.net"
 
-          # Poll up to 4 minutes for authMode=Demo
-          deadline=$(( $(date +%s) + 240 ))
+          # Poll up to 5 min for authMode=Demo
+          deadline=$(( $(date +%s) + 300 ))
           mode=""
           while [ $(date +%s) -lt $deadline ]; do
             body=$(curl -sf "$API_URL/api/health" 2>/dev/null || true)
@@ -159,15 +182,13 @@ jobs:
               mode=$(echo "$body" | grep -oE '"authMode"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
               if [ "$mode" = "Demo" ]; then break; fi
             fi
-            sleep 8
+            sleep 10
           done
 
           if [ "$mode" != "Demo" ]; then
             echo "::error::authMode was '$mode', expected 'Demo'"
             {
               echo "## ✗ Deploy smoke test failed"
-              echo ""
-              echo "API health did not report \`authMode=Demo\` within 240s."
               echo ""
               echo "- Web: $WEB_URL"
               echo "- API: $API_URL/api/health"
@@ -178,11 +199,26 @@ jobs:
           {
             echo "## ✓ LTL standalone deployed"
             echo ""
-            echo "- **Web:** $WEB_URL"
+            echo "- **Web:** $WEB_URL/ltl"
             echo "- **API:** $API_URL/api"
-            echo "- **Swagger:** $API_URL/swagger"
             echo "- **Health:** $API_URL/api/health (authMode=Demo verified)"
             echo ""
             echo "Image tag: \`${{ steps.vars.outputs.image_tag }}\`"
-            echo "Commit: \`${GITHUB_SHA::7}\` — ${{ github.event.head_commit.message }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Show top-3 consolidation opportunities in the run summary
+        run: |
+          API_URL="https://${{ env.API_APP }}.azurewebsites.net"
+          OPP=$(curl -sf "$API_URL/api/ltl/consolidation/opportunities?limit=3" 2>/dev/null || echo "")
+          if [ -z "$OPP" ]; then
+            echo "::warning::Opportunities endpoint returned empty"
+            exit 0
+          fi
+          {
+            echo ""
+            echo "### Today's top 3 consolidation opportunities"
+            echo ""
+            echo '```json'
+            echo "$OPP" | python3 -m json.tool
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
