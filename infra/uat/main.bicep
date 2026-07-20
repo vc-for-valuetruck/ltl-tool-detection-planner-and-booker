@@ -31,6 +31,7 @@ var cleanName = replace(baseName, '-', '')
 var planName = '${baseName}-plan'
 var webAppName = '${baseName}-web'
 var apiAppName = '${baseName}-api'
+var trailerFitAppName = '${baseName}-trailer-fit'
 var acrName = take('${cleanName}acr', 50)
 var workspaceName = '${baseName}-law'
 var appInsightsName = '${baseName}-ai'
@@ -150,8 +151,53 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
+// Trailer-fit packing sidecar (Phase 2). Another Linux container Web App on the SAME App Service
+// Plan as the api/web apps — the least-new-infrastructure option consistent with this template's
+// existing hosting pattern (no Container Apps environment, no VNet, no new plan). It is a pure
+// compute service: it ingests NO Alvys data and holds no credentials; the API passes it only the
+// shipment dimensions/weights it already holds. scripts/deploy-azure-uat.sh builds the real image
+// into the ACR above and repoints this app at it on every deploy (placeholder image until then).
+//
+// Ingress is locked down to Azure-internal callers only: the default action denies public traffic
+// and a single service-tag rule admits AzureCloud, so the api App Service can reach it over the
+// platform network while it is not browsable from the public internet. The UAT health workflow
+// therefore probes trailer-fit reachability THROUGH the API (/api/health/optimization), never
+// directly. App Service on the Basic tier does not offer true private-endpoint ingress without a
+// VNet; this is the strongest restriction available without introducing new networking resources.
+resource trailerFitApp 'Microsoft.Web/sites@2023-12-01' = {
+  name: trailerFitAppName
+  location: location
+  tags: tags
+  kind: 'app,linux,container'
+  properties: {
+    serverFarmId: plan.id
+    httpsOnly: true
+    siteConfig: {
+      linuxFxVersion: 'DOCKER|mcr.microsoft.com/appsvc/staticsite:latest'
+      alwaysOn: true
+      healthCheckPath: '/health'
+      ipSecurityRestrictionsDefaultAction: 'Deny'
+      ipSecurityRestrictions: [
+        {
+          ipAddress: 'AzureCloud'
+          tag: 'ServiceTag'
+          action: 'Allow'
+          priority: 100
+          name: 'AllowAzureInternal'
+          description: 'Only Azure-internal callers (the api App Service) may reach the sidecar.'
+        }
+      ]
+      appSettings: [
+        { name: 'WEBSITES_PORT', value: '8080' }
+      ]
+    }
+  }
+}
+
 output webAppUrl string = 'https://${webApp.properties.defaultHostName}'
 output apiAppUrl string = 'https://${apiApp.properties.defaultHostName}'
+output trailerFitAppUrl string = 'https://${trailerFitApp.properties.defaultHostName}'
+output trailerFitAppName string = trailerFitApp.name
 output acrLoginServer string = acr.properties.loginServer
 output acrName string = acr.name
 output appInsightsConnectionString string = appInsights.properties.ConnectionString

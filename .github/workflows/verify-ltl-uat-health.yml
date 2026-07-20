@@ -158,6 +158,62 @@ jobs:
             echo "::error::/api/alvys/ops/status returned HTTP $OPS_STATUS_HTTP unauthenticated — expected 401 (route mapped + protected). 404 means the route was renamed or dropped."
           fi
 
+      - name: Check optimization readiness (flags on + sidecar reachable + solver self-test)
+        if: steps.preflight.outputs.verify_ready == 'true'
+        id: optimization
+        shell: bash
+        env:
+          RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
+          BASE_NAME: ${{ vars.LTL_UAT_BASE_NAME || 'ltl-uat' }}
+        run: |
+          API_APP="${BASE_NAME}-api"
+          API_URL="https://$(az webapp show --name "$API_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
+
+          # Anonymous readiness probe. Reports flag states + trailer-fit sidecar reachability
+          # (checked THROUGH the API — the sidecar's own ingress is service-tag locked and not
+          # reachable from this public runner) + an in-memory 2-load solver self-test. Exposes
+          # no operational or Alvys data.
+          OPT_HTTP=000
+          for i in $(seq 1 12); do
+            OPT_HTTP=$(curl -s -o /tmp/opt-health.json -w "%{http_code}" "${API_URL}/api/health/optimization" || echo 000)
+            if [ "$OPT_HTTP" = "200" ]; then break; fi
+            echo "Attempt $i: optimization health=$OPT_HTTP - retrying..."
+            sleep 10
+          done
+          echo "opt_http=${OPT_HTTP}" >> "$GITHUB_OUTPUT"
+          [ "$OPT_HTTP" = "200" ] && cat /tmp/opt-health.json
+
+          # Defaults chosen so a non-200 (payload never fetched) fails every gate below.
+          OPT_STATUS=$(jq -r '.status // "missing"' /tmp/opt-health.json 2>/dev/null || echo missing)
+          FLAG_TRAILER_FIT=$(jq -r '.flags.trailerFit // false' /tmp/opt-health.json 2>/dev/null || echo false)
+          FLAG_SOLVER=$(jq -r '.flags.solver // false' /tmp/opt-health.json 2>/dev/null || echo false)
+          FLAG_AGENT=$(jq -r '.flags.agentCommands // false' /tmp/opt-health.json 2>/dev/null || echo false)
+          TRAILER_FIT_REACHABLE=$(jq -r '.trailerFit.reachable // false' /tmp/opt-health.json 2>/dev/null || echo false)
+          SOLVER_PASSED=$(jq -r '.solver.passed // false' /tmp/opt-health.json 2>/dev/null || echo false)
+
+          echo "opt_status=${OPT_STATUS}" >> "$GITHUB_OUTPUT"
+          echo "flag_trailer_fit=${FLAG_TRAILER_FIT}" >> "$GITHUB_OUTPUT"
+          echo "flag_solver=${FLAG_SOLVER}" >> "$GITHUB_OUTPUT"
+          echo "flag_agent=${FLAG_AGENT}" >> "$GITHUB_OUTPUT"
+          echo "trailer_fit_reachable=${TRAILER_FIT_REACHABLE}" >> "$GITHUB_OUTPUT"
+          echo "solver_passed=${SOLVER_PASSED}" >> "$GITHUB_OUTPUT"
+
+          if [ "$OPT_HTTP" != "200" ]; then
+            echo "::error::/api/health/optimization returned HTTP $OPT_HTTP (expected 200)."
+          fi
+          if [ "$OPT_STATUS" != "ok" ]; then
+            echo "::error::Optimization status is '$OPT_STATUS' (expected 'ok') — an enabled component failed its self-check."
+          fi
+          if [ "$FLAG_TRAILER_FIT" != "true" ] || [ "$FLAG_SOLVER" != "true" ] || [ "$FLAG_AGENT" != "true" ]; then
+            echo "::error::UAT must run with all optimization flags ON (trailerFit=$FLAG_TRAILER_FIT solver=$FLAG_SOLVER agentCommands=$FLAG_AGENT)."
+          fi
+          if [ "$TRAILER_FIT_REACHABLE" != "true" ]; then
+            echo "::error::Trailer-fit sidecar not reachable from the API (trailerFit.reachable=$TRAILER_FIT_REACHABLE)."
+          fi
+          if [ "$SOLVER_PASSED" != "true" ]; then
+            echo "::error::In-memory solver self-test did not pass (solver.passed=$SOLVER_PASSED)."
+          fi
+
       - name: Summary
         if: steps.preflight.outputs.verify_ready == 'true'
         shell: bash
@@ -175,9 +231,17 @@ jobs:
             echo "| Web served Angular shell | ${{ steps.http.outputs.web_has_app_root }} |"
             echo "| /api/ltl/search unauth (expect 401) | ${{ steps.http.outputs.ltl_search_http }} |"
             echo "| /api/alvys/ops/status unauth (expect 401) | ${{ steps.http.outputs.ops_status_http }} |"
+            echo "| /api/health/optimization HTTP | ${{ steps.optimization.outputs.opt_http }} |"
+            echo "| Optimization status (expect ok) | ${{ steps.optimization.outputs.opt_status }} |"
+            echo "| Flag trailerFit (expect true) | ${{ steps.optimization.outputs.flag_trailer_fit }} |"
+            echo "| Flag solver (expect true) | ${{ steps.optimization.outputs.flag_solver }} |"
+            echo "| Flag agentCommands (expect true) | ${{ steps.optimization.outputs.flag_agent }} |"
+            echo "| Trailer-fit reachable (via API) | ${{ steps.optimization.outputs.trailer_fit_reachable }} |"
+            echo "| Solver self-test passed | ${{ steps.optimization.outputs.solver_passed }} |"
             echo ""
             echo "- **Web UI:** ${{ steps.http.outputs.web_url }}"
             echo "- API health: ${{ steps.http.outputs.api_url }}/api/health"
+            echo "- Optimization health: ${{ steps.http.outputs.api_url }}/api/health/optimization"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail if anything is unhealthy
@@ -191,8 +255,15 @@ jobs:
              [ "${{ steps.http.outputs.web_http }}" != "200" ] || \
              [ "${{ steps.http.outputs.web_has_app_root }}" != "true" ] || \
              [ "${{ steps.http.outputs.ltl_search_http }}" != "401" ] || \
-             [ "${{ steps.http.outputs.ops_status_http }}" != "401" ]; then
+             [ "${{ steps.http.outputs.ops_status_http }}" != "401" ] || \
+             [ "${{ steps.optimization.outputs.opt_http }}" != "200" ] || \
+             [ "${{ steps.optimization.outputs.opt_status }}" != "ok" ] || \
+             [ "${{ steps.optimization.outputs.flag_trailer_fit }}" != "true" ] || \
+             [ "${{ steps.optimization.outputs.flag_solver }}" != "true" ] || \
+             [ "${{ steps.optimization.outputs.flag_agent }}" != "true" ] || \
+             [ "${{ steps.optimization.outputs.trailer_fit_reachable }}" != "true" ] || \
+             [ "${{ steps.optimization.outputs.solver_passed }}" != "true" ]; then
             echo "One or more health checks failed. See the job summary above for details."
             exit 1
           fi
-          echo "All Azure resources and both containers are healthy."
+          echo "All Azure resources and both containers are healthy, and optimization is on and passing."

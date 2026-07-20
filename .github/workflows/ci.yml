@@ -161,6 +161,12 @@ jobs:
       ALVYS_WRITEBACK_MODE: Disabled
       LTL_DETECTION_ENABLED: 'true'
       LTL_DEFAULT_TIMEZONE: America/Chicago
+      # Phase 2 optimization flags ON so the E2E exercises the real engines against live
+      # Alvys reads (read-only decision-support compute — no Alvys writes). The trailer-fit
+      # sidecar comes up as part of the compose stack.
+      LTL_TRAILER_FIT_ENABLED: 'true'
+      LTL_SOLVER_ENABLED: 'true'
+      LTL_AGENT_COMMANDS_ENABLED: 'true'
       MSSQL_SA_PASSWORD: 'Ltl_CI_p@ssw0rd!'
       # Placeholder GUIDs so MSAL's greedy option validation doesn't crash the API at build
       # time. The AuthenticationSchemeRouter forwards to DemoAuthenticationHandler in Demo

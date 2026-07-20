@@ -20,6 +20,13 @@ public interface ITrailerFitClient
     /// The supplied <paramref name="ct"/> carries the caller's timeout.
     /// </summary>
     Task<TrailerFitPlanSummary?> OptimizeAsync(TrailerFitOptimizeRequest request, CancellationToken ct);
+
+    /// <summary>
+    /// Liveness check against the sidecar's <c>GET /health</c>. Returns <c>true</c> only on a
+    /// success status; any non-success status or transport/timeout failure returns <c>false</c>
+    /// so a health probe reports the sidecar as unreachable rather than throwing. Sends no data.
+    /// </summary>
+    Task<bool> PingAsync(CancellationToken ct);
 }
 
 /// <summary>Default <see cref="ITrailerFitClient"/> over a named <see cref="HttpClient"/> ("TrailerFit").</summary>
@@ -40,6 +47,19 @@ public sealed class HttpTrailerFitClient(HttpClient http) : ITrailerFitClient
         return await response.Content
             .ReadFromJsonAsync<TrailerFitPlanSummary>(JsonOptions, ct)
             .ConfigureAwait(false);
+    }
+
+    public async Task<bool> PingAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var response = await http.GetAsync("health", ct).ConfigureAwait(false);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            return false;
+        }
     }
 }
 
