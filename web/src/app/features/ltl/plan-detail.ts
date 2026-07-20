@@ -328,17 +328,17 @@ export class PlanDetail implements OnInit {
   }
 
   /**
-   * Alvys deep-link for a load (issue #78). Opens the live load in the Alvys web app in a new
-   * tab. Prefers the human-facing load number; returns null when neither number nor id is known
-   * so the row degrades to non-clickable rather than linking to a broken URL.
+   * Internal load-detail route for a load (issue #104). Replaces the old
+   * `va336.alvys.com/loads/{n}` deep-link, which 404'd (no Alvys per-tenant subdomain, no public
+   * per-load link). Prefers the human-facing load number; returns null when neither number nor id
+   * is known so the row degrades to non-clickable. Returned as a routerLink segment array so the
+   * router encodes the reference safely and navigation stays in-app (same tab).
    */
-  alvysLoadUrl(load: LtlLoadSummary): string | null {
+  internalLoadUrl(load: LtlLoadSummary): (string | number)[] | null {
     const ref = load.loadNumber ?? load.id;
     if (!ref) return null;
-    return `${PlanDetail.ALVYS_LOAD_BASE_URL}/${encodeURIComponent(ref)}`;
+    return ['/ltl/loads', ref];
   }
-
-  private static readonly ALVYS_LOAD_BASE_URL = 'https://va336.alvys.com/loads';
 
   formatCurrency(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';

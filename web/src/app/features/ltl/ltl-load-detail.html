@@ -1,0 +1,118 @@
+<app-ltl-nav />
+
+<div class="worklist page-shell">
+  @if (loading()) {
+    <div class="state" data-testid="load-detail-loading">Loading load from Alvys…</div>
+  } @else if (error()) {
+    <div class="state state-error" data-testid="load-detail-error">
+      <strong>Couldn't load {{ loadNumber() }}.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="fetch()">Retry</button>
+    </div>
+  } @else if (hasLoad()) {
+    @let l = load()!;
+    <div class="detail-head">
+      <div class="detail-title">
+        <a routerLink="/ltl/consolidate" class="back-link">← Back to Consolidate</a>
+        <h1>{{ l.loadNumber ?? l.id }}</h1>
+        <div class="chip-row">
+          <span class="chip chip-neutral">{{ l.workflow.stageLabel }}</span>
+          <span class="chip chip-neutral">{{ l.status }}</span>
+          <span class="chip chip-neutral">{{ l.assignment }}</span>
+          @if (l.isLtl) {
+            <span class="chip chip-neutral">LTL{{ l.ltlClassification ? ' · ' + l.ltlClassification : '' }}</span>
+          }
+        </div>
+      </div>
+      <a
+        class="alvys-link"
+        [href]="alvysHomeUrl"
+        target="_blank"
+        rel="noopener"
+        data-testid="open-alvys"
+        title="Opens the Alvys home page — search this load number there (Ctrl+L). Alvys has no public per-load link."
+      >
+        Open Alvys ↗
+        <span class="alvys-hint">search {{ l.loadNumber ?? l.id }}</span>
+      </a>
+    </div>
+
+    <div class="detail-grid">
+      <div class="card detail-card">
+        <h2>Customer</h2>
+        <dl>
+          <dt>Customer</dt><dd>{{ l.customerName ?? '—' }}</dd>
+          <dt>PO #</dt><dd>{{ l.poNumber ?? '—' }}</dd>
+          <dt>Order #</dt><dd>{{ l.orderNumber ?? '—' }}</dd>
+        </dl>
+      </div>
+
+      <div class="card detail-card">
+        <h2>Lane &amp; schedule</h2>
+        <dl>
+          <dt>Origin</dt><dd>{{ place(l.origin) }}</dd>
+          <dt>Destination</dt><dd>{{ place(l.destination) }}</dd>
+          <dt>Pickup (scheduled)</dt>
+          <dd>{{ l.scheduledPickupAt ? (l.scheduledPickupAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
+          <dt>Pickup (actual)</dt>
+          <dd>{{ l.actualPickupAt ? (l.actualPickupAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
+          <dt>Delivery (scheduled)</dt>
+          <dd>{{ l.scheduledDeliveryAt ? (l.scheduledDeliveryAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
+          <dt>Delivery (actual)</dt>
+          <dd>{{ l.actualDeliveryAt ? (l.actualDeliveryAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
+        </dl>
+      </div>
+
+      <div class="card detail-card">
+        <h2>Freight</h2>
+        <dl>
+          <dt>Equipment</dt><dd>{{ l.equipment.length ? l.equipment.join(', ') : '—' }}</dd>
+          <dt>Weight</dt><dd>{{ weightLabel(l) }}</dd>
+          <dt>Volume</dt><dd>{{ formatNumber(l.volume) }}</dd>
+        </dl>
+      </div>
+
+      <div class="card detail-card">
+        <h2>Economics</h2>
+        <dl>
+          <dt>Revenue</dt><dd>{{ formatCurrency(l.revenue) }}</dd>
+          <dt>Mileage</dt><dd>{{ formatNumber(l.mileage, ' mi') }}</dd>
+          <dt>Revenue / mile</dt><dd>{{ l.revenuePerMile !== null ? ('$' + l.revenuePerMile.toFixed(2)) : '—' }}</dd>
+          <dt>Carrier payable</dt><dd>{{ formatCurrency(l.carrierPayable) }}</dd>
+          <dt>Gross margin</dt><dd>{{ formatCurrency(l.grossMargin) }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card detail-card">
+      <h2>Billing readiness</h2>
+      <div class="chip-row">
+        @for (badge of l.billing.badges; track badge) {
+          <span [class]="badgeClass(badge)">{{ badge }}</span>
+        } @empty {
+          <span class="muted">No billing badges.</span>
+        }
+      </div>
+      @if (l.billing.missingFields.length) {
+        <p class="detail-note">Missing: {{ l.billing.missingFields.join(', ') }}</p>
+      }
+    </div>
+
+    @if (l.hasExceptions) {
+      <div class="card detail-card">
+        <h2>Exceptions</h2>
+        <div class="chip-row">
+          @for (ex of l.exceptions; track ex.code) {
+            <span [class]="ex.blocksBilling ? 'chip chip-danger' : 'chip chip-warn'" [title]="ex.message">
+              {{ ex.message }}@if (ex.blocksBilling) { · blocks billing }
+            </span>
+          }
+        </div>
+      </div>
+    }
+
+    <div class="worklist-footer" data-testid="load-detail-footer">
+      Source: Live Alvys · Load detail · Read-only. Alvys has no public per-load link — use “Open Alvys”, then search the load number.
+    </div>
+  }
+</div>

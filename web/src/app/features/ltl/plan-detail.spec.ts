@@ -80,18 +80,17 @@ describe('PlanDetail', () => {
     expect(c.childLoadedMiles()).toBeNull();
   });
 
-  it('builds an Alvys deep-link from the load number', () => {
+  it('builds an internal load-detail route from the load number', () => {
     const c = newComponent();
-    expect(c.alvysLoadUrl(load({ loadNumber: 'L-100234' }))).toBe(
-      'https://va336.alvys.com/loads/L-100234',
-    );
+    expect(c.internalLoadUrl(load({ loadNumber: 'L-100234' }))).toEqual(['/ltl/loads', 'L-100234']);
   });
 
   it('falls back to id when the load number is absent', () => {
     const c = newComponent();
-    expect(c.alvysLoadUrl(load({ id: 'abc-123', loadNumber: undefined }))).toBe(
-      'https://va336.alvys.com/loads/abc-123',
-    );
+    expect(c.internalLoadUrl(load({ id: 'abc-123', loadNumber: undefined }))).toEqual([
+      '/ltl/loads',
+      'abc-123',
+    ]);
   });
 
   describe('trailer-fit verdict (#76)', () => {
