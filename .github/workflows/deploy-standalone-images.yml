@@ -1,0 +1,173 @@
+name: Deploy standalone images
+
+# Auto-deploys new API + Web images to the ltl-standalone Azure stack on every
+# push to main. Uses the SAME service principal + permissions the UAT workflow
+# uses (ACR builds + App Service reconfigure — no subscription-scope writes).
+#
+# The infra (RG, ACR, SQL, App Services) is expected to already exist. It was
+# provisioned once via scripts/cloud-shell-deploy.sh; this workflow never
+# re-creates it.
+#
+# Post-deploy: /api/health is asserted to report authMode=Demo before the run
+# is marked green. Web + API URLs are pinned to the GitHub Step Summary so
+# they're visible from the mobile web UI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'web/**'
+      - '.github/workflows/deploy-standalone-images.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-standalone-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RG: ltl-standalone-rg
+  BASE_NAME: ltl-standalone
+  API_APP: ltl-standalone-api
+  WEB_APP: ltl-standalone-web
+  ACR_NAME: ltlstandaloneacr
+  ACR_LOGIN: ltlstandaloneacr.azurecr.io
+
+jobs:
+  deploy:
+    name: Build + push + reconfigure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight — required secrets
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}
+        run: |
+          missing=()
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID ALVYS_CLIENT_SECRET; do
+            [ -z "${!name}" ] && missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::missing secrets: ${missing[*]}"
+            exit 1
+          fi
+          echo "All required secrets present."
+
+      - name: Azure login (OIDC federated)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve image tag
+        id: vars
+        shell: bash
+        run: |
+          TAG="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}"
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building tag: $TAG"
+
+      - name: Build API image via ACR
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+        run: |
+          az acr build --registry "$ACR_NAME" \
+            --image "ltl-api:$IMAGE_TAG" \
+            --image "ltl-api:latest" \
+            --file src/LtlTool.Api/Dockerfile . \
+            --output none
+
+      - name: Build Web image via ACR
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+        run: |
+          az acr build --registry "$ACR_NAME" \
+            --image "ltl-web:$IMAGE_TAG" \
+            --image "ltl-web:latest" \
+            --file web/Dockerfile web \
+            --output none
+
+      - name: Point App Services at new images
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+        run: |
+          ACR_USER=$(az acr credential show --name "$ACR_NAME" --query username -o tsv)
+          ACR_PASS=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv)
+
+          az webapp config container set --name "$API_APP" --resource-group "$RG" \
+            --container-image-name "$ACR_LOGIN/ltl-api:$IMAGE_TAG" \
+            --container-registry-url "https://$ACR_LOGIN" \
+            --container-registry-user "$ACR_USER" \
+            --container-registry-password "$ACR_PASS" \
+            --output none
+
+          az webapp config container set --name "$WEB_APP" --resource-group "$RG" \
+            --container-image-name "$ACR_LOGIN/ltl-web:$IMAGE_TAG" \
+            --container-registry-url "https://$ACR_LOGIN" \
+            --container-registry-user "$ACR_USER" \
+            --container-registry-password "$ACR_PASS" \
+            --output none
+
+      - name: Restart App Services
+        shell: bash
+        run: |
+          az webapp restart --name "$API_APP" --resource-group "$RG" --output none
+          az webapp restart --name "$WEB_APP" --resource-group "$RG" --output none
+
+      - name: Smoke test — /api/health authMode=Demo
+        shell: bash
+        run: |
+          API_URL="https://$(az webapp show --name "$API_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
+          WEB_URL="https://$(az webapp show --name "$WEB_APP" --resource-group "$RG" --query defaultHostName -o tsv)"
+          echo "API: $API_URL"
+          echo "Web: $WEB_URL"
+
+          # Poll up to 4 minutes for authMode=Demo
+          deadline=$(( $(date +%s) + 240 ))
+          mode=""
+          while [ $(date +%s) -lt $deadline ]; do
+            body=$(curl -sf "$API_URL/api/health" 2>/dev/null || true)
+            if [ -n "$body" ]; then
+              mode=$(echo "$body" | grep -oE '"authMode"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
+              if [ "$mode" = "Demo" ]; then break; fi
+            fi
+            sleep 8
+          done
+
+          if [ "$mode" != "Demo" ]; then
+            echo "::error::authMode was '$mode', expected 'Demo'"
+            {
+              echo "## ✗ Deploy smoke test failed"
+              echo ""
+              echo "API health did not report \`authMode=Demo\` within 240s."
+              echo ""
+              echo "- Web: $WEB_URL"
+              echo "- API: $API_URL/api/health"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          {
+            echo "## ✓ LTL standalone deployed"
+            echo ""
+            echo "- **Web:** $WEB_URL"
+            echo "- **API:** $API_URL/api"
+            echo "- **Swagger:** $API_URL/swagger"
+            echo "- **Health:** $API_URL/api/health (authMode=Demo verified)"
+            echo ""
+            echo "Image tag: \`${{ steps.vars.outputs.image_tag }}\`"
+            echo "Commit: \`${GITHUB_SHA::7}\` — ${{ github.event.head_commit.message }}"
+          } >> "$GITHUB_STEP_SUMMARY"
