@@ -160,6 +160,9 @@
         <div class="card">
           <h2>Assumptions and honest gaps</h2>
           <ul class="assumptions">
+            @for (caution of planCautions(); track caution) {
+              <li class="assumption-warn" data-testid="plan-caution">{{ caution }}</li>
+            }
             @for (gap of honestGaps(); track gap.text) {
               <li [class.assumption-warn]="gap.tone === 'amber'" [class.assumption-info]="gap.tone === 'blue'" [class.assumption-good]="gap.tone === 'green'">
                 {{ gap.text }}
@@ -213,6 +216,55 @@
             <strong class="econ-positive">{{ formatRpm(combinedRpm()) }}</strong>
           </div>
         </div>
+
+        @if (laneRate(); as rate) {
+          <div class="card" data-testid="lane-rate-card">
+            <h2>
+              Lane rate context
+              <span class="audit-subhead">{{ rate.originState }} → {{ rate.destinationState }}</span>
+            </h2>
+            @if (laneRateHasRange()) {
+              <div class="econ-row econ-row-bold">
+                <span>Median revenue / mi</span>
+                <strong class="econ-positive" data-testid="lane-rate-median">{{ formatRpm(rate.medianRpm) }}</strong>
+              </div>
+              <div class="econ-row">
+                <span>Range (min → max)</span>
+                <strong data-testid="lane-rate-range">{{ formatRpm(rate.minRpm) }} → {{ formatRpm(rate.maxRpm) }}</strong>
+              </div>
+              <div class="econ-row">
+                <span>Delivered loads sampled</span>
+                <strong>{{ formatNumber(rate.sampleSize) }}</strong>
+              </div>
+            } @else {
+              <p class="econ-note-amber" data-testid="lane-rate-insufficient">
+                Not enough recent delivered loads on this lane to show a revenue-per-mile range.
+              </p>
+            }
+            <p class="lane-rate-basis" data-testid="lane-rate-basis">{{ rate.basis }}</p>
+          </div>
+        }
+
+        @if (customerPolicies().length > 0) {
+          <div class="card" data-testid="customer-policy-card">
+            <h2>Customer consolidation policy</h2>
+            <ul class="policy-chips">
+              @for (policy of customerPolicies(); track policy.customerName) {
+                <li
+                  class="policy-chip"
+                  [class.policy-chip-allowed]="policy.tier === 'Allowed'"
+                  [class.policy-chip-notify]="policy.tier === 'NotifyRequired'"
+                  [class.policy-chip-never]="policy.tier === 'Never'"
+                  [class.policy-chip-unknown]="policy.tier === 'Unknown'"
+                  data-testid="policy-chip"
+                >
+                  <strong>{{ policy.customerName }}</strong>
+                  <span>{{ tierLabel(policy.tier) }}</span>
+                </li>
+              }
+            </ul>
+          </div>
+        }
 
         <div class="card" data-testid="audit-trail">
           <h2>Audit trail <span class="audit-subhead">(recorded even if no click card is generated)</span></h2>

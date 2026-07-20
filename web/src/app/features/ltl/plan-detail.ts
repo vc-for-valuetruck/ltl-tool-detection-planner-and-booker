@@ -3,15 +3,25 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { LtlService } from './ltl.service';
-import { LtlLoadSummary } from './ltl.models';
+import { LtlLoadSummary, LaneRateContext } from './ltl.models';
 import { ConsolidationService } from './consolidation.service';
-import { ConsolidationAuditRecord, ConsolidationTrailerFit } from './consolidation.models';
+import {
+  ConsolidationAuditRecord,
+  ConsolidationPlanSibling,
+  ConsolidationTrailerFit,
+  CustomerConsolidationTier,
+} from './consolidation.models';
 import { LtlNav } from './ltl-nav';
 
 type GapTone = 'amber' | 'blue' | 'green';
 interface HonestGap {
   text: string;
   tone: GapTone;
+}
+
+interface CustomerPolicyView {
+  customerName: string;
+  tier: CustomerConsolidationTier;
 }
 
 const US_STATES = new Set([
@@ -63,6 +73,50 @@ export class PlanDetail implements OnInit {
    * takes over. Null until the preview resolves — never fabricated.
    */
   readonly previewPlanId = signal<string | null>(null);
+
+  /**
+   * Server-computed plan siblings from the plan preview (issue #113 follow-up). Carries the
+   * per-sibling consolidation cautions and customer tier the server already derived — the SPA
+   * renders them verbatim rather than recomputing policy client-side. Empty until the preview
+   * resolves, or when the preview fails (the page still renders from the live loads).
+   */
+  readonly planSiblings = signal<ConsolidationPlanSibling[]>([]);
+
+  /**
+   * Recent lane-rate context for the parent's origin→destination state pair (Phase 7.4). This is
+   * Value Truck's own recently-billed revenue-per-mile on the lane — explicitly "recent tenant
+   * history, not a market rate", never a DAT/Greenscreens feed. Null until the read resolves, when
+   * the parent lacks origin/destination states, or on a read failure — never a guessed number.
+   */
+  readonly laneRate = signal<LaneRateContext | null>(null);
+
+  /** Server-computed consolidation cautions across all siblings, de-duplicated for display. */
+  readonly planCautions = computed<string[]>(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const sibling of this.planSiblings()) {
+      for (const caution of sibling.cautions ?? []) {
+        if (!seen.has(caution)) {
+          seen.add(caution);
+          out.push(caution);
+        }
+      }
+    }
+    return out;
+  });
+
+  /** Per-customer consolidation tier from the plan preview — one chip per distinct customer. */
+  readonly customerPolicies = computed<CustomerPolicyView[]>(() => {
+    const seen = new Set<string>();
+    const out: CustomerPolicyView[] = [];
+    for (const sibling of this.planSiblings()) {
+      const customerName = sibling.customerName?.trim();
+      if (!customerName || seen.has(customerName)) continue;
+      seen.add(customerName);
+      out.push({ customerName, tier: sibling.customerTier });
+    }
+    return out;
+  });
 
   // Audit-trail record state. The plan-detail can record the plan as an internal audit entry
   // ("Save audit only") without generating a click card — read-only, nothing writes to Alvys.
@@ -267,6 +321,7 @@ export class PlanDetail implements OnInit {
         this.siblings.set(siblings);
         this.loading.set(false);
         this.loadTrailerFit(parent, siblings);
+        this.loadLaneRate(parent);
       },
       error: (err) => {
         this.error.set(err?.error?.error ?? err?.message ?? 'Failed to load plan detail from Alvys.');
@@ -292,9 +347,30 @@ export class PlanDetail implements OnInit {
         next: (plan) => {
           this.trailerFit.set(plan.trailerFit ?? null);
           this.previewPlanId.set(plan.previewId ?? null);
+          this.planSiblings.set(plan.siblings ?? []);
         },
-        error: () => this.trailerFit.set(null),
+        error: () => {
+          this.trailerFit.set(null);
+          this.planSiblings.set([]);
+        },
       });
+  }
+
+  /**
+   * Best-effort fetch of recent lane-rate context for the parent's lane (Phase 7.4). Read-only:
+   * hits `GET /api/ltl/lane-rate?originState=&destinationState=`, which returns Value Truck's own
+   * recently-billed revenue-per-mile spread — or an honest "insufficient samples" verdict. Skipped
+   * when either state is missing; failures are swallowed so a rate hiccup never blanks the page.
+   */
+  private loadLaneRate(parent: LtlLoadSummary): void {
+    const originState = parent.origin?.state?.trim();
+    const destinationState = parent.destination?.state?.trim();
+    if (!originState || !destinationState) return;
+
+    this.ltl.laneRate(originState, destinationState).subscribe({
+      next: (context) => this.laneRate.set(context),
+      error: () => this.laneRate.set(null),
+    });
   }
 
   /**
@@ -357,6 +433,26 @@ export class PlanDetail implements OnInit {
     const ref = load.loadNumber ?? load.id;
     if (!ref) return null;
     return ['/ltl/loads', ref];
+  }
+
+  /** True when the lane-rate read returned an actual revenue-per-mile range (not insufficient). */
+  readonly laneRateHasRange = computed<boolean>(() => {
+    const rate = this.laneRate();
+    return !!rate && rate.medianRpm !== null && rate.medianRpm !== undefined;
+  });
+
+  /** Dispatcher-facing label for a customer consolidation tier chip. */
+  tierLabel(tier: CustomerConsolidationTier): string {
+    switch (tier) {
+      case 'Allowed':
+        return 'Consolidation allowed';
+      case 'NotifyRequired':
+        return 'Notify customer first';
+      case 'Never':
+        return 'Consolidation not allowed';
+      default:
+        return 'No policy on file';
+    }
   }
 
   formatCurrency(value: number | null | undefined): string {

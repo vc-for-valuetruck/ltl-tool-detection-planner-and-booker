@@ -1,6 +1,10 @@
 import { PlanDetail } from './plan-detail';
-import { LtlLoadSummary } from './ltl.models';
-import { ConsolidationAuditRecord, ConsolidationTrailerFit } from './consolidation.models';
+import { LaneRateContext, LtlLoadSummary } from './ltl.models';
+import {
+  ConsolidationAuditRecord,
+  ConsolidationPlanSibling,
+  ConsolidationTrailerFit,
+} from './consolidation.models';
 import { LtlService } from './ltl.service';
 import { ConsolidationService } from './consolidation.service';
 import { TestBed } from '@angular/core/testing';
@@ -249,6 +253,64 @@ describe('PlanDetail', () => {
       c.recordAudit();
       expect(calls).toBe(0);
       expect(c.auditRecord()).toBeNull();
+    });
+  });
+
+  describe('lane-rate + customer-policy context (Phase 7.4)', () => {
+    function sibling(partial: Partial<ConsolidationPlanSibling>): ConsolidationPlanSibling {
+      return { loadId: 'S', customerTier: 'Unknown', cautions: [], ...partial } as ConsolidationPlanSibling;
+    }
+    function laneRate(partial: Partial<LaneRateContext>): LaneRateContext {
+      return {
+        originState: 'TX',
+        destinationState: 'IL',
+        sampleSize: 0,
+        medianRpm: null,
+        minRpm: null,
+        maxRpm: null,
+        basis: 'Recent tenant history, not a market rate.',
+        generatedAt: '2026-07-20T00:00:00Z',
+        ...partial,
+      };
+    }
+
+    it('flattens and de-duplicates server sibling cautions', () => {
+      const c = newComponent();
+      c.planSiblings.set([
+        sibling({ loadId: 'S1', cautions: ['Notify customer first', 'Weight missing'] }),
+        sibling({ loadId: 'S2', cautions: ['Notify customer first'] }),
+      ]);
+      expect(c.planCautions()).toEqual(['Notify customer first', 'Weight missing']);
+    });
+
+    it('derives one policy chip per distinct customer with its tier', () => {
+      const c = newComponent();
+      c.planSiblings.set([
+        sibling({ loadId: 'S1', customerName: 'Masonite', customerTier: 'NotifyRequired' }),
+        sibling({ loadId: 'S2', customerName: 'Masonite', customerTier: 'NotifyRequired' }),
+        sibling({ loadId: 'S3', customerName: 'Acme', customerTier: 'Allowed' }),
+      ]);
+      const policies = c.customerPolicies();
+      expect(policies.length).toBe(2);
+      expect(policies[0]).toEqual({ customerName: 'Masonite', tier: 'NotifyRequired' });
+      expect(policies[1]).toEqual({ customerName: 'Acme', tier: 'Allowed' });
+    });
+
+    it('reports a computable lane-rate range only when a median is present', () => {
+      const c = newComponent();
+      c.laneRate.set(laneRate({ sampleSize: 4, medianRpm: 5, minRpm: 4, maxRpm: 6 }));
+      expect(c.laneRateHasRange()).toBeTrue();
+
+      c.laneRate.set(laneRate({ sampleSize: 1, medianRpm: null }));
+      expect(c.laneRateHasRange()).toBeFalse();
+    });
+
+    it('maps each consolidation tier to a dispatcher-facing label', () => {
+      const c = newComponent();
+      expect(c.tierLabel('Allowed')).toBe('Consolidation allowed');
+      expect(c.tierLabel('NotifyRequired')).toBe('Notify customer first');
+      expect(c.tierLabel('Never')).toBe('Consolidation not allowed');
+      expect(c.tierLabel('Unknown')).toBe('No policy on file');
     });
   });
 

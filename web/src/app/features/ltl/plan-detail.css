@@ -585,3 +585,52 @@
   margin: 0;
   font-size: 11px;
 }
+
+/* ===================== Lane rate + customer-policy chips ===================== */
+.lane-rate-basis {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.policy-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.policy-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.policy-chip strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.policy-chip-allowed {
+  border-color: var(--success);
+  background: var(--success-row-bg);
+}
+
+.policy-chip-notify,
+.policy-chip-unknown {
+  border-color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.policy-chip-never {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
