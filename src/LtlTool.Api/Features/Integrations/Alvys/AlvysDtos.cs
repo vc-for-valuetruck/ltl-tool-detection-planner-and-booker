@@ -164,8 +164,11 @@ public sealed class AlvysLoad
     [JsonPropertyName("Stops")]
     public List<AlvysLoadStop>? Stops { get; set; }
 
+    // Alvys ships Fleet as an object ({"Id":"...","Name":"...","InvoiceNumberPrefix":"..."}),
+    // not a string. Deserialize into a lightweight AlvysFleet DTO so the whole loads/search
+    // response stops failing with 'JSON value could not be converted to System.String'.
     [JsonPropertyName("Fleet")]
-    public string? Fleet { get; set; }
+    public AlvysFleet? Fleet { get; set; }
 
     [JsonPropertyName("InvoiceAs")]
     public string? InvoiceAs { get; set; }
@@ -274,6 +277,22 @@ public sealed class AlvysLoad
 
     [JsonPropertyName("IsDeleted")]
     public bool? IsDeleted { get; set; }
+}
+
+/// <summary>
+/// Alvys ships Fleet as an object on load responses (Id/Name/InvoiceNumberPrefix). Only
+/// Name is meaningful downstream today; the rest are captured for future callers.
+/// </summary>
+public sealed class AlvysFleet
+{
+    [JsonPropertyName("Id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("InvoiceNumberPrefix")]
+    public string? InvoiceNumberPrefix { get; set; }
 }
 
 /// <summary>
