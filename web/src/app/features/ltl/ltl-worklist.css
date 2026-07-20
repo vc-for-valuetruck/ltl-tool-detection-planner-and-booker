@@ -1,0 +1,199 @@
+/* Shared styling for the read-only Billing worklist and Exceptions tabs. */
+.worklist {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 24px;
+  padding-bottom: 48px;
+}
+
+.worklist-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.worklist-head h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.worklist-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+
+.badge-filter {
+  appearance: none;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill, 999px);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.badge-filter.selected {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+  background: var(--info-bg, #eff6ff);
+}
+
+.filter-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card, 10px);
+  overflow: hidden;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+table.grid thead th {
+  text-align: left;
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--card-border);
+  white-space: nowrap;
+}
+
+table.grid tbody tr {
+  border-bottom: 1px solid var(--card-border);
+}
+
+table.grid td {
+  padding: 10px 12px;
+  color: var(--text-primary);
+  vertical-align: top;
+}
+
+.load-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.load-cell a {
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.load-cell a:hover {
+  text-decoration: underline;
+}
+
+.load-tag {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill, 999px);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.chip-good {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.chip-warn {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.chip-danger {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.chip-neutral {
+  background: #f1f5f9;
+  color: var(--text-secondary);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.state {
+  padding: 40px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.state-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.state-error button {
+  appearance: none;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.worklist-footer {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-top: 4px;
+  border-top: 1px dashed var(--card-border);
+  margin-top: 4px;
+}

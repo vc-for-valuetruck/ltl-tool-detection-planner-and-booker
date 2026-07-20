@@ -10,6 +10,14 @@ export const routes: Routes = [
     loadComponent: () => import('./features/ltl/ltl-search').then((m) => m.LtlSearch),
   },
   {
+    path: 'ltl/billing',
+    loadComponent: () => import('./features/ltl/ltl-billing').then((m) => m.LtlBilling),
+  },
+  {
+    path: 'ltl/exceptions',
+    loadComponent: () => import('./features/ltl/ltl-exceptions').then((m) => m.LtlExceptions),
+  },
+  {
     path: 'ltl/consolidate',
     loadComponent: () => import('./features/ltl/consolidate').then((m) => m.Consolidate),
   },

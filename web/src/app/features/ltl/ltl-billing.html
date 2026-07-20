@@ -1,0 +1,112 @@
+<app-ltl-nav active="billing" />
+
+<div class="worklist page-shell">
+  <div class="worklist-head">
+    <h1>Billing worklist</h1>
+    <span class="worklist-sub">
+      Loads needing billing attention from live Alvys — readiness first, revenue risk visible.
+      Read-only; nothing is written to Alvys.
+    </span>
+  </div>
+
+  <div class="filter-row">
+    <span class="filter-label">Badge:</span>
+    @for (f of badgeFilters; track f.label) {
+      <button
+        type="button"
+        class="badge-filter"
+        [class.selected]="activeBadge() === f.value"
+        [attr.data-testid]="'billing-filter-' + (f.value ?? 'all')"
+        (click)="selectBadge(f.value)"
+      >
+        {{ f.label }}
+      </button>
+    }
+    @if (!loading() && !error()) {
+      <span class="filter-count" data-testid="billing-count">{{ loads().length }} loads</span>
+    }
+  </div>
+
+  @if (loading()) {
+    <div class="state" data-testid="billing-loading">Loading billing worklist from Alvys…</div>
+  } @else if (error()) {
+    <div class="state state-error" data-testid="billing-error">
+      <strong>Couldn't reach Alvys.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="load()">Retry</button>
+    </div>
+  } @else if (!hasLoads()) {
+    <div class="state" data-testid="billing-empty">
+      No loads match this billing filter right now. Nothing is fabricated when Alvys returns none.
+    </div>
+  } @else {
+    <div class="card">
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>Load</th>
+              <th>Customer</th>
+              <th>Lane</th>
+              <th>Pickup</th>
+              <th>Revenue</th>
+              <th>Billing status</th>
+              <th>Missing data</th>
+              <th>Unpaid balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (load of loads(); track load.id) {
+              <tr data-testid="billing-row">
+                <td>
+                  <div class="load-cell">
+                    <strong>{{ load.loadNumber ?? load.id }}</strong>
+                    <span class="load-tag">{{ load.workflow.stageLabel }}</span>
+                  </div>
+                </td>
+                <td>{{ load.customerName ?? '—' }}</td>
+                <td>{{ load.origin?.label ?? '—' }} → {{ load.destination?.label ?? '—' }}</td>
+                <td>{{ load.scheduledPickupAt ? (load.scheduledPickupAt | date: 'MMM d') : '—' }}</td>
+                <td>{{ formatCurrency(load.revenue) }}</td>
+                <td>
+                  <div class="chip-row">
+                    @for (badge of load.billing.badges; track badge) {
+                      <span [class]="badgeClass(badge)">{{ badgeLabel(badge) }}</span>
+                    } @empty {
+                      <span class="muted">—</span>
+                    }
+                  </div>
+                </td>
+                <td>
+                  <div class="chip-row">
+                    @for (flag of load.billing.missingFields; track flag) {
+                      <span class="chip chip-neutral">{{ missingLabel(flag) }}</span>
+                    } @empty {
+                      <span class="muted">—</span>
+                    }
+                  </div>
+                </td>
+                <td>
+                  @if (load.billing.unpaidBalance !== null) {
+                    <div class="load-cell">
+                      <span class="chip chip-danger">{{ formatCurrency(load.billing.unpaidBalance) }}</span>
+                      @if (load.billing.agingDays !== null) {
+                        <span class="load-tag">{{ load.billing.agingDays }} days past due</span>
+                      }
+                    </div>
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="worklist-footer" data-testid="billing-footer">
+      Source: Live Alvys · Billing worklist · Read-only
+    </div>
+  }
+</div>

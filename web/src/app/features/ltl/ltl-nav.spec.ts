@@ -51,4 +51,26 @@ describe('LtlNav', () => {
     expect(tabByText('Consolidate')!.classList).toContain('active');
     expect(tabByText('Search')!.classList).not.toContain('active');
   });
+
+  it('renders Billing and Exceptions as live links, no Phase 2 badge', () => {
+    fixture.detectChanges();
+
+    const billing = tabByText('Billing');
+    expect(billing!.tagName).toBe('A');
+    expect(billing!.getAttribute('href')).toBe('/ltl/billing');
+    expect(billing!.querySelector('.phase-badge')).toBeNull();
+
+    const exceptions = tabByText('Exceptions');
+    expect(exceptions!.tagName).toBe('A');
+    expect(exceptions!.getAttribute('href')).toBe('/ltl/exceptions');
+    expect(exceptions!.querySelector('.phase-badge')).toBeNull();
+  });
+
+  it('keeps Tenders a non-navigating Phase 2 stub', () => {
+    fixture.detectChanges();
+
+    const tenders = tabByText('Tenders');
+    expect(tenders!.tagName).toBe('SPAN');
+    expect(tenders!.querySelector('.phase-badge')).toBeTruthy();
+  });
 });
