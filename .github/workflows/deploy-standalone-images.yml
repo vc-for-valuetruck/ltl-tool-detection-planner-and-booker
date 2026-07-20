@@ -67,10 +67,10 @@ jobs:
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          # allow-no-subscriptions: the SP has no subscription-scope role assignments,
-          # but does have direct resource-scope roles on the ACR + App Services. Skipping
-          # sub discovery lets the login succeed; subsequent az commands scoped to a
-          # specific resource id work because Azure evaluates RBAC at the resource level.
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          # Tolerate an SP whose only role assignments are resource-scoped (ACR +
+          # App Services): login still succeeds without subscription discovery, and
+          # RBAC is evaluated per-resource on the subsequent az commands.
           allow-no-subscriptions: true
 
       - name: Configure subscription context
@@ -108,10 +108,12 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
         run: |
+          # web/Dockerfile expects the REPO ROOT as build context (COPY web/...),
+          # same as scripts/cloud-shell-deploy.sh and the UAT workflow.
           az acr build --registry "$ACR_NAME" \
             --image "ltl-web:$IMAGE_TAG" \
             --image "ltl-web:latest" \
-            --file web/Dockerfile web \
+            --file web/Dockerfile . \
             --output none
 
       - name: Point App Services at new images
