@@ -2,7 +2,9 @@
 
 <div class="plan-detail page-shell">
   <div class="breadcrumb">
-    <a routerLink="/ltl">Today's consolidations</a>
+    <a routerLink="/ltl/consolidate">Consolidate</a>
+    <span aria-hidden="true">·</span>
+    <a routerLink="/ltl/consolidate">Candidates</a>
     <span aria-hidden="true">·</span>
     <span class="breadcrumb-current">Plan detail</span>
   </div>
@@ -21,13 +23,13 @@
       Plan · {{ p.origin?.label ?? '—' }} <span aria-hidden="true">→</span>
       {{ p.destination?.label ?? '—' }} · {{ siblings().length + 1 }} loads
     </h1>
-    <p class="subtitle">Live Alvys plan preview. Nothing has been written to Alvys.</p>
+    <p class="subtitle">Draft plan — nothing has been written to Alvys yet.</p>
 
     <div class="plan-columns">
       <div class="plan-col-main">
         <div class="card">
           <div class="card-header">
-            <h2>Trailer plan</h2>
+            <h2>Trailer plan (visual only — dims not verified)</h2>
             <span class="muted">53' trailer · visual verification required at dock</span>
           </div>
 
@@ -46,10 +48,10 @@
                 {{ p.weightLbs ? (formatNumber(p.weightLbs) + ' lb') : '— lb' }} ·
                 <span class="missing-pallets">-- pallets</span>
               </span>
-              <span class="trailer-slot-tag">PARENT <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
+              <span class="trailer-slot-tag">POSITION 1 · PARENT <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
             </a>
 
-            @for (s of siblings(); track s.id) {
+            @for (s of siblings(); track s.id; let i = $index) {
               <a
                 class="trailer-slot trailer-slot-sibling trailer-slot-link"
                 [href]="alvysLoadUrl(s)"
@@ -64,9 +66,16 @@
                   {{ s.weightLbs ? (formatNumber(s.weightLbs) + ' lb') : '— lb' }} ·
                   <span class="missing-pallets">-- pallets</span>
                 </span>
-                <span class="trailer-slot-tag">SIBLING <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
+                <span class="trailer-slot-tag">POSITION {{ i + 2 }} · SIBLING <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
               </a>
             }
+
+            <div class="trailer-slot trailer-slot-open" data-testid="trailer-slot-open">
+              <strong>Open space</strong>
+              <span>Remaining linear feet unknown</span>
+              <span class="missing-pallets">Confirm at dock before loading</span>
+              <span class="trailer-slot-tag">UNVERIFIED</span>
+            </div>
           </div>
 
           <div class="trailer-footnote">
@@ -149,7 +158,7 @@
         </div>
 
         <div class="card">
-          <h2>Honest gaps</h2>
+          <h2>Assumptions and honest gaps</h2>
           <ul class="assumptions">
             @for (gap of honestGaps(); track gap.text) {
               <li [class.assumption-warn]="gap.tone === 'amber'" [class.assumption-info]="gap.tone === 'blue'" [class.assumption-good]="gap.tone === 'green'">
@@ -188,14 +197,40 @@
             <span>Parent linehaul miles</span>
             <strong>{{ formatNumber(parentLinehaulMiles()) }}</strong>
           </div>
+          <div class="econ-row" data-testid="child-miles-row">
+            <span>Child load miles (not billed again)</span>
+            <strong>{{ formatNumber(childLoadedMiles()) }}</strong>
+          </div>
+          <p class="econ-note-amber" data-testid="child-miles-note">
+            Child loads ride the parent's linehaul — their loaded miles are zeroed in Alvys so the
+            driver isn't paid twice for the same miles.
+          </p>
           <div class="econ-row econ-row-bold">
             <span>Combined RPM</span>
             <strong class="econ-positive">{{ formatRpm(combinedRpm()) }}</strong>
           </div>
         </div>
 
+        <div class="card" data-testid="audit-trail">
+          <h2>Audit trail</h2>
+          <ul class="audit-list">
+            <li>
+              <span class="audit-dot" aria-hidden="true"></span>
+              Plan previewed from live Alvys — {{ p.loadNumber ?? p.id }} + {{ siblings().length }} sibling(s)
+            </li>
+            <li>
+              <span class="audit-dot" aria-hidden="true"></span>
+              No writes to Alvys — read-only preview
+            </li>
+            <li>
+              <span class="audit-dot" aria-hidden="true"></span>
+              Recorded to the internal audit log only when a dispatcher saves this plan
+            </li>
+          </ul>
+        </div>
+
         <div class="card card-dark">
-          <h2>Ready for the click card?</h2>
+          <h2>Ready to dispatch?</h2>
           <p>Generate the operator-facing card with these same live load numbers.</p>
           <button type="button" class="btn-generate" data-testid="generate-click-card" (click)="openClickCard()">
             Generate Alvys click card

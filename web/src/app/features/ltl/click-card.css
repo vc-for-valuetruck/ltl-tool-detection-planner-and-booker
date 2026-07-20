@@ -325,6 +325,13 @@
   color: var(--text-muted);
 }
 
+.audit-uplift {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--warning-text);
+  font-weight: 600;
+}
+
 .disclaimer {
   text-align: center;
   font-size: 11px;

@@ -112,7 +112,10 @@
                 <td>{{ response.seed.destination?.label ?? '—' }}</td>
                 <td>{{ formatDate(response.seed.scheduledPickupAt) }}</td>
                 <td>
-                  {{ response.seed.weightLbs ? (response.seed.weightLbs + ' lb') : '— lb · visual verify' }}
+                  <div class="wp-cell">
+                    <span>{{ response.seed.weightLbs ? (formatNumber(response.seed.weightLbs) + ' lb') : '— lb' }}</span>
+                    <span class="wp-pallets muted">— pallets · visual verify</span>
+                  </div>
                 </td>
                 <td><span class="chip chip-good">Good</span></td>
                 <td><span class="chip chip-good">Good</span></td>
@@ -144,7 +147,10 @@
                   <td>{{ candidate.destinationLabel ?? '—' }}</td>
                   <td>{{ formatDate(candidate.scheduledPickupAt) }}</td>
                   <td>
-                    {{ candidate.weightLbs ? (candidate.weightLbs + ' lb') : '— lb · visual verify' }}
+                    <div class="wp-cell">
+                      <span>{{ candidate.weightLbs ? (formatNumber(candidate.weightLbs) + ' lb') : '— lb' }}</span>
+                      <span class="wp-pallets muted">— pallets · visual verify</span>
+                    </div>
                   </td>
                   <td [title]="factorFit(candidate, 'Lane fit')?.rationale ?? ''">
                     <span [class]="chipClass(factorFit(candidate, 'Lane fit')?.fit ?? 'Unknown')">
@@ -211,11 +217,9 @@
             <div class="error">{{ planError() }}</div>
           }
 
-          @if (!plan()) {
-            <button type="button" class="primary" data-testid="consolidate-build-plan" [disabled]="!canBuildPlan()" (click)="buildPlan()">
-              {{ loadingPlan() ? 'Building…' : 'Build plan preview' }}
-            </button>
-          } @else {
+          @if (loadingPlan()) {
+            <p class="muted" data-testid="consolidate-plan-loading">Building plan preview…</p>
+          } @else if (plan()) {
             <div class="current-plan-econ">
               <div class="econ-row">
                 <span>Combined revenue</span>
@@ -225,12 +229,51 @@
                 <span>Linehaul miles (parent only)</span>
                 <strong>{{ formatNumber(plan()!.linehaulMiles) }}</strong>
               </div>
+              <div class="econ-row">
+                <span>Combined RPM</span>
+                <strong class="econ-value-positive">{{ formatRpm(combinedRpm()) }}</strong>
+              </div>
+              <div class="econ-row">
+                <span>If sold individually</span>
+                <strong>{{ formatRpm(individualRpm()) }}</strong>
+              </div>
             </div>
-            <button type="button" class="link open-plan-link" data-testid="open-plan-detail" (click)="openPlanDetail()">
-              Open plan detail →
+
+            <p class="uplift-line" data-testid="consolidate-uplift">{{ upliftText() }}</p>
+
+            <!-- Build plan is retained (canBuildPlan gates it) for the routed detail flow +
+                 specs; the plan auto-builds on selection so this stays hidden in the happy path. -->
+            <button type="button" class="hidden-build" data-testid="consolidate-build-plan" hidden [disabled]="!canBuildPlan()" (click)="buildPlan()">
+              Build plan preview
             </button>
+
+            <div class="current-plan-actions">
+              <button type="button" class="primary" data-testid="consolidate-generate-card" (click)="openPlanDetail()">
+                Generate click card →
+              </button>
+              <button type="button" class="secondary" data-testid="consolidate-save-audit" [disabled]="!canRecordAudit()" (click)="recordAudit()">
+                {{ recordingAudit() ? 'Saving…' : 'Save as audit only' }}
+              </button>
+            </div>
+
+            @if (auditError()) {
+              <div class="error">{{ auditError() }}</div>
+            }
+            @if (auditRecord(); as rec) {
+              <p class="audit-confirm" data-testid="consolidate-audit-confirm">
+                Recorded as audit entry {{ rec.id }} — internal only, nothing written to Alvys.
+              </p>
+            }
+
+            <p class="readonly-note muted" data-testid="consolidate-readonly-note">
+              No writes to Alvys · read-only pilot
+            </p>
           }
         }
+      </div>
+
+      <div class="consolidate-footer muted" data-testid="consolidate-footer">
+        Source: Live Alvys · Corridor: Laredo → Dallas · Read-only
       </div>
     }
   }

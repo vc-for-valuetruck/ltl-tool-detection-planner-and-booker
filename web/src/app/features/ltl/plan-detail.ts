@@ -81,6 +81,24 @@ export class PlanDetail implements OnInit {
   readonly parentLinehaulMiles = computed(() => this.parent()?.mileage ?? null);
 
   /**
+   * Sum of the siblings' own loaded miles. These ride the parent's linehaul, so they are NOT
+   * paid to the driver a second time — the click card zeroes each child's Loaded miles in Alvys.
+   * Null when no sibling reports loaded miles (never coerced to 0).
+   */
+  readonly childLoadedMiles = computed<number | null>(() => {
+    const siblings = this.siblings();
+    let total = 0;
+    let any = false;
+    for (const s of siblings) {
+      if (s.loadedMiles != null) {
+        total += s.loadedMiles;
+        any = true;
+      }
+    }
+    return any ? total : null;
+  });
+
+  /**
    * Projected uplift = combined revenue minus the parent's own linehaul (i.e. the incremental
    * revenue the siblings add). Prefers the exact figure passed from the queue card; otherwise
    * derives it from the live parent/sibling revenues so the number never silently disappears.

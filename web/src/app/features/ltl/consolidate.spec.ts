@@ -157,4 +157,74 @@ describe('Consolidate component', () => {
     expect(c.formatNumber(1072)).toBe('1,072');
     expect(c.formatNumber(undefined)).toBe('—');
   });
+
+  it('formats whole-dollar money and RPM with dash fallbacks', () => {
+    const c = newComponent();
+    expect(c.formatMoney0(1234.5)).toBe('$1,235');
+    expect(c.formatMoney0(null)).toBe('—');
+    expect(c.formatRpm(1.849)).toBe('$1.85 / mi');
+    expect(c.formatRpm(undefined)).toBe('—');
+  });
+
+  it('computes combined RPM from plan revenue ÷ parent linehaul miles', () => {
+    const c = newComponent();
+    c.plan.set({
+      combinedRevenue: 8000,
+      linehaulMiles: 1000,
+      siblings: [],
+    } as unknown as ConsolidationPlanResponse);
+    expect(c.combinedRpm()).toBe(8);
+  });
+
+  it('combined RPM is null when miles are missing (never guessed)', () => {
+    const c = newComponent();
+    c.plan.set({
+      combinedRevenue: 8000,
+      linehaulMiles: null,
+      siblings: [],
+    } as unknown as ConsolidationPlanResponse);
+    expect(c.combinedRpm()).toBeNull();
+  });
+
+  it('individual RPM averages real per-load RPMs, skipping loads missing inputs', () => {
+    const c = newComponent();
+    c.candidateResponse.set({
+      seed: { id: 'SEED', revenue: 2000 },
+      candidates: [],
+    } as unknown as ConsolidationCandidateResponse);
+    c.plan.set({
+      combinedRevenue: 5000,
+      linehaulMiles: 1000,
+      siblings: [
+        { loadId: 'S1', revenue: 3000, loadedMiles: 1000 },
+        { loadId: 'S2', revenue: null, loadedMiles: 1000 },
+      ],
+    } as unknown as ConsolidationPlanResponse);
+    // seed: 2000/1000=2 ; S1: 3000/1000=3 ; S2 skipped → avg (2+3)/2 = 2.5
+    expect(c.individualRpm()).toBe(2.5);
+  });
+
+  it('projected uplift dollars = combined − parent revenue', () => {
+    const c = newComponent();
+    c.candidateResponse.set({
+      seed: { id: 'SEED', revenue: 2000 },
+      candidates: [],
+    } as unknown as ConsolidationCandidateResponse);
+    c.plan.set({
+      combinedRevenue: 5000,
+      linehaulMiles: 1000,
+      siblings: [],
+    } as unknown as ConsolidationPlanResponse);
+    expect(c.projectedUpliftDollars()).toBe(3000);
+  });
+
+  it('upliftText degrades to a dash line when nothing is computable', () => {
+    const c = newComponent();
+    c.plan.set({
+      combinedRevenue: null,
+      linehaulMiles: null,
+      siblings: [],
+    } as unknown as ConsolidationPlanResponse);
+    expect(c.upliftText()).toContain('—');
+  });
 });
