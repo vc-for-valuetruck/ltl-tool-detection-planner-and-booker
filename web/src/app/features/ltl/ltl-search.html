@@ -1,14 +1,22 @@
+<app-ltl-nav />
+
 <section class="today page-shell">
   <div class="hero">
     <p class="eyebrow">Live consolidation queue</p>
     <h1>Today's consolidations</h1>
-    <p class="subtitle">
-      {{ totalPairsFound() }} candidate pairs from your live Alvys pipeline, ranked by projected uplift.
-    </p>
+    @if (loading()) {
+      <p class="subtitle" data-testid="loading-subtitle">
+        Loading live loads from Alvys… first scan can take a few seconds on a cold start.
+      </p>
+    } @else {
+      <p class="subtitle">
+        {{ totalPairsFound() }} candidate pairs from your live Alvys pipeline, ranked by projected uplift.
+      </p>
+    }
   </div>
 
   @if (loading()) {
-    <div class="skeleton-list" aria-label="Loading consolidation opportunities">
+    <div class="skeleton-list" aria-label="Loading live loads from Alvys">
       @for (_ of [1, 2, 3]; track _) {
         <div class="skeleton-card">
           <div class="skeleton-line skeleton-title"></div>

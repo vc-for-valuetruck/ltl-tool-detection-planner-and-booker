@@ -1,3 +1,5 @@
+<app-ltl-nav active="consolidate" />
+
 <div class="plan-detail page-shell">
   <div class="breadcrumb">
     <a routerLink="/ltl">Today's consolidations</a>
@@ -30,26 +32,40 @@
           </div>
 
           <div class="trailer-viz">
-            <div class="trailer-slot trailer-slot-parent">
+            <a
+              class="trailer-slot trailer-slot-parent trailer-slot-link"
+              [href]="alvysLoadUrl(p)"
+              target="_blank"
+              rel="noopener"
+              [attr.title]="'Open ' + (p.loadNumber ?? p.id) + ' in Alvys'"
+              data-testid="trailer-slot-link"
+            >
               <strong>{{ p.loadNumber ?? p.id }} · {{ p.customerName ?? '—' }}</strong>
               <span>{{ p.destination?.label ?? '—' }}</span>
               <span>
                 {{ p.weightLbs ? (formatNumber(p.weightLbs) + ' lb') : '— lb' }} ·
                 <span class="missing-pallets">-- pallets</span>
               </span>
-              <span class="trailer-slot-tag">PARENT</span>
-            </div>
+              <span class="trailer-slot-tag">PARENT <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
+            </a>
 
             @for (s of siblings(); track s.id) {
-              <div class="trailer-slot trailer-slot-sibling">
+              <a
+                class="trailer-slot trailer-slot-sibling trailer-slot-link"
+                [href]="alvysLoadUrl(s)"
+                target="_blank"
+                rel="noopener"
+                [attr.title]="'Open ' + (s.loadNumber ?? s.id) + ' in Alvys'"
+                data-testid="trailer-slot-link"
+              >
                 <strong>{{ s.loadNumber ?? s.id }} · {{ s.customerName ?? '—' }}</strong>
                 <span>{{ s.destination?.label ?? '—' }}</span>
                 <span>
                   {{ s.weightLbs ? (formatNumber(s.weightLbs) + ' lb') : '— lb' }} ·
                   <span class="missing-pallets">-- pallets</span>
                 </span>
-                <span class="trailer-slot-tag">SIBLING</span>
-              </div>
+                <span class="trailer-slot-tag">SIBLING <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
+              </a>
             }
           </div>
 
@@ -83,6 +99,16 @@
           <div class="econ-row econ-row-bold">
             <span>Combined revenue</span>
             <strong class="econ-positive">{{ formatCurrency(combinedRevenue()) }}</strong>
+          </div>
+          <div class="econ-row econ-row-bold">
+            <span>Projected uplift</span>
+            <strong class="econ-positive" data-testid="projected-uplift">
+              @if (projectedUplift() !== null) {
+                +{{ formatCurrency(projectedUplift()) }}
+              } @else {
+                —
+              }
+            </strong>
           </div>
           <div class="econ-row">
             <span>Parent linehaul miles</span>

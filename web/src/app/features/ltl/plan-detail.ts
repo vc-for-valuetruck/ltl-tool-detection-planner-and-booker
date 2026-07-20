@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { LtlService } from './ltl.service';
 import { LtlLoadSummary } from './ltl.models';
+import { LtlNav } from './ltl-nav';
 
 type GapTone = 'amber' | 'blue' | 'green';
 interface HonestGap {
@@ -21,7 +22,7 @@ const US_STATES = new Set([
 @Component({
   selector: 'app-plan-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, LtlNav],
   templateUrl: './plan-detail.html',
   styleUrls: ['./plan-detail.css'],
 })
@@ -29,6 +30,15 @@ export class PlanDetail implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly ltl = inject(LtlService);
+
+  constructor() {
+    // Router state is only available on the in-flight navigation; read it in the constructor
+    // (before the navigation settles) so a "Review plan" click carries its uplift figure (#77).
+    const uplift = this.router.getCurrentNavigation()?.extras.state?.['projectedUplift'];
+    if (typeof uplift === 'number' && Number.isFinite(uplift)) {
+      this.upliftFromState.set(uplift);
+    }
+  }
 
   readonly planId = signal<string | null>(null);
   readonly loading = signal(true);
@@ -46,7 +56,27 @@ export class PlanDetail implements OnInit {
     this.allLoads().reduce((sum, load) => sum + (load.revenue ?? 0), 0),
   );
 
+  /**
+   * Projected uplift carried from the queue card via router state (issue #77). Null when the
+   * page is opened directly / after a refresh, in which case {@link projectedUplift} derives it.
+   */
+  readonly upliftFromState = signal<number | null>(null);
+
   readonly parentLinehaulMiles = computed(() => this.parent()?.mileage ?? null);
+
+  /**
+   * Projected uplift = combined revenue minus the parent's own linehaul (i.e. the incremental
+   * revenue the siblings add). Prefers the exact figure passed from the queue card; otherwise
+   * derives it from the live parent/sibling revenues so the number never silently disappears.
+   */
+  readonly projectedUplift = computed<number | null>(() => {
+    const fromState = this.upliftFromState();
+    if (fromState !== null) return fromState;
+
+    const parent = this.parent();
+    if (!parent) return null;
+    return this.combinedRevenue() - (parent.revenue ?? 0);
+  });
 
   readonly combinedRpm = computed(() => {
     const miles = this.parentLinehaulMiles();
@@ -145,6 +175,19 @@ export class PlanDetail implements OnInit {
       },
     });
   }
+
+  /**
+   * Alvys deep-link for a load (issue #78). Opens the live load in the Alvys web app in a new
+   * tab. Prefers the human-facing load number; returns null when neither number nor id is known
+   * so the row degrades to non-clickable rather than linking to a broken URL.
+   */
+  alvysLoadUrl(load: LtlLoadSummary): string | null {
+    const ref = load.loadNumber ?? load.id;
+    if (!ref) return null;
+    return `${PlanDetail.ALVYS_LOAD_BASE_URL}/${encodeURIComponent(ref)}`;
+  }
+
+  private static readonly ALVYS_LOAD_BASE_URL = 'https://va336.alvys.com/loads';
 
   formatCurrency(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';

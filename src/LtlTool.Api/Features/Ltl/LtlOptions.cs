@@ -76,6 +76,42 @@ public sealed class LtlOptions
     /// extractor always runs regardless of this setting.
     /// </summary>
     public AccessorialAiOptions AccessorialAi { get; set; } = new();
+
+    /// <summary>
+    /// Phase 2 optimization engines (trailer fit, capacity/cost solver, agent commands). Every
+    /// sub-flag defaults to <c>false</c>, so a fresh clone registers only the <c>Null…</c>
+    /// no-op implementations and no half-built engine can affect the demo. Flip a sub-flag on
+    /// only once its real engine is wired and validated against Alvys-derived inputs.
+    /// </summary>
+    public OptimizationOptions Optimization { get; set; } = new();
+}
+
+/// <summary>
+/// Feature toggles for the Phase 2 optimization layer (bound from <c>Ltl:Optimization</c>). Each
+/// engine follows the AccessorialAI precedent: a real interface with a <c>Null…</c> fallback that
+/// is registered until the matching flag is turned on. Optimization consumes only Alvys-derived
+/// operational data passed in by the API — the engines never fetch data themselves.
+/// </summary>
+public sealed class OptimizationOptions
+{
+    /// <summary>3D / weight-and-cube trailer-fit engine (Phase 2). Off by default.</summary>
+    public OptimizationFeatureToggle TrailerFit { get; set; } = new();
+
+    /// <summary>Capacity/cost balancing solver, e.g. OR-Tools (Phase 2). Off by default.</summary>
+    public OptimizationFeatureToggle Solver { get; set; } = new();
+
+    /// <summary>Natural-language / agent command surface over optimization (Phase 2). Off by default.</summary>
+    public OptimizationFeatureToggle AgentCommands { get; set; } = new();
+}
+
+/// <summary>A single on/off toggle for an optimization engine. Defaults to disabled.</summary>
+public sealed class OptimizationFeatureToggle
+{
+    /// <summary>
+    /// When <c>false</c> (default), the engine's <c>Null…</c> no-op implementation is registered
+    /// and no optimization computation runs.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
 }
 
 /// <summary>

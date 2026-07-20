@@ -36,6 +36,14 @@ public enum MissingDataFlag
     Equipment,
     Commodity,
     InvoiceStatus,
+
+    /// <summary>
+    /// Per-item freight dimensions (length/width/height, freight class, stackability). The Alvys
+    /// load projection carries only aggregate weight/volume/pallets — never a true LxWxH per item —
+    /// so a 3D trailer-fit verdict cannot be computed today. Always surfaced so the UI shows
+    /// "verify at dock" rather than implying a fit was checked.
+    /// </summary>
+    Dimensions,
 }
 
 /// <summary>Explainable match quality label for a driver/truck against a load.</summary>

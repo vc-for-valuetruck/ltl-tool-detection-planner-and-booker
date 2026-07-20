@@ -1,6 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -53,6 +54,23 @@ public static class LtlServiceCollectionExtensions
         {
             services.AddSingleton<IAccessorialSignalExtractor, NullAccessorialSignalExtractor>();
         }
+
+        // Phase 2 optimization engines (trailer fit, capacity/cost solver, stop sequencer). Each
+        // follows the AccessorialAI Null-fallback pattern: the Null… implementation is registered
+        // until its Ltl:Optimization:* flag is turned on and a real engine is wired. All flags
+        // default to false, so a fresh clone / CI / the demo only ever run the no-op services and
+        // no half-built optimization can affect behavior. The engines are pure compute over
+        // Alvys-derived inputs — they never fetch data themselves.
+        var optimization = configuration
+            .GetSection($"{LtlOptions.SectionName}:{nameof(LtlOptions.Optimization)}")
+            .Get<OptimizationOptions>() ?? new OptimizationOptions();
+
+        if (!optimization.TrailerFit.Enabled)
+            services.AddSingleton<ITrailerFitService, NullTrailerFitService>();
+        if (!optimization.Solver.Enabled)
+            services.AddSingleton<ICapacityCostSolver, NullCapacityCostSolver>();
+        if (!optimization.AgentCommands.Enabled)
+            services.AddSingleton<IStopSequencer, NullStopSequencer>();
 
         // Consolidation planner (Phase 1 pilot: Laredo → Dallas, read-only, click-card output).
         // Customer LTL policy: reads Alvys customer notes for LTL_TIER/LTL_ALLOW markers,

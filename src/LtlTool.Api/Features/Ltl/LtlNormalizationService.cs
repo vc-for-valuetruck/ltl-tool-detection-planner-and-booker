@@ -79,6 +79,12 @@ public sealed class LtlNormalizationService(
         // rather than inventing one.
         missing.Add(MissingDataFlag.Commodity);
 
+        // Per-item freight dimensions (LxWxH / class / stackability) are not on the Alvys load
+        // projection either — only aggregate weight/volume/pallets. A 3D trailer-fit verdict is
+        // therefore never computable today, so we always flag dimensions as missing rather than
+        // implying a fit was checked. Revisit if Alvys read coverage adds item-level dims.
+        missing.Add(MissingDataFlag.Dimensions);
+
         var revenue = ResolveRevenue(load);
         if (revenue is null) missing.Add(MissingDataFlag.Rate);
 

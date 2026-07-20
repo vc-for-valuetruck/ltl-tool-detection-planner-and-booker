@@ -69,6 +69,15 @@ public sealed class LtlNormalizationServiceTests
     }
 
     [Fact]
+    public void Normalize_always_flags_dimensions_as_missing()
+    {
+        // Per-item freight dimensions (LxWxH / class) are not on the Alvys projection — a 3D
+        // trailer-fit verdict is not computable today, so dimensions are always flagged missing.
+        var summary = LtlTestFactory.Normalizer().Normalize(FullLoad());
+        Assert.Contains(MissingDataFlag.Dimensions, summary.MissingData);
+    }
+
+    [Fact]
     public void Normalize_sums_rate_components_when_no_explicit_customer_rate()
     {
         var load = FullLoad();

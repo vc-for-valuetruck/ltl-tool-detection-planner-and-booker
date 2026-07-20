@@ -1,9 +1,10 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ConsolidationService } from './consolidation.service';
+import { LtlNav } from './ltl-nav';
 import {
   ConsolidationAuditRecord,
   ConsolidationCandidate,
@@ -41,7 +42,7 @@ export interface CorridorPickerRow {
 @Component({
   selector: 'app-consolidate',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, LtlNav],
   templateUrl: './consolidate.html',
   styleUrls: ['./consolidate.css'],
 })
