@@ -2,6 +2,9 @@ using LtlTool.Api.Features.Integrations.Alvys;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
+// Alias to disambiguate from the LtlTool.Api.Options namespace, which otherwise shadows
+// Microsoft.Extensions.Options.Options and breaks the unqualified Options.Create call.
+using MsOptions = Microsoft.Extensions.Options.Options;
 
 namespace LtlTool.Api.Tests.Alvys;
 
@@ -28,7 +31,7 @@ public sealed class AlvysTokenPrewarmServiceTests
     }
 
     private static AlvysTokenPrewarmService Build(RecordingTokenProvider provider, AlvysOptions options) =>
-        new(provider, Options.Create(options), NullLogger<AlvysTokenPrewarmService>.Instance);
+        new(provider, MsOptions.Create(options), NullLogger<AlvysTokenPrewarmService>.Instance);
 
     [Fact]
     public async Task Live_with_credentials_prewarms_token()
