@@ -29,7 +29,7 @@ public sealed class ConsolidationPlanServiceTests
             LtlTestFactory.Visibility(),
             LtlTestFactory.AccessorialAnalyzer(),
             new NullAccessorialSignalExtractor(),
-            LtlTestFactory.Options());
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
 
         return new ConsolidationPlanService(
             loads,
@@ -200,7 +200,7 @@ public sealed class ConsolidationPlanServiceTests
         var loads = new LtlLoadService(
             client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
             LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
-            LtlTestFactory.Options());
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
         var options = DefaultOptions();
         options.CustomerPolicies.Add(new()
         {
@@ -261,7 +261,7 @@ public sealed class ConsolidationPlanServiceTests
         var loads = new LtlLoadService(
             client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
             LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
-            LtlTestFactory.Options());
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
         var options = DefaultOptions();
         options.CustomerPolicies.Add(new()
         {
@@ -315,7 +315,7 @@ public sealed class ConsolidationPlanServiceTests
         var loads = new LtlLoadService(
             client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
             LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
-            LtlTestFactory.Options());
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
         var service = new ConsolidationPlanService(
             loads,
             Microsoft.Extensions.Options.Options.Create(DefaultOptions()),
@@ -354,7 +354,7 @@ public sealed class ConsolidationPlanServiceTests
         var loads = new LtlLoadService(
             client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
             LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
-            LtlTestFactory.Options());
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
         var service = new ConsolidationPlanService(
             loads,
             Microsoft.Extensions.Options.Options.Create(DefaultOptions()),
@@ -400,7 +400,7 @@ public sealed class ConsolidationPlanServiceTests
         var loads = new LtlLoadService(
             client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
             LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
-            LtlTestFactory.Options());
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
         var service = new ConsolidationPlanService(
             loads,
             Microsoft.Extensions.Options.Options.Create(options),
@@ -452,7 +452,7 @@ public sealed class ConsolidationPlanServiceTests
         var loads = new LtlLoadService(
             client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
             LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
-            LtlTestFactory.Options());
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
         var service = new ConsolidationPlanService(
             loads,
             Microsoft.Extensions.Options.Options.Create(options),

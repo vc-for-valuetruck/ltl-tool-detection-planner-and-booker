@@ -58,6 +58,13 @@ public sealed class LtlOptions
     public List<string> EquipmentConflictEventTypes { get; set; } =
         ["Repair", "Maintenance", "Out of Service", "Other"];
 
+    /// <summary>
+    /// Minimum number of recently-delivered, priced loads on a lane before a revenue-per-mile
+    /// range is shown (Phase 7.4 lane rate context). Below this the lane reports an honest
+    /// "not enough samples" verdict rather than a misleadingly thin range.
+    /// </summary>
+    public int LaneRateMinSamples { get; set; } = 3;
+
     /// <summary>Match scoring weights/thresholds.</summary>
     public LtlMatchOptions Match { get; set; } = new();
 

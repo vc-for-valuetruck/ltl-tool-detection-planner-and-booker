@@ -18,7 +18,7 @@ namespace LtlTool.Api.Features.Ltl;
 public sealed class LtlLoadService(
     IAlvysClient alvys, LtlNormalizationService normalizer, VisibilityAnalyzer visibility,
     AccessorialSignalAnalyzer accessorialAnalyzer, IAccessorialSignalExtractor accessorialExtractor,
-    IOptions<LtlOptions> options)
+    IOptions<LtlOptions> options, TimeProvider clock)
 {
     private readonly LtlOptions _options = options.Value;
 
@@ -304,6 +304,63 @@ public sealed class LtlLoadService(
             .OrderByDescending(s => s.Exceptions.Count(e => e.BlocksBilling))
             .ThenByDescending(s => s.Exceptions.Count)
             .ToList();
+    }
+
+    /// <summary>
+    /// Recent lane rate context (Phase 7.4): the revenue-per-mile spread across recently
+    /// <em>Delivered</em> loads on the same origin→destination state pair. This is deliberately
+    /// "recent tenant history, not market rate" — it is what Value Truck itself has recently billed
+    /// on the lane, read live from Alvys, NOT a DAT/Greenscreens market feed (an explicit non-goal
+    /// for this slice). Below <see cref="LtlOptions.LaneRateMinSamples"/> priced samples the lane
+    /// reports an honest <see cref="LaneRateContext.Insufficient"/> verdict rather than a thin range.
+    /// Read-only; nothing writes back to Alvys.
+    /// </summary>
+    public async Task<LaneRateContext> LaneRateContextAsync(
+        string originState, string destinationState, CancellationToken ct)
+    {
+        var now = clock.GetUtcNow();
+        originState = (originState ?? string.Empty).Trim();
+        destinationState = (destinationState ?? string.Empty).Trim();
+
+        var (loads, _) = await SweepAsync(
+            new LoadSearchRequest { PageSize = _options.AlvysPageSize, Status = ["Delivered"] }, ct);
+
+        var rpms = loads
+            .Select(l => normalizer.Normalize(l))
+            .Where(s => EqualsCi(s.Origin?.State, originState)
+                && EqualsCi(s.Destination?.State, destinationState))
+            .Select(s => s.RevenuePerMile)
+            .Where(rpm => rpm is > 0)
+            .Select(rpm => rpm!.Value)
+            .OrderBy(rpm => rpm)
+            .ToList();
+
+        if (rpms.Count < Math.Max(1, _options.LaneRateMinSamples))
+            return LaneRateContext.Insufficient(originState, destinationState, rpms.Count, now);
+
+        return new LaneRateContext
+        {
+            OriginState = originState,
+            DestinationState = destinationState,
+            SampleSize = rpms.Count,
+            MedianRpm = Median(rpms),
+            MinRpm = rpms[0],
+            MaxRpm = rpms[^1],
+            Basis =
+                $"Median revenue-per-mile across {rpms.Count} recently delivered load(s) on "
+                + $"{originState}→{destinationState}. Recent tenant history (what Value Truck billed), "
+                + "not a market rate.",
+            GeneratedAt = now,
+        };
+    }
+
+    /// <summary>Median of a pre-sorted, non-empty list.</summary>
+    private static decimal Median(IReadOnlyList<decimal> sorted)
+    {
+        var mid = sorted.Count / 2;
+        return sorted.Count % 2 == 1
+            ? sorted[mid]
+            : (sorted[mid - 1] + sorted[mid]) / 2m;
     }
 
     /// <summary>

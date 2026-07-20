@@ -6,7 +6,7 @@ import {
 } from '@angular/common/http/testing';
 import { LtlService } from './ltl.service';
 import { RUNTIME_CONFIG } from '../../runtime-config';
-import { AccessorialReviewContext } from './ltl.models';
+import { AccessorialReviewContext, CapacitySnapshot, LaneRateContext } from './ltl.models';
 
 describe('LtlService — accessorial signals', () => {
   let service: LtlService;
@@ -77,5 +77,77 @@ describe('LtlService — accessorial signals', () => {
     expect(result).toBeDefined();
     expect(result!.evaluated).toBeFalse();
     expect(result!.signals).toEqual([]);
+  });
+});
+
+describe('LtlService — rating & capacity context', () => {
+  let service: LtlService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: RUNTIME_CONFIG,
+          useValue: { tenantId: '', clientId: '', apiScope: '', apiBaseUrl: '/api' },
+        },
+      ],
+    });
+    service = TestBed.inject(LtlService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('calls GET /api/ltl/capacity/today and maps the snapshot', () => {
+    let result: CapacitySnapshot | undefined;
+
+    service.capacityToday().subscribe((snapshot) => (result = snapshot));
+
+    const req = http.expectOne('/api/ltl/capacity/today');
+    expect(req.request.method).toBe('GET');
+
+    const fakeResponse: CapacitySnapshot = {
+      generatedAt: '2026-07-20T00:00:00Z',
+      activeTrucks: 3,
+      totalTrucks: 5,
+      inTransitTrips: 2,
+      totalTrailers: 4,
+      trailersByType: [{ equipmentType: 'Dry Van', count: 4 }],
+      truncated: false,
+      source: 'Live Alvys',
+    };
+    req.flush(fakeResponse);
+
+    expect(result).toBeDefined();
+    expect(result!.activeTrucks).toBe(3);
+    expect(result!.trailersByType[0].equipmentType).toBe('Dry Van');
+  });
+
+  it('calls GET /api/ltl/lane-rate with the origin/destination states as query params', () => {
+    let result: LaneRateContext | undefined;
+
+    service.laneRate('TX', 'IL').subscribe((ctx) => (result = ctx));
+
+    const req = http.expectOne('/api/ltl/lane-rate?originState=TX&destinationState=IL');
+    expect(req.request.method).toBe('GET');
+
+    const fakeResponse: LaneRateContext = {
+      originState: 'TX',
+      destinationState: 'IL',
+      sampleSize: 3,
+      medianRpm: 5,
+      minRpm: 4,
+      maxRpm: 6,
+      basis: 'Recent tenant history, not a market rate.',
+      generatedAt: '2026-07-20T00:00:00Z',
+    };
+    req.flush(fakeResponse);
+
+    expect(result).toBeDefined();
+    expect(result!.medianRpm).toBe(5);
+    expect(result!.sampleSize).toBe(3);
   });
 });

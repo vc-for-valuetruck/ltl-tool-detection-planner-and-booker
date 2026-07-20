@@ -40,6 +40,7 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<MatchScoringService>();
         services.AddScoped<MatchService>();
         services.AddScoped<LtlLoadService>();
+        services.AddScoped<CapacitySnapshotService>();
         services.AddScoped<AssignmentValidationService>();
 
         // Accessorial signal AI extractor (Phase 6). Disabled by default — the

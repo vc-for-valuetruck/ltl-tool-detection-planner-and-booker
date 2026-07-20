@@ -28,6 +28,7 @@ public sealed class LtlController(
     LtlLoadService loads, MatchService matches, AssignmentValidationService validation,
     IAssignmentAuditStore auditStore,
     ConsolidationOpportunityService consolidationOpportunityService,
+    CapacitySnapshotService capacity,
     ILogger<LtlController> logger) : ControllerBase
 {
     /// <summary>Normalized, filtered, sorted, paged LTL search over the swept Alvys loads.</summary>
@@ -226,6 +227,30 @@ public sealed class LtlController(
     [ProducesResponseType(typeof(IReadOnlyList<LtlLoadSummary>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<LtlLoadSummary>>> Exceptions(CancellationToken ct)
         => Ok(await loads.ExceptionsAsync(ct));
+
+    /// <summary>
+    /// Live "Capacity today" snapshot (Phase 7.4): active trucks, trailer pool by equipment type,
+    /// and in-transit trips — every count a read-only Alvys sweep, truncation reported honestly.
+    /// </summary>
+    [HttpGet("capacity/today")]
+    [ProducesResponseType(typeof(CapacitySnapshot), StatusCodes.Status200OK)]
+    public async Task<ActionResult<CapacitySnapshot>> CapacityToday(CancellationToken ct)
+        => Ok(await capacity.GetSnapshotAsync(ct));
+
+    /// <summary>
+    /// Recent lane rate context (Phase 7.4): the revenue-per-mile spread across recently delivered
+    /// loads on the same origin→destination state pair. Recent tenant history, not a market rate.
+    /// </summary>
+    [HttpGet("lane-rate")]
+    [ProducesResponseType(typeof(LaneRateContext), StatusCodes.Status200OK)]
+    public async Task<ActionResult<LaneRateContext>> LaneRate(
+        [FromQuery] string originState, [FromQuery] string destinationState, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(originState) || string.IsNullOrWhiteSpace(destinationState))
+            return BadRequest("originState and destinationState are both required.");
+
+        return Ok(await loads.LaneRateContextAsync(originState, destinationState, ct));
+    }
 
     private string CurrentUser() =>
         User.FindFirstValue("preferred_username")

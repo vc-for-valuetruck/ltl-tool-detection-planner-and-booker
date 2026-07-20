@@ -13,7 +13,7 @@ public sealed class LtlLoadServiceTests
     private static LtlLoadService Build(FakeAlvysClient client, LtlOptions? options = null) =>
         new(client, LtlTestFactory.Normalizer(options), LtlTestFactory.Visibility(),
             LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
-            LtlTestFactory.Options(options));
+            LtlTestFactory.Options(options), LtlTestFactory.Clock());
 
     [Fact]
     public async Task Detail_marks_load_already_invoiced_from_invoice_record()
@@ -191,5 +191,93 @@ public sealed class LtlLoadServiceTests
 
         // With the enrich bound at 0, the visibility-only failure must not appear here (detail path only).
         Assert.DoesNotContain(body, s => s.Exceptions.Any(e => e.Code == "VISIBILITY_FAILED"));
+    }
+
+    private static AlvysLoad LaneLoad(
+        string id, string number, string originState, string destinationState,
+        decimal rate, decimal mileage) => new()
+    {
+        Id = id,
+        LoadNumber = number,
+        Status = "Delivered",
+        CustomerRate = rate,
+        CustomerMileage = mileage,
+        Stops =
+        [
+            new AlvysLoadStop { Sequence = 1, StopType = "Pickup", Address = new AlvysAddress { City = "A", State = originState } },
+            new AlvysLoadStop { Sequence = 2, StopType = "Delivery", Address = new AlvysAddress { City = "B", State = destinationState } },
+        ],
+    };
+
+    [Fact]
+    public async Task LaneRateContext_reports_median_and_range_from_priced_delivered_loads()
+    {
+        var client = new FakeAlvysClient
+        {
+            Loads =
+            [
+                LaneLoad("L1", "100", "TX", "IL", rate: 400m, mileage: 100m), // RPM 4.00
+                LaneLoad("L2", "200", "TX", "IL", rate: 500m, mileage: 100m), // RPM 5.00
+                LaneLoad("L3", "300", "TX", "IL", rate: 600m, mileage: 100m), // RPM 6.00
+                LaneLoad("L4", "400", "CA", "NV", rate: 900m, mileage: 100m), // different lane — excluded
+            ],
+        };
+
+        var context = await Build(client).LaneRateContextAsync("TX", "IL", default);
+
+        Assert.Equal(3, context.SampleSize);
+        Assert.Equal(5.00m, context.MedianRpm);
+        Assert.Equal(4.00m, context.MinRpm);
+        Assert.Equal(6.00m, context.MaxRpm);
+        Assert.Contains("Recent tenant history", context.Basis);
+    }
+
+    [Fact]
+    public async Task LaneRateContext_is_insufficient_below_the_min_sample_threshold()
+    {
+        var client = new FakeAlvysClient
+        {
+            Loads =
+            [
+                LaneLoad("L1", "100", "TX", "IL", rate: 400m, mileage: 100m),
+                LaneLoad("L2", "200", "TX", "IL", rate: 500m, mileage: 100m),
+            ],
+        };
+
+        var context = await Build(client).LaneRateContextAsync("TX", "IL", default);
+
+        Assert.Equal(2, context.SampleSize);
+        Assert.Null(context.MedianRpm);
+        Assert.Null(context.MinRpm);
+        Assert.Null(context.MaxRpm);
+        Assert.Contains("Not enough", context.Basis);
+    }
+
+    [Fact]
+    public async Task LaneRateContext_ignores_loads_missing_rate_or_mileage()
+    {
+        var client = new FakeAlvysClient
+        {
+            Loads =
+            [
+                LaneLoad("L1", "100", "TX", "IL", rate: 400m, mileage: 100m),
+                LaneLoad("L2", "200", "TX", "IL", rate: 500m, mileage: 100m),
+                // Missing mileage → no RPM → not counted, so the lane stays below threshold.
+                new AlvysLoad
+                {
+                    Id = "L3", LoadNumber = "300", Status = "Delivered", CustomerRate = 600m,
+                    Stops =
+                    [
+                        new AlvysLoadStop { Sequence = 1, Address = new AlvysAddress { City = "A", State = "TX" } },
+                        new AlvysLoadStop { Sequence = 2, Address = new AlvysAddress { City = "B", State = "IL" } },
+                    ],
+                },
+            ],
+        };
+
+        var context = await Build(client).LaneRateContextAsync("TX", "IL", default);
+
+        Assert.Equal(2, context.SampleSize);
+        Assert.Null(context.MedianRpm);
     }
 }

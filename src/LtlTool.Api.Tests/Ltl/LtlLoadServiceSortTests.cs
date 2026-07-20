@@ -15,7 +15,7 @@ public sealed class LtlLoadServiceSortTests
     private static LtlLoadService Build(FakeAlvysClient client) =>
         new(client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
             LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
-            LtlTestFactory.Options());
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
 
     private static AlvysLoad Load(string number, decimal? rate, decimal? weight, decimal? mileage) => new()
     {
