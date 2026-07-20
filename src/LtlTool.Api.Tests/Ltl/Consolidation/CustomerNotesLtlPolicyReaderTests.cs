@@ -130,8 +130,9 @@ public class CustomerNotesLtlPolicyReaderTests
             Microsoft.Extensions.Options.Options.Create(options),
             NullLogger<CustomerNotesLtlPolicyReader>.Instance);
 
-        var tier = await reader.ResolveAsync("CUST-1", "Kroger", default);
-        Assert.Equal(CustomerConsolidationTier.Allowed, tier);
+        var resolution = await reader.ResolveAsync("CUST-1", "Kroger", default);
+        Assert.Equal(CustomerConsolidationTier.Allowed, resolution.Tier);
+        Assert.Equal(CustomerPolicySource.CustomerNote, resolution.Source);
     }
 
     [Fact]
@@ -157,8 +158,9 @@ public class CustomerNotesLtlPolicyReaderTests
             client, Microsoft.Extensions.Options.Options.Create(options),
             NullLogger<CustomerNotesLtlPolicyReader>.Instance);
 
-        var tier = await reader.ResolveAsync("CUST-2", "Masonite", default);
-        Assert.Equal(CustomerConsolidationTier.NotifyRequired, tier);
+        var resolution = await reader.ResolveAsync("CUST-2", "Masonite", default);
+        Assert.Equal(CustomerConsolidationTier.NotifyRequired, resolution.Tier);
+        Assert.Equal(CustomerPolicySource.DefaultPolicy, resolution.Source);
     }
 
     [Fact]
@@ -171,8 +173,9 @@ public class CustomerNotesLtlPolicyReaderTests
             client, Microsoft.Extensions.Options.Options.Create(new ConsolidationOptions()),
             NullLogger<CustomerNotesLtlPolicyReader>.Instance);
 
-        var tier = await reader.ResolveAsync("nope", "Unknown Customer", default);
-        Assert.Equal(CustomerConsolidationTier.Unknown, tier);
+        var resolution = await reader.ResolveAsync("nope", "Unknown Customer", default);
+        Assert.Equal(CustomerConsolidationTier.Unknown, resolution.Tier);
+        Assert.Equal(CustomerPolicySource.None, resolution.Source);
     }
 
     [Fact]
@@ -183,8 +186,9 @@ public class CustomerNotesLtlPolicyReaderTests
             client, Microsoft.Extensions.Options.Options.Create(new ConsolidationOptions()),
             NullLogger<CustomerNotesLtlPolicyReader>.Instance);
 
-        var tier = await reader.ResolveAsync(null, null, default);
-        Assert.Equal(CustomerConsolidationTier.Unknown, tier);
+        var resolution = await reader.ResolveAsync(null, null, default);
+        Assert.Equal(CustomerConsolidationTier.Unknown, resolution.Tier);
+        Assert.Equal(CustomerPolicySource.None, resolution.Source);
     }
 
     [Fact]

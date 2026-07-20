@@ -20,6 +20,9 @@ export type CustomerConsolidationTier =
   | 'NotifyRequired'
   | 'Never';
 
+/** Provenance of a resolved consolidation tier — mirrors the C# CustomerPolicySource enum. */
+export type CustomerPolicySource = 'None' | 'CustomerNote' | 'DefaultPolicy';
+
 export interface ConsolidationCandidate {
   loadId: string;
   loadNumber?: string;
@@ -64,6 +67,7 @@ export interface ConsolidationPlanSibling {
   /** Driver-facing loaded miles (Trip.LoadedMileage.Distance.Value). */
   loadedMiles?: number;
   customerTier: CustomerConsolidationTier;
+  customerPolicySource: CustomerPolicySource;
   cautions: string[];
 }
 

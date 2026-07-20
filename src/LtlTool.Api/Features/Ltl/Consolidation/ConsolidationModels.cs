@@ -201,6 +201,12 @@ public sealed class ConsolidationPlanSibling
     public CustomerConsolidationTier CustomerTier { get; init; }
 
     /// <summary>
+    /// Where <see cref="CustomerTier"/> came from — a customer-authored Alvys note, the static
+    /// default policy, or nothing on file — so the UI can badge the policy's provenance honestly.
+    /// </summary>
+    public CustomerPolicySource CustomerPolicySource { get; init; }
+
+    /// <summary>
     /// Plain-language cautions the dispatcher must resolve before executing this plan.
     /// Examples: "L-100237 pallet count is missing — visual verify at Laredo dock",
     /// "Masonite requires customer notification before consolidation".

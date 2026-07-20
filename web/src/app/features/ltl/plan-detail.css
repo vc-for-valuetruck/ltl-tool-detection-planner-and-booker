@@ -619,6 +619,12 @@
   color: var(--text-primary);
 }
 
+.policy-source {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
 .policy-chip-allowed {
   border-color: var(--success);
   background: var(--success-row-bg);

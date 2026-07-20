@@ -10,6 +10,7 @@ import {
   ConsolidationPlanSibling,
   ConsolidationTrailerFit,
   CustomerConsolidationTier,
+  CustomerPolicySource,
 } from './consolidation.models';
 import { LtlNav } from './ltl-nav';
 
@@ -22,6 +23,7 @@ interface HonestGap {
 interface CustomerPolicyView {
   customerName: string;
   tier: CustomerConsolidationTier;
+  source: CustomerPolicySource;
 }
 
 const US_STATES = new Set([
@@ -113,7 +115,11 @@ export class PlanDetail implements OnInit {
       const customerName = sibling.customerName?.trim();
       if (!customerName || seen.has(customerName)) continue;
       seen.add(customerName);
-      out.push({ customerName, tier: sibling.customerTier });
+      out.push({
+        customerName,
+        tier: sibling.customerTier,
+        source: sibling.customerPolicySource,
+      });
     }
     return out;
   });
@@ -452,6 +458,23 @@ export class PlanDetail implements OnInit {
         return 'Consolidation not allowed';
       default:
         return 'No policy on file';
+    }
+  }
+
+  /**
+   * Provenance badge for a customer policy chip (Phase 7.4, spec line 26). Distinguishes a
+   * customer-authored LTL note from the static-config fallback so a dispatcher knows whether the
+   * tier is the customer's own instruction or a default we applied. Null for None — nothing on
+   * file anywhere, so there is no source to badge.
+   */
+  policySourceLabel(source: CustomerPolicySource): string | null {
+    switch (source) {
+      case 'CustomerNote':
+        return 'from customer note';
+      case 'DefaultPolicy':
+        return 'default policy — no customer note';
+      default:
+        return null;
     }
   }
 
