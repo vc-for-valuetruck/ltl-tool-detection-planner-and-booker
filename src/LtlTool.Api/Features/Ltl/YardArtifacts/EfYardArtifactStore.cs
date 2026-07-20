@@ -35,7 +35,10 @@ public sealed class EfYardArtifactStore(AppDbContext db) : IYardArtifactStore
 
         var max = query.Max <= 0 ? 100 : Math.Min(query.Max, 500);
 
-        return q.OrderByDescending(r => r.CreatedAt)
+        // Order newest-first in memory: the filtered set is bounded (keyed by unit/load/yard) and
+        // SQLite (used by tests) cannot translate an ORDER BY over DateTimeOffset.
+        return q.AsEnumerable()
+            .OrderByDescending(r => r.CreatedAt)
             .Take(max)
             .ToArray();
     }
