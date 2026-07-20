@@ -123,6 +123,56 @@
       </div>
     }
 
+    @if (artifacts().length) {
+      <div class="card detail-card" data-testid="yard-artifacts">
+        <h2>Yard artifacts</h2>
+        @for (a of artifacts(); track a.id) {
+          <div class="yard-artifact">
+            <div class="chip-row">
+              <span [class]="artifactChipClass(a.status)" data-testid="yard-artifact-status">
+                {{ a.status }}
+              </span>
+              <span class="chip chip-neutral">{{ a.passedItems }} passed</span>
+              @if (a.failedItems) {
+                <span class="chip chip-warn">{{ a.failedItems }} flagged</span>
+              }
+              @if (a.naItems) {
+                <span class="chip chip-neutral">{{ a.naItems }} N/A</span>
+              }
+              <span class="yard-artifact-meta">
+                {{ a.yard }} · {{ a.submittedBy }} · {{ a.capturedAt | date: 'MMM d, y, h:mm a' }}
+              </span>
+            </div>
+
+            @if (a.verifiedPallets) {
+              <p class="detail-note" data-testid="yard-verified">
+                Yard-verified:
+                {{ a.verifiedPallets.palletCount !== null ? a.verifiedPallets.palletCount + ' pallets' : 'dims only' }}
+                @if (verifiedDims(a)) { · {{ verifiedDims(a) }} }
+                <span class="yard-source">({{ a.verifiedPallets.source }})</span>
+              </p>
+            }
+
+            @if (photos(a).length) {
+              <div class="yard-gallery">
+                @for (photo of photos(a); track photo.id) {
+                  <a [href]="fileUrl(a.id, photo)" target="_blank" rel="noopener" class="yard-thumb">
+                    <img [src]="fileUrl(a.id, photo)" [alt]="photo.fileName" loading="lazy" />
+                  </a>
+                }
+              </div>
+            }
+
+            @for (pdf of pdfs(a); track pdf.id) {
+              <a [href]="fileUrl(a.id, pdf)" target="_blank" rel="noopener" class="yard-pdf" data-testid="yard-pdf">
+                Download {{ pdf.fileName }} ↓
+              </a>
+            }
+          </div>
+        }
+      </div>
+    }
+
     <div class="worklist-footer" data-testid="load-detail-footer">
       Source: Live Alvys · Load detail · Read-only. Alvys has no public per-load link — use “Open Alvys”, then search the load number.
     </div>

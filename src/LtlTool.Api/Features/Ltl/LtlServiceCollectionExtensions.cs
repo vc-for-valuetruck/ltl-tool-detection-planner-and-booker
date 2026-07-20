@@ -5,6 +5,7 @@ using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Features.Ltl.SavedViews;
+using LtlTool.Api.Features.Ltl.YardArtifacts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -129,6 +130,16 @@ public static class LtlServiceCollectionExtensions
         // Tool-local dispatcher saved views, persisted durably in AppDbContext (server-side, never
         // browser storage). Scoped to match the DbContext lifetime. Owner-scoped; no Alvys writeback.
         services.AddScoped<ISavedViewStore, EfSavedViewStore>();
+
+        // Phase 8.2 yard-artifact intake: SQL metadata (AppDbContext) + a local file store for photo/PDF
+        // bytes. Our internal data — never Alvys read/write. The file store is a singleton (it only holds
+        // the resolved storage root); the metadata store is scoped to the DbContext.
+        services
+            .AddOptions<YardArtifactOptions>()
+            .Bind(configuration.GetSection(YardArtifactOptions.SectionName));
+        services.AddSingleton<IYardArtifactFileStore, LocalYardArtifactFileStore>();
+        services.AddScoped<IYardArtifactStore, EfYardArtifactStore>();
+        services.AddScoped<YardArtifactService>();
 
         // Phase 2 M4 agent command surface (tool-style catalog + read-only dispatch). Feature-gated
         // behind Ltl:Optimization:AgentCommands:Enabled with a Null dispatcher fallback; every command

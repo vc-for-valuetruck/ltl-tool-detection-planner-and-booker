@@ -4,6 +4,7 @@ import { of, throwError } from 'rxjs';
 import { LtlArrivalsBoard } from './ltl-arrivals-board';
 import { LtlService } from './ltl.service';
 import { LaredoArrival, LaredoArrivalsBoard } from './arrivals.models';
+import { YardArtifactView } from './yard-artifacts.models';
 
 function arrival(overrides: Partial<LaredoArrival>): LaredoArrival {
   return {
@@ -46,13 +47,35 @@ describe('LtlArrivalsBoard', () => {
 
   function build(stub: Partial<LtlService>): LtlArrivalsBoard {
     router = { navigate: jasmine.createSpy('navigate') };
+    // Artifacts are supplementary; default to an empty feed unless a test overrides it.
+    const withArtifacts: Partial<LtlService> = { yardArtifacts: () => of([]), ...stub };
     TestBed.configureTestingModule({
       providers: [
-        { provide: LtlService, useValue: stub },
+        { provide: LtlService, useValue: withArtifacts },
         { provide: Router, useValue: router },
       ],
     });
     return TestBed.runInInjectionContext(() => new LtlArrivalsBoard());
+  }
+
+  function artifact(overrides: Partial<YardArtifactView>): YardArtifactView {
+    return {
+      id: 'a1',
+      yard: 'LAREDO',
+      truckUnit: null,
+      trailerUnit: null,
+      loadNumber: null,
+      submittedBy: 'dock@valuetruck.com',
+      capturedAt: '2026-07-20T00:00:00Z',
+      createdAt: '2026-07-20T00:00:00Z',
+      status: 'Passed',
+      passedItems: 3,
+      failedItems: 0,
+      naItems: 0,
+      verifiedPallets: null,
+      files: [],
+      ...overrides,
+    };
   }
 
   it('loads the board on init and exposes arrivals + Dallas-bound count', () => {
@@ -105,6 +128,30 @@ describe('LtlArrivalsBoard', () => {
     router.navigate.calls.reset();
     c['openLoad'](arrival({ loadNumber: null }));
     expect(router.navigate).not.toHaveBeenCalled();
+  });
+
+  it('matches a yard artifact to an arrival by truck or trailer unit', () => {
+    const c = build({
+      arrivals: () =>
+        of(board([arrival({ tripId: 'a', truck: { id: 'e1', unit: 'T1', equipmentType: null, lengthFeet: null, fleetName: null, ownership: 'Fleet' } })])),
+      yardArtifacts: () => of([artifact({ truckUnit: 'T1', status: 'Flagged' })]),
+    });
+    c.ngOnInit();
+
+    const matched = c['artifactFor'](
+      arrival({ truck: { id: 'e1', unit: 'T1', equipmentType: null, lengthFeet: null, fleetName: null, ownership: 'Fleet' } }),
+    );
+    expect(matched).not.toBeNull();
+    expect(matched!.status).toBe('Flagged');
+
+    expect(c['artifactFor'](arrival({}))).toBeNull();
+  });
+
+  it('maps an artifact status to a chip class', () => {
+    const c = build({ arrivals: () => of(board([])) });
+    expect(c['artifactChipClass']('Passed')).toBe('chip chip-good');
+    expect(c['artifactChipClass']('Flagged')).toBe('chip chip-danger');
+    expect(c['artifactChipClass']('Submitted')).toBe('chip chip-neutral');
   });
 
   it('joins onward stop labels or shows a dash', () => {
