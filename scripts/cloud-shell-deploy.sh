@@ -128,7 +128,7 @@ if [[ -z "${ALVYS_CLIENT_SECRET:-}" ]]; then
         --query "[?name=='Alvys__ClientSecret'].value | [0]" -o tsv 2>/dev/null || true)
     if [[ -n "$EXISTING_SECRET" && "$EXISTING_SECRET" != "null" ]]; then
         ALVYS_CLIENT_SECRET="$EXISTING_SECRET"
-        log "Re-using Alvys secret already configured on the App Service (\${#ALVYS_CLIENT_SECRET} chars)."
+        log "Re-using Alvys secret already configured on the App Service (${#ALVYS_CLIENT_SECRET} chars)."
     fi
 fi
 
@@ -391,10 +391,12 @@ if [[ -z "$OPP_JSON" ]]; then
     echo "  (Endpoint not yet ready — wait ~30s and try:"
     echo "    curl -s $API_URL/api/ltl/consolidation/opportunities?limit=3 | python3 -m json.tool)"
 else
-    printf '%s' "$OPP_JSON" | python3 - <<'PY' 2>/dev/null || echo "  (Response was not JSON; open $API_URL/api/ltl/consolidation/opportunities?limit=3 in a browser.)"
-import json, sys, os
+    # JSON is passed as argv[1] — the heredoc occupies stdin (it IS the script),
+    # so piping the JSON into python's stdin here would silently read nothing.
+    python3 - "$OPP_JSON" <<'PY' 2>/dev/null || echo "  (Response was not JSON; open $API_URL/api/ltl/consolidation/opportunities?limit=3 in a browser.)"
+import json, sys
 try:
-    d = json.loads(sys.stdin.read())
+    d = json.loads(sys.argv[1])
 except Exception:
     sys.exit(1)
 
