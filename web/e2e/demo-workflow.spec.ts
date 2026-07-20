@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { detectHomeFlavor, isVisible } from './helpers/home-flavor';
 
 /**
  * LTL demo workflow — a Playwright walkthrough of the pilot slice.
@@ -34,16 +35,6 @@ async function pauseSoOperatorCanSee(page: Page, message: string): Promise<void>
 }
 
 const API_URL = process.env.API_URL ?? 'http://localhost:5072';
-type LtlHomeFlavor = 'legacy' | 'consolidations';
-
-async function detectHomeFlavor(page: Page): Promise<LtlHomeFlavor> {
-  const consolidationsHeading = page.getByRole('heading', { name: "Today's consolidations" });
-  if (await consolidationsHeading.isVisible({ timeout: 10_000 }).catch(() => false)) {
-    return 'consolidations';
-  }
-  await expect(page.getByRole('heading', { name: 'LTL Operating Console' })).toBeVisible();
-  return 'legacy';
-}
 
 test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
   test.beforeAll(async ({ request }) => {
@@ -65,7 +56,14 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     const flavor = await detectHomeFlavor(page);
     if (flavor === 'consolidations') {
       await expect(page.getByText('Live consolidation queue')).toBeVisible();
-      await expect(page).toHaveURL(/\/ltl/);
+      const openBoard = page.getByRole('link', { name: 'Open full consolidate board →' });
+      if (await isVisible(openBoard)) {
+        await openBoard.click();
+      } else {
+        await page.goto('/ltl/consolidate');
+      }
+      await expect(page).toHaveURL(/\/ltl\/consolidate/);
+      await expect(page.getByTestId('consolidate-seed-form')).toBeVisible();
       return;
     }
 

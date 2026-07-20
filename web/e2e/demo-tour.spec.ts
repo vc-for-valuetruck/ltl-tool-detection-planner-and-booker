@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { detectHomeFlavor, isVisible } from './helpers/home-flavor';
 
 /**
  * Screenshot tour of the LTL demo stack.
@@ -20,16 +21,6 @@ const API_URL = process.env.API_URL ?? 'http://localhost:5072';
 
 /** Directory under `test-results/` where tour PNGs land. */
 const TOUR_DIR = 'tour';
-type LtlHomeFlavor = 'legacy' | 'consolidations';
-
-async function detectHomeFlavor(page: Page): Promise<LtlHomeFlavor> {
-  const consolidationsHeading = page.getByRole('heading', { name: "Today's consolidations" });
-  if (await consolidationsHeading.isVisible({ timeout: 10_000 }).catch(() => false)) {
-    return 'consolidations';
-  }
-  await expect(page.getByRole('heading', { name: 'LTL Operating Console' })).toBeVisible();
-  return 'legacy';
-}
 
 async function shot(page: Page, name: string): Promise<void> {
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {
@@ -92,7 +83,7 @@ test.describe('LTL demo — screenshot tour', () => {
   test('04 - Billing Worklist tab', async ({ page }) => {
     await page.goto('/ltl/consolidate');
     const billingTab = page.getByRole('tab', { name: 'Billing Worklist' });
-    if (await billingTab.isVisible().catch(() => false)) {
+    if (await isVisible(billingTab)) {
       await billingTab.click();
     } else {
       await page.getByRole('link', { name: 'Billing' }).click();
@@ -104,7 +95,7 @@ test.describe('LTL demo — screenshot tour', () => {
   test('05 - Exceptions tab', async ({ page }) => {
     await page.goto('/ltl/consolidate');
     const exceptionsTab = page.getByRole('tab', { name: 'Exceptions' });
-    if (await exceptionsTab.isVisible().catch(() => false)) {
+    if (await isVisible(exceptionsTab)) {
       await exceptionsTab.click();
     } else {
       await page.getByRole('link', { name: 'Exceptions' }).click();
