@@ -63,6 +63,11 @@
   color: var(--text-primary);
 }
 
+/* Delivered-example variant: a firmer left accent so the "not open freight" caveat reads loud. */
+.live-lane-note-example {
+  border-left: 3px solid var(--warn-border, #f0d98c);
+}
+
 .corridor-picker {
   display: flex;
   gap: 8px;

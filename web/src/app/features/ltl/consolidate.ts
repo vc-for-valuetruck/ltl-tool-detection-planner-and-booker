@@ -104,7 +104,8 @@ export function buildLiveLaneRows(
 
 /**
  * Chooses which picker row to select by default:
- *   1. the pilot corridor if it has live candidates (a seed hint we can auto-populate from);
+ *   1. the pilot corridor if it has a plannable pair — a seed hint AND at least two open loads
+ *      on the lane, so the auto-seeded queue can actually form a consolidation (findings #5);
  *   2. otherwise the busiest live lane (most open loads), clearly labelled outside-pilot;
  *   3. otherwise the first pilot corridor (an honest empty state — nothing to plan today).
  * Pure and side-effect free so it can be unit-tested directly.
@@ -113,8 +114,12 @@ export function chooseDefaultSelection(
   pilotRows: CorridorPickerRow[],
   liveLaneRows: CorridorPickerRow[],
 ): string | null {
-  const pilotWithData = pilotRows.find((r) => r.seedLoadId || r.seedLoadNumber);
-  if (pilotWithData) return pilotWithData.code;
+  // A lone open load on the pilot lane can be seeded but never consolidated, so it must not beat
+  // a live lane that actually yields a workable pair. Require >= 2 open loads alongside the seed.
+  const pilotWithPair = pilotRows.find(
+    (r) => (r.seedLoadId || r.seedLoadNumber) && (r.openLoadCount ?? 0) >= 2,
+  );
+  if (pilotWithPair) return pilotWithPair.code;
   if (liveLaneRows.length > 0) {
     return [...liveLaneRows].sort(
       (a, b) => (b.openLoadCount ?? 0) - (a.openLoadCount ?? 0),
@@ -221,9 +226,27 @@ export class Consolidate implements OnInit {
   readonly canBuildPlan = computed(
     () => !!this.candidateResponse()?.seed && this.hasSelection() && !this.loadingPlan(),
   );
+
+  /**
+   * True when the current walkthrough is driven by an opportunity-sweep live lane. The sweep
+   * sources loads with status <c>Delivered</c> from Alvys (see ConsolidationOpportunityService),
+   * so these lanes are recent COMPLETED freight replayed as a realistic example — never open,
+   * plannable freight. We surface that honestly (badge) and disable the execute-style actions
+   * (Generate click card / Save as audit) so a dispatcher can never action a delivered load as
+   * though it were live. The pilot-corridor path (seeded from open loads) stays fully actionable.
+   */
+  readonly isDeliveredExample = computed(() => this.liveLaneMode());
+
   readonly canRecordAudit = computed(
-    () => !!this.plan() && (this.plan()?.blockers.length ?? 0) === 0 && !this.recordingAudit(),
+    () =>
+      !!this.plan() &&
+      (this.plan()?.blockers.length ?? 0) === 0 &&
+      !this.recordingAudit() &&
+      !this.isDeliveredExample(),
   );
+
+  /** Generating the sanctioned Alvys click card is disabled on delivered examples (see above). */
+  readonly canGenerateClickCard = computed(() => !!this.plan() && !this.isDeliveredExample());
 
   /**
    * Combined RPM for the plan = combined customer revenue ÷ parent linehaul miles. Null (renders
@@ -388,7 +411,7 @@ export class Consolidate implements OnInit {
 
     const seed = this.synthesizeSeed(opp.parent, opp.pickupDate, opp.customerName);
     const candidates: ConsolidationCandidate[] = opp.siblings.map((s) =>
-      this.synthesizeCandidate(s, row.code),
+      this.synthesizeCandidate(s, opp.parent, row.code),
     );
     this.candidateResponse.set({
       corridorCode: row.code,
@@ -422,6 +445,7 @@ export class Consolidate implements OnInit {
 
   private synthesizeCandidate(
     load: ConsolidationOpportunityLoad,
+    parent: ConsolidationOpportunityLoad,
     corridorCode: string,
   ): ConsolidationCandidate {
     return {
@@ -435,11 +459,7 @@ export class Consolidate implements OnInit {
       weightLbs: load.weightPounds ?? undefined,
       corridorCode,
       factors: [
-        {
-          name: 'Lane fit',
-          fit: 'Good',
-          rationale: 'Same origin→destination lane as the parent (grouped from live Alvys loads).',
-        },
+        this.laneFit(load, parent),
         {
           name: 'Timing fit',
           fit: 'Good',
@@ -453,6 +473,46 @@ export class Consolidate implements OnInit {
       ],
       isBlocked: false,
       customerTier: 'Unknown',
+    };
+  }
+
+  /**
+   * Honest Lane fit for a live-lane sibling. The opportunity sweep groups strictly by origin
+   * STATE + destination STATE (+ pickup day + customer), not by city — so a TX→TX group can mix
+   * Laredo→Dallas with Laredo→Houston. We compare the sibling's actual origin/destination cities
+   * against the parent's: only a full city+state match is a true same-lane "Good"; a state-only
+   * match is surfaced as "Same state — verify lane" (Tight), never silently claimed as Good.
+   */
+  private laneFit(
+    load: ConsolidationOpportunityLoad,
+    parent: ConsolidationOpportunityLoad,
+  ): ConsolidationFactor {
+    const norm = (s: string | null | undefined) => (s ?? '').trim().toUpperCase();
+    const sameCity =
+      norm(load.originCity) === norm(parent.originCity) &&
+      norm(load.destinationCity) === norm(parent.destinationCity);
+    const sameState =
+      norm(load.originState) === norm(parent.originState) &&
+      norm(load.destinationState) === norm(parent.destinationState);
+    if (sameCity && sameState) {
+      return {
+        name: 'Lane fit',
+        fit: 'Good',
+        rationale: 'Same origin→destination city as the parent (verified from live Alvys loads).',
+      };
+    }
+    if (sameState) {
+      return {
+        name: 'Lane fit',
+        fit: 'Tight',
+        rationale:
+          'Same origin/destination state as the parent but a different city — verify the lane before consolidating.',
+      };
+    }
+    return {
+      name: 'Lane fit',
+      fit: 'Unknown',
+      rationale: 'Origin/destination differ from the parent — verify the lane before consolidating.',
     };
   }
 
@@ -618,39 +678,14 @@ export class Consolidate implements OnInit {
     const seed = this.candidateResponse()?.seed;
     const plan = this.plan();
     if (!seed || !plan) return;
+    // Delivered examples are view-only: the opportunity sweep sources already-DELIVERED loads, so
+    // there is nothing plannable to record (findings #1/#4). The button is disabled too; this is
+    // the defence-in-depth guard so a programmatic call can never persist a delivered "plan".
+    if (this.isDeliveredExample()) return;
 
     this.recordingAudit.set(true);
     this.auditError.set(null);
     this.auditRecord.set(null);
-
-    // Live lanes are outside the pilot corridor, so the corridor-gated /plan/audit endpoint would
-    // reject them by design. Route them through the ungated /audit endpoint (load NUMBERS, not
-    // ids) that the click-card screen also uses. Still internal-only — nothing writes to Alvys.
-    if (this.liveLaneMode()) {
-      const opp = this.selectedOpportunity();
-      if (!opp) {
-        this.recordingAudit.set(false);
-        return;
-      }
-      this.consolidation
-        .recordLiveAudit({
-          parentLoadNumber: opp.parent.loadNumber,
-          siblingLoadNumbers: opp.siblings.map((s) => s.loadNumber),
-          combinedRevenue: opp.combinedRevenue,
-          combinedRpm: this.combinedRpm(),
-        })
-        .subscribe({
-          next: (record) => {
-            this.auditRecord.set({ id: record.auditId } as ConsolidationAuditRecord);
-            this.recordingAudit.set(false);
-          },
-          error: (err) => {
-            this.auditError.set(err?.error?.error ?? err?.message ?? 'Failed to record audit.');
-            this.recordingAudit.set(false);
-          },
-        });
-      return;
-    }
 
     this.consolidation
       .recordPlanAudit({
@@ -693,22 +728,9 @@ export class Consolidate implements OnInit {
     const seed = this.candidateResponse()?.seed;
     const p = this.plan();
     if (!seed || !p) return;
-
-    // Live lanes reuse the corridor-agnostic /plan/live route (load NUMBERS as query params, the
-    // same path the "Today's consolidations" cards use), carrying the opportunity's projected
-    // uplift across the navigation so plan-detail shows the figure the dispatcher clicked on.
-    if (this.liveLaneMode()) {
-      const opp = this.selectedOpportunity();
-      if (!opp) return;
-      this.router.navigate(['/ltl/consolidate/plan', 'live'], {
-        queryParams: {
-          parent: opp.parent.loadNumber,
-          siblings: opp.siblings.map((s) => s.loadNumber).join(','),
-        },
-        state: { projectedUplift: opp.projectedUplift },
-      });
-      return;
-    }
+    // Delivered examples cannot generate a sanctioned click card (findings #1/#4) — the freight is
+    // already delivered, so there is nothing to dispatch. Guard mirrors the disabled button.
+    if (this.isDeliveredExample()) return;
 
     this.router.navigate(['/ltl/consolidate/plan', p.previewId], {
       queryParams: {
