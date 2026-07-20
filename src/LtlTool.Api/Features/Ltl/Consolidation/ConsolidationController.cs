@@ -170,6 +170,9 @@ public sealed class ConsolidationController(
                     {
                         response = await _loads.SearchAsync(new LtlSearchQuery
                         {
+                            // Status pinned to Open: Alvys loads/search returns nothing for a
+                            // filterless request, and only open freight is plannable.
+                            Status = ["Open"],
                             OriginCity = oCity,
                             DestinationCity = dCity,
                             Page = 0,
