@@ -20,6 +20,16 @@ const API_URL = process.env.API_URL ?? 'http://localhost:5072';
 
 /** Directory under `test-results/` where tour PNGs land. */
 const TOUR_DIR = 'tour';
+type LtlHomeFlavor = 'legacy' | 'consolidations';
+
+async function detectHomeFlavor(page: Page): Promise<LtlHomeFlavor> {
+  const consolidationsHeading = page.getByRole('heading', { name: "Today's consolidations" });
+  if (await consolidationsHeading.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    return 'consolidations';
+  }
+  await expect(page.getByRole('heading', { name: 'LTL Operating Console' })).toBeVisible();
+  return 'legacy';
+}
 
 async function shot(page: Page, name: string): Promise<void> {
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {
@@ -44,25 +54,32 @@ test.describe('LTL demo — screenshot tour', () => {
 
   test('01 - LTL Operating Console home', async ({ page }) => {
     await page.goto('/ltl');
-    await expect(page.getByRole('heading', { name: 'LTL Operating Console' })).toBeVisible();
+    await detectHomeFlavor(page);
     await shot(page, '01-ltl-home');
   });
 
   test('02 - Search filters + saved views', async ({ page }) => {
     await page.goto('/ltl');
-    await expect(page.getByTestId('search-filters')).toBeVisible();
-    await page.getByTestId('search-origin-city').fill('Laredo');
-    await page.getByTestId('search-dest-city').fill('Dallas');
+    const flavor = await detectHomeFlavor(page);
+    if (flavor === 'legacy') {
+      await expect(page.getByTestId('search-filters')).toBeVisible();
+      await page.getByTestId('search-origin-city').fill('Laredo');
+      await page.getByTestId('search-dest-city').fill('Dallas');
+    } else {
+      await expect(page.getByText('Live consolidation queue')).toBeVisible();
+    }
     await shot(page, '02-search-filters-filled');
-    await page.getByTestId('search-submit').click();
-    // Give the grid ~2s to paint whichever state Alvys returns (rows, or the empty banner).
-    await page.waitForTimeout(2000);
+    if (flavor === 'legacy') {
+      await page.getByTestId('search-submit').click();
+      // Give the grid ~2s to paint whichever state Alvys returns (rows, or the empty banner).
+      await page.waitForTimeout(2000);
+    }
     await shot(page, '03-search-results');
   });
 
   test('03 - Consolidate tab: corridor picker + seed form', async ({ page }) => {
     await page.goto('/ltl/consolidate');
-    await expect(page.getByRole('heading', { name: 'Consolidate' })).toBeVisible();
+    await expect(page.getByText(/Laredo.*Dallas pilot corridor/)).toBeVisible();
     await expect(page.getByTestId('corridor-picker')).toBeVisible();
     // Give the corridors + corridors/health calls a moment to resolve so the chip shows
     // the live count instead of the "\u2026" placeholder.
@@ -73,16 +90,25 @@ test.describe('LTL demo — screenshot tour', () => {
   });
 
   test('04 - Billing Worklist tab', async ({ page }) => {
-    await page.goto('/ltl');
-    // Click the Billing Worklist tab. Use text-based click since the tab has no testid yet.
-    await page.getByRole('tab', { name: 'Billing Worklist' }).click();
+    await page.goto('/ltl/consolidate');
+    const billingTab = page.getByRole('tab', { name: 'Billing Worklist' });
+    if (await billingTab.isVisible().catch(() => false)) {
+      await billingTab.click();
+    } else {
+      await page.getByRole('link', { name: 'Billing' }).click();
+    }
     await page.waitForTimeout(1500);
     await shot(page, '06-billing-worklist');
   });
 
   test('05 - Exceptions tab', async ({ page }) => {
-    await page.goto('/ltl');
-    await page.getByRole('tab', { name: 'Exceptions' }).click();
+    await page.goto('/ltl/consolidate');
+    const exceptionsTab = page.getByRole('tab', { name: 'Exceptions' });
+    if (await exceptionsTab.isVisible().catch(() => false)) {
+      await exceptionsTab.click();
+    } else {
+      await page.getByRole('link', { name: 'Exceptions' }).click();
+    }
     await page.waitForTimeout(1500);
     await shot(page, '07-exceptions');
   });
