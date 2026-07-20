@@ -117,12 +117,29 @@ log "Signed in on subscription: $CURRENT_NAME ($SUBSCRIPTION_ID)"
 
 # ---- 3. prompt for secrets --------------------------------------------------
 
+# Alvys client secret: try env var first, then read from the already-deployed App
+# Service (subsequent runs are truly non-interactive because the secret is already
+# there from the initial deploy). Only prompt as a last resort.
+if [[ -z "${ALVYS_CLIENT_SECRET:-}" ]]; then
+    log "ALVYS_CLIENT_SECRET not in env; reading from ltl-standalone-api App Service..."
+    EXISTING_SECRET=$(az webapp config appsettings list \
+        --name ltl-standalone-api \
+        --resource-group ltl-standalone-rg \
+        --query "[?name=='Alvys__ClientSecret'].value | [0]" -o tsv 2>/dev/null || true)
+    if [[ -n "$EXISTING_SECRET" && "$EXISTING_SECRET" != "null" ]]; then
+        ALVYS_CLIENT_SECRET="$EXISTING_SECRET"
+        log "Re-using Alvys secret already configured on the App Service (\${#ALVYS_CLIENT_SECRET} chars)."
+    fi
+fi
+
 if [[ -z "${ALVYS_CLIENT_SECRET:-}" ]]; then
     echo ""
+    echo "First-time setup — no Alvys secret found in env or on the App Service."
     echo "Enter your Alvys va336 client secret (input hidden):"
     read -rs ALVYS_CLIENT_SECRET
     echo ""
 fi
+
 if [[ -z "${ALVYS_CLIENT_SECRET:-}" ]]; then
     err "ALVYS_CLIENT_SECRET is required."
     exit 1
