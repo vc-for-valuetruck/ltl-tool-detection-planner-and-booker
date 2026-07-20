@@ -68,12 +68,41 @@ public sealed class LtlOptions
     /// this threshold.
     /// </summary>
     public double MarginRiskThresholdPercent { get; set; } = 10.0;
+
+    /// <summary>
+    /// Accessorial-signal AI extraction (Phase 6). Disabled by default — set
+    /// <see cref="AccessorialAiOptions.Enabled"/> to <c>true</c> and supply credentials
+    /// server-side only to activate the Azure OpenAI extractor. The deterministic keyword
+    /// extractor always runs regardless of this setting.
+    /// </summary>
+    public AccessorialAiOptions AccessorialAi { get; set; } = new();
 }
 
 /// <summary>
-/// Deterministic match-scoring configuration: per-factor weights and the score thresholds that
-/// map a 0–100 score onto an explainable label. Defaults are intentionally conservative.
+/// Configuration for the optional AI-powered accessorial signal extractor (Phase 6).
+/// Disabled by default. When enabled, Azure OpenAI credentials must be supplied server-side
+/// only — never in SPA, source, tests, or committed environment files.
 /// </summary>
+public sealed class AccessorialAiOptions
+{
+    /// <summary>
+    /// When <c>false</c> (default), the <c>NullAccessorialSignalExtractor</c> is registered and
+    /// no LLM call is ever made. Flip to <c>true</c> only when credentials are also configured.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Azure OpenAI endpoint URL (placeholder — supply via environment/Key Vault only).</summary>
+    public string? Endpoint { get; set; }
+
+    /// <summary>Azure OpenAI deployment/model name (placeholder — supply via environment/Key Vault only).</summary>
+    public string? DeploymentName { get; set; }
+
+    /// <summary>
+    /// Azure OpenAI API key (server-side only — never in SPA, source, tests, docs, or
+    /// committed env files). Supply via environment variable or Azure Key Vault reference.
+    /// </summary>
+    public string? ApiKey { get; set; }
+}
 public sealed class LtlMatchOptions
 {
     public double EquipmentWeight { get; set; } = 30;

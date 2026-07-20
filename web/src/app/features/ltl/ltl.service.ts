@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import {
+  AccessorialReviewContext,
   AssignmentAudit,
   AssignmentRequest,
   AssignmentValidationResult,
@@ -44,6 +45,19 @@ export class LtlService {
   getBillingReadiness(idOrNumber: string): Observable<BillingReadinessResult> {
     return this.http.get<BillingReadinessResult>(
       `${this.base}/loads/${encodeURIComponent(idOrNumber)}/billing-readiness`,
+    );
+  }
+
+  /**
+   * Accessorial-signal review for a single load: keyword-extracted (and optionally
+   * AI-supplemented) evidence of unbilled accessorials from Alvys notes and document metadata.
+   * Returns `evaluated: false` when the load has no notes or documents
+   * (not evaluated ≠ clean — never treat an empty signal list as "nothing to bill").
+   * Read-only: nothing is written back to Alvys.
+   */
+  getAccessorialSignals(idOrNumber: string): Observable<AccessorialReviewContext> {
+    return this.http.get<AccessorialReviewContext>(
+      `${this.base}/loads/${encodeURIComponent(idOrNumber)}/accessorial-signals`,
     );
   }
 

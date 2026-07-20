@@ -26,6 +26,8 @@ public sealed class ConsolidationCandidateServiceTests
             client,
             LtlTestFactory.Normalizer(),
             LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(),
+            new NullAccessorialSignalExtractor(),
             LtlTestFactory.Options());
 
         return new ConsolidationCandidateService(

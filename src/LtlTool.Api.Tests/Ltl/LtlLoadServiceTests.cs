@@ -11,7 +11,9 @@ namespace LtlTool.Api.Tests.Ltl;
 public sealed class LtlLoadServiceTests
 {
     private static LtlLoadService Build(FakeAlvysClient client, LtlOptions? options = null) =>
-        new(client, LtlTestFactory.Normalizer(options), LtlTestFactory.Visibility(), LtlTestFactory.Options(options));
+        new(client, LtlTestFactory.Normalizer(options), LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
+            LtlTestFactory.Options(options));
 
     [Fact]
     public async Task Detail_marks_load_already_invoiced_from_invoice_record()

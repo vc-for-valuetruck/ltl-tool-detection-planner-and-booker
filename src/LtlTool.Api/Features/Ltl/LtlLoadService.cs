@@ -17,6 +17,7 @@ namespace LtlTool.Api.Features.Ltl;
 /// </summary>
 public sealed class LtlLoadService(
     IAlvysClient alvys, LtlNormalizationService normalizer, VisibilityAnalyzer visibility,
+    AccessorialSignalAnalyzer accessorialAnalyzer, IAccessorialSignalExtractor accessorialExtractor,
     IOptions<LtlOptions> options)
 {
     private readonly LtlOptions _options = options.Value;
@@ -481,4 +482,48 @@ public sealed class LtlLoadService(
 
     private static bool ContainsCi(string? value, string token) =>
         value is not null && value.Contains(token.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Fetches notes and documents for a load from Alvys, runs the deterministic accessorial
+    /// keyword extraction, and supplements with AI-derived signals when enabled. Returns
+    /// <c>null</c> when the load is not found; returns
+    /// <see cref="AccessorialReviewContext.NotEvaluated"/> when the load has neither notes nor
+    /// documents (per the "never a false clean" principle — no evidence is not the same as clean).
+    ///
+    /// <para>Read-only: no data is written back to Alvys.</para>
+    /// </summary>
+    public async Task<AccessorialReviewContext?> GetAccessorialSignalsAsync(
+        string idOrNumber, CancellationToken ct)
+    {
+        var load = await ResolveLoadAsync(idOrNumber, ct);
+        if (load is null) return null;
+
+        var loadNumber = load.LoadNumber ?? idOrNumber;
+
+        var notesTask = alvys.ListLoadNotesAsync(loadNumber, ct);
+        var documentsTask = alvys.ListLoadDocumentsAsync(loadNumber, ct);
+        await Task.WhenAll(notesTask, documentsTask);
+
+        var notes = await notesTask;
+        var documents = await documentsTask;
+
+        // Deterministic keyword extraction (always runs, synchronous, pure).
+        var context = accessorialAnalyzer.BuildContext(notes, documents);
+
+        // AI supplement (disabled by default; degrades to empty on any failure).
+        if (accessorialExtractor.IsEnabled && context.Evaluated)
+        {
+            var aiSignals = new List<AccessorialSignal>();
+            foreach (var note in notes)
+            {
+                if (string.IsNullOrWhiteSpace(note.Description)) continue;
+                var signals = await accessorialExtractor.ExtractAsync(note.Id, "Note", note.Description, ct);
+                aiSignals.AddRange(signals);
+            }
+            if (aiSignals.Count > 0)
+                context = AccessorialSignalAnalyzer.MergeAiSignals(context, aiSignals);
+        }
+
+        return context;
+    }
 }

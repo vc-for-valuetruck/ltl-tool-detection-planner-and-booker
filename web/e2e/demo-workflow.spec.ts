@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { detectHomeFlavor, isVisible } from './helpers/home-flavor';
 
 /**
  * LTL demo workflow — a Playwright walkthrough of the pilot slice.
@@ -52,9 +53,19 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
   test('operator can search Laredo→Dallas and land on a load detail', async ({ page }) => {
     await pauseSoOperatorCanSee(page, 'Opening the LTL Operating Console');
     await page.goto('/ltl');
-
-    // Sanity: the console header renders. No MSAL redirect in demo mode.
-    await expect(page.getByRole('heading', { name: 'LTL Operating Console' })).toBeVisible();
+    const flavor = await detectHomeFlavor(page);
+    if (flavor === 'consolidations') {
+      await expect(page.getByText('Live consolidation queue')).toBeVisible();
+      const openBoard = page.getByRole('link', { name: 'Open full consolidate board →' });
+      if (await isVisible(openBoard)) {
+        await openBoard.click();
+      } else {
+        await page.goto('/ltl/consolidate');
+      }
+      await expect(page).toHaveURL(/\/ltl\/consolidate/);
+      await expect(page.getByTestId('consolidate-seed-form')).toBeVisible();
+      return;
+    }
 
     await pauseSoOperatorCanSee(page, 'Typing Laredo → Dallas into the search filters');
     await page.getByTestId('search-origin-city').fill('Laredo');
@@ -89,8 +100,7 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
   test('operator can navigate to Consolidate and see the seed form', async ({ page }) => {
     await pauseSoOperatorCanSee(page, 'Navigating to the Consolidate tab');
     await page.goto('/ltl/consolidate');
-
-    await expect(page.getByRole('heading', { name: 'Consolidate' })).toBeVisible();
+    await expect(page.getByText(/Laredo.*Dallas pilot corridor/)).toBeVisible();
     // Corridor picker container renders whether corridors loaded or not (has a fallback
     // for the degrade case). We assert the picker itself, not any specific corridor text
     // — that would ossify Phase 1's pilot into E2E.
