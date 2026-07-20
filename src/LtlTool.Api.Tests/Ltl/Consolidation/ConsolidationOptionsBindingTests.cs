@@ -42,14 +42,18 @@ public class ConsolidationOptionsBindingTests
     }
 
     [Fact]
-    public void Environment_style_override_still_wins_over_the_default_windows()
+    public void Scalar_environment_override_still_wins_over_the_default()
     {
-        // A single scalar override (as an env var / app setting would supply) must take effect
-        // without wiping the rest of the default corridor.
+        // A scalar override (as an env var / app setting would supply) must take effect. Note:
+        // the .NET config binder APPENDS to List<T> defaults rather than replacing them, so a
+        // corridor override via config would duplicate the default corridor — that is why the
+        // pilot corridor lives in C# defaults and is not mirrored into appsettings.json. Scalar
+        // properties, by contrast, override cleanly, which is what this test pins.
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Ltl:Consolidation:Corridors:0:PickupWindowDays"] = "5",
+                ["Ltl:Consolidation:MaxCandidatesReturned"] = "50",
+                ["Ltl:Consolidation:Enabled"] = "false",
             })
             .Build();
 
@@ -61,8 +65,9 @@ public class ConsolidationOptionsBindingTests
 
         var options = provider.GetRequiredService<IOptions<ConsolidationOptions>>().Value;
 
-        var corridor = Assert.Single(options.Corridors);
-        Assert.Equal("LAREDO_TO_DALLAS", corridor.Code);
-        Assert.Equal(5, corridor.PickupWindowDays);
+        Assert.Equal(50, options.MaxCandidatesReturned);
+        Assert.False(options.Enabled);
+        // The default corridor is untouched by the scalar overrides.
+        Assert.Equal("LAREDO_TO_DALLAS", Assert.Single(options.Corridors).Code);
     }
 }
