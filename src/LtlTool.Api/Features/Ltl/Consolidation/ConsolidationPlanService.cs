@@ -152,6 +152,7 @@ public sealed class ConsolidationPlanService(
                 ScheduledDeliveryAt = sibling.ScheduledDeliveryAt,
                 Revenue = sibling.Revenue,
                 WeightLbs = sibling.WeightLbs,
+                EdiEnrichment = sibling.EdiEnrichment,
                 DriverTripRate = sibling.DriverTripRate,
                 LoadedMiles = sibling.LoadedMiles,
                 CustomerTier = tier,
@@ -260,13 +261,23 @@ public sealed class ConsolidationPlanService(
     {
         if (!_trailerFit.IsEnabled) return null;
 
+        // Prefer EDI-tender pallet/volume (Phase 7.2) where a tender matched, so the fit verdict has
+        // real dimensions instead of "linear feet unverified". Weight prefers the load's own value,
+        // falling back to the tender's. Everything degrades to null (honest "unverified") when absent.
         var items = new List<TrailerFitItem>
         {
-            new(parent.LoadNumber ?? parent.Id, parent.WeightLbs, null, parent.Volume),
+            new(parent.LoadNumber ?? parent.Id,
+                parent.WeightLbs ?? parent.EdiEnrichment?.WeightLbs,
+                parent.EdiEnrichment?.PalletEstimate,
+                parent.Volume ?? parent.EdiEnrichment?.Volume),
         };
         foreach (var s in siblings)
         {
-            items.Add(new TrailerFitItem(s.LoadNumber ?? s.LoadId, s.WeightLbs, null, null));
+            items.Add(new TrailerFitItem(
+                s.LoadNumber ?? s.LoadId,
+                s.WeightLbs ?? s.EdiEnrichment?.WeightLbs,
+                s.EdiEnrichment?.PalletEstimate,
+                s.EdiEnrichment?.Volume));
         }
 
         // No assigned trailer at preview time — the engine falls back to its configured standard

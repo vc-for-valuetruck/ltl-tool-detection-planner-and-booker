@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 import { catchError, forkJoin, of } from 'rxjs';
 import { ConsolidationService } from './consolidation.service';
 import { LtlNav } from './ltl-nav';
-import { LtlLoadSummary } from './ltl.models';
+import { LtlEdiEnrichment, LtlLoadSummary } from './ltl.models';
 import {
   ConsolidationAuditRecord,
   ConsolidationCandidate,
@@ -792,5 +792,34 @@ export class Consolidate implements OnInit {
   formatRpm(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';
     return `$${value.toFixed(2)} / mi`;
+  }
+
+  /**
+   * Pallet cell for a load/candidate row (Phase 7.2). Shows the EDI-tender volume-derived estimate
+   * badged "(est.)" when a matched tender supplied one; otherwise the honest "— pallets · visual
+   * verify". Accepts the minimal shape shared by the seed (LtlLoadSummary) and candidate rows.
+   */
+  palletCellLabel(load: { ediEnrichment?: LtlEdiEnrichment | null }): string {
+    const est = load.ediEnrichment?.palletEstimate;
+    return est != null ? `~${this.formatNumber(est)} pallets (est.)` : '— pallets · visual verify';
+  }
+
+  /** Tooltip behind {@link palletCellLabel}: the tender-derived math, or the dock-verify caveat. */
+  palletCellTitle(load: { ediEnrichment?: LtlEdiEnrichment | null }): string {
+    return (
+      load.ediEnrichment?.palletBasis ??
+      'Pallet count not on the load or any matched tender — visual verify at dock.'
+    );
+  }
+
+  /** Weight cell preferring the load's own weight, falling back to a matched tender's weight. */
+  weightCellLabel(load: { weightLbs?: number | null; ediEnrichment?: LtlEdiEnrichment | null }): string {
+    const weight = load.weightLbs ?? load.ediEnrichment?.weightLbs ?? null;
+    return weight != null ? `${this.formatNumber(weight)} lb` : '— lb';
+  }
+
+  /** True when any dimension on this row came from a matched EDI tender (drives the source badge). */
+  ediSourced(load: { ediEnrichment?: LtlEdiEnrichment | null }): boolean {
+    return !!load.ediEnrichment;
   }
 }

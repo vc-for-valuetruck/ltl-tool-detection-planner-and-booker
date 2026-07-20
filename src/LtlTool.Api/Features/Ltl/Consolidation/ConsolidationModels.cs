@@ -133,6 +133,13 @@ public sealed class ConsolidationCandidate
     /// <summary>Weight in lbs from Alvys, or null when not provided. Never fabricated.</summary>
     public decimal? WeightLbs { get; init; }
 
+    /// <summary>
+    /// EDI-tender pallet/piece/weight/volume detail married onto this candidate (Phase 7.2). Null
+    /// when no inbound tender shared an identifier — the candidate's pallet data then stays
+    /// honestly unknown rather than fabricated.
+    /// </summary>
+    public LtlEdiEnrichment? EdiEnrichment { get; init; }
+
     /// <summary>Which corridor this candidate matched (e.g. <c>LAREDO_TO_DALLAS</c>).</summary>
     public required string CorridorCode { get; init; }
 
@@ -183,6 +190,13 @@ public sealed class ConsolidationPlanSibling
     public DateTimeOffset? ScheduledDeliveryAt { get; init; }
     public decimal? Revenue { get; init; }
     public decimal? WeightLbs { get; init; }
+
+    /// <summary>
+    /// EDI-tender pallet/piece/weight/volume detail married onto this sibling (Phase 7.2). Null
+    /// when no inbound tender shared an identifier — the load's pallet data then stays honestly
+    /// unknown rather than fabricated.
+    /// </summary>
+    public LtlEdiEnrichment? EdiEnrichment { get; init; }
 
     /// <summary>
     /// Driver trip rate (<c>Trip.TripValue.Amount</c>). Null when no trip was fetched or the

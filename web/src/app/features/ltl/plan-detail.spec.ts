@@ -350,6 +350,63 @@ describe('PlanDetail', () => {
     });
   });
 
+  describe('EDI-tender enrichment helpers (Phase 7.2)', () => {
+    it('labels a tender-derived pallet estimate explicitly "(est.)"', () => {
+      const c = newComponent();
+      const l = load({
+        ediEnrichment: {
+          source: 'EDI tender',
+          tenderShipmentId: 'S1',
+          matchedOn: 'load OrderNumber = tender ShipmentId',
+          pieceCount: 1843,
+          weightLbs: 42360,
+          volume: 1273,
+          palletEstimate: 14,
+          palletBasis: '1,273 cu ft ÷ 96 ≈ 14 pallets (est.)',
+        },
+      });
+      expect(c.palletLabel(l)).toBe('~14 pallets (est.)');
+      expect(c.palletTitle(l)).toContain('(est.)');
+      expect(c.ediSourced(l)).toBeTrue();
+      expect(c.pieceLabel(l)).toBe('1,843 pcs');
+    });
+
+    it('keeps the honest "— pallets" + dock-verify caveat when no tender matched', () => {
+      const c = newComponent();
+      const l = load({ ediEnrichment: null });
+      expect(c.palletLabel(l)).toBe('— pallets');
+      expect(c.palletTitle(l)).toContain('visual verify at dock');
+      expect(c.ediSourced(l)).toBeFalse();
+      expect(c.pieceLabel(l)).toBeNull();
+    });
+
+    it('falls back to a matched tender weight when the load carries none', () => {
+      const c = newComponent();
+      expect(c.weightLabel(load({ weightLbs: 5000 }))).toBe('5,000 lb');
+      expect(
+        c.weightLabel(
+          load({ weightLbs: null, ediEnrichment: { weightLbs: 4200 } as never }),
+        ),
+      ).toBe('4,200 lb');
+      expect(c.weightLabel(load({ weightLbs: null, ediEnrichment: null }))).toBe('— lb');
+    });
+
+    it('marks the pallet gap green when enriched, amber when missing', () => {
+      const c = newComponent();
+      c.parent.set(
+        load({ id: 'P', loadNumber: 'L-1', ediEnrichment: { palletEstimate: 8 } as never }),
+      );
+      c.siblings.set([load({ id: 'S1', loadNumber: 'L-2', ediEnrichment: null })]);
+      const gaps = c.honestGaps();
+      const enriched = gaps.find((g) => g.text.includes('L-1'));
+      const missing = gaps.find((g) => g.text.includes('L-2'));
+      expect(enriched?.tone).toBe('green');
+      expect(enriched?.text).toContain('est. from EDI tender');
+      expect(missing?.tone).toBe('amber');
+      expect(missing?.text).toContain('pallet count is missing');
+    });
+  });
+
   describe('recordAudit (item 7)', () => {
     function auditRecord(): ConsolidationAuditRecord {
       return {

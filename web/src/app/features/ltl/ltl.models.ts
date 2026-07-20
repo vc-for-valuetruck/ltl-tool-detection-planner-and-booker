@@ -139,6 +139,22 @@ export interface AccessorialReviewContext {
   signals: AccessorialSignal[];
 }
 
+/**
+ * EDI-tender pallet/piece/weight/volume detail lifted onto a load (Phase 7.2). Every field carries
+ * the `source` label ("EDI tender") and `palletEstimate` is explicitly an estimate — see
+ * `palletBasis` for the math shown in the tooltip. Never a verified pallet count.
+ */
+export interface LtlEdiEnrichment {
+  source: string;
+  tenderShipmentId: string | null;
+  matchedOn: string | null;
+  pieceCount: number | null;
+  weightLbs: number | null;
+  volume: number | null;
+  palletEstimate: number | null;
+  palletBasis: string | null;
+}
+
 export interface LtlLoadSummary {
   id: string;
   loadNumber: string | null;
@@ -168,6 +184,12 @@ export interface LtlLoadSummary {
   equipment: string[];
   weightLbs: number | null;
   volume: number | null;
+  /**
+   * Pallet/piece/weight/volume detail married onto the load from a matched inbound EDI tender
+   * (Phase 7.2). Null when no tender shared an identifier — the load's pallet data then stays
+   * honestly unknown rather than fabricated.
+   */
+  ediEnrichment: LtlEdiEnrichment | null;
   revenue: number | null;
   mileage: number | null;
   revenuePerMile: number | null;
