@@ -88,6 +88,8 @@ defensible recommendations, and revenue protection.
 - `POST /api/ltl/consolidation/plan` — Phase 1 pilot: build a consolidation plan preview (parent + siblings → click-card content). Read-only; nothing writes to Alvys.
 - `POST /api/ltl/consolidation/plan/audit` — Phase 1 pilot: record a plan as an internal audit entry (leadership visibility). Read-only against Alvys.
 - `GET  /api/ltl/consolidation/plan/audits?parentLoadId={id}` — Phase 1 pilot: audit history for one parent (or all when parentLoadId omitted).
+- `GET  /api/ltl/notifications?max={n}` — Phase 6: recent workflow notifications (newest first) + lifetime count + per-channel config state. Read-only.
+- `GET  /api/ltl/notifications/channels` — Phase 6: honest per-channel configuration snapshot (in-app always on; Teams/email config-gated).
 
 Angular `/ltl` provides Search, Billing Worklist, Exceptions, detail drawer,
 recommended matches, assignment validation, billing readiness, visibility, saved views.

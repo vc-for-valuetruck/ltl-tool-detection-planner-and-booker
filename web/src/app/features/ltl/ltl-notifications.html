@@ -1,0 +1,84 @@
+<app-ltl-nav active="notifications" />
+
+<div class="notif page-shell">
+  <div class="notif-head">
+    <h1>Notifications</h1>
+    <span class="notif-sub">
+      Workflow triggers that align the team on a trip as it moves through Search → Match → Assign →
+      Bill → Billed. Delivery state is reported honestly per channel. Read-only; nothing is written
+      to Alvys.
+    </span>
+  </div>
+
+  @if (channels().length) {
+    <div class="channel-strip" data-testid="notif-channels">
+      @for (c of channels(); track c.channel) {
+        <span
+          [class]="c.configured ? 'pill pill-ok' : 'pill pill-muted'"
+          [title]="c.configured ? 'Configured server-side' : 'Not configured server-side'"
+        >
+          {{ channelLabel(c.channel) }}: {{ c.configured ? 'on' : 'not configured' }}
+        </span>
+      }
+    </div>
+  }
+
+  <div class="filter-row">
+    @if (!loading() && !error()) {
+      <span class="filter-count" data-testid="notif-count">
+        {{ items().length }} shown · {{ total() }} fired since startup
+      </span>
+    }
+  </div>
+
+  @if (loading()) {
+    <div class="state" data-testid="notif-loading">Loading notifications…</div>
+  } @else if (error()) {
+    <div class="state state-error" data-testid="notif-error">
+      <strong>Couldn't load the feed.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="load()">Retry</button>
+    </div>
+  } @else if (!hasItems()) {
+    <div class="state" data-testid="notif-empty">
+      No notifications yet. Recorded consolidation plans and other workflow events will appear here
+      as they fire.
+    </div>
+  } @else {
+    <div class="feed" data-testid="notif-feed">
+      @for (event of items(); track event.id) {
+        <div class="feed-row" data-testid="notif-row">
+          <div class="feed-main">
+            <div class="feed-top">
+              <span class="stage-badge">{{ stageLabel(event.stage) }}</span>
+              <span class="feed-title">{{ event.title }}</span>
+              <span class="feed-time">{{ event.firedAt | date: 'MMM d, h:mm a' }}</span>
+            </div>
+            <p class="feed-summary">{{ event.summary }}</p>
+            <div class="feed-bottom">
+              <div class="chip-row">
+                @for (d of event.deliveries; track d.channel) {
+                  <span
+                    [class]="deliveryClass(d.state)"
+                    [title]="d.detail ?? ''"
+                  >
+                    {{ channelLabel(d.channel) }}: {{ deliveryLabel(d.state) }}@if (d.recipients.length) { · {{ d.recipients.join(', ') }} }
+                  </span>
+                }
+              </div>
+              @if (event.linkPath) {
+                <a class="feed-link" [routerLink]="event.linkPath" data-testid="notif-link">
+                  Open load →
+                </a>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="notif-footer" data-testid="notif-footer">
+      Source: LTL workflow engine · Read-only · In-app feed always on
+    </div>
+  }
+</div>

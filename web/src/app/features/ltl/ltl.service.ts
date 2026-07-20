@@ -17,6 +17,7 @@ import {
   SavedViewCollection,
   SavedViewRequest,
 } from './ltl.models';
+import { NotificationFeedResponse } from './notifications.models';
 
 /**
  * Client for the read-only LTL decision-support API. Bearer tokens are attached by the MSAL
@@ -69,6 +70,16 @@ export class LtlService {
 
   exceptions(): Observable<LtlLoadSummary[]> {
     return this.http.get<LtlLoadSummary[]>(`${this.base}/exceptions`);
+  }
+
+  /**
+   * Recent workflow notifications (newest first) plus lifetime count and per-channel config
+   * state. Read-only; fired by the server-side trigger engine, never written to Alvys.
+   */
+  notifications(max = 50): Observable<NotificationFeedResponse> {
+    return this.http.get<NotificationFeedResponse>(`${this.base}/notifications`, {
+      params: new HttpParams().set('max', max),
+    });
   }
 
   validateAssignment(

@@ -2,6 +2,7 @@ using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl.Agent;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -130,6 +131,10 @@ public static class LtlServiceCollectionExtensions
         // behind Ltl:Optimization:AgentCommands:Enabled with a Null dispatcher fallback; every command
         // reuses the decision-support services above and writes nothing to Alvys.
         services.AddLtlAgentCommands(configuration);
+
+        // Phase 6 workflow notifications: idempotent in-app feed (always-on) plus config-gated
+        // Teams/email adapters and the background trigger poller. Read-only against Alvys.
+        services.AddLtlNotifications(configuration);
 
         return services;
     }
