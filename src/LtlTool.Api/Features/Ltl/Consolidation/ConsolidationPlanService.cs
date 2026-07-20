@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using LtlTool.Api.Features.Ltl.Optimization;
 using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Features.Ltl.Consolidation;
@@ -27,13 +28,15 @@ public sealed class ConsolidationPlanService(
     IOptions<ConsolidationOptions> options,
     IOptions<LtlOptions> ltlOptions,
     TimeProvider clock,
-    ICustomerLtlPolicyReader policyReader)
+    ICustomerLtlPolicyReader policyReader,
+    ITrailerFitService trailerFit)
 {
     private readonly LtlLoadService _loads = loads;
     private readonly ConsolidationOptions _opts = options.Value;
     private readonly LtlOptions _ltl = ltlOptions.Value;
     private readonly TimeProvider _clock = clock;
     private readonly ICustomerLtlPolicyReader _policyReader = policyReader;
+    private readonly ITrailerFitService _trailerFit = trailerFit;
 
     /// <summary>
     /// Builds a plan preview. Returns 400-shaped errors as <see cref="InvalidOperationException"/>
@@ -210,6 +213,8 @@ public sealed class ConsolidationPlanService(
             MainLoadIdReferenceValue = mainLoadIdReferenceValue,
         };
 
+        var trailerFit = await EvaluateTrailerFitAsync(parent, siblings, ct);
+
         return new ConsolidationPlanResponse
         {
             PreviewId = previewId,
@@ -223,6 +228,53 @@ public sealed class ConsolidationPlanService(
             CombinedRevenuePerMile = combinedRpm,
             ClickCard = clickCard,
             Blockers = blockers,
+            TrailerFit = trailerFit,
+        };
+    }
+
+    /// <summary>
+    /// Runs the trailer-fit engine over the combined load (parent + corridor-valid siblings) and
+    /// projects it for the SPA. Returns null when the engine is disabled (the <c>NullTrailerFitService</c>
+    /// is active) so the plan-detail page shows "verify at dock" rather than a fabricated verdict.
+    /// The engine itself never throws for a business reason and degrades on sidecar failure, so this
+    /// call never fails plan generation. Every input is an Alvys-derived aggregate already resolved
+    /// above — no extra Alvys read, no invented dimension.
+    /// </summary>
+    private async Task<ConsolidationTrailerFit?> EvaluateTrailerFitAsync(
+        LtlLoadSummary parent,
+        IReadOnlyList<ConsolidationPlanSibling> siblings,
+        CancellationToken ct)
+    {
+        if (!_trailerFit.IsEnabled) return null;
+
+        var items = new List<TrailerFitItem>
+        {
+            new(parent.LoadNumber ?? parent.Id, parent.WeightLbs, null, parent.Volume),
+        };
+        foreach (var s in siblings)
+        {
+            items.Add(new TrailerFitItem(s.LoadNumber ?? s.LoadId, s.WeightLbs, null, null));
+        }
+
+        // No assigned trailer at preview time — the engine falls back to its configured standard
+        // 53' dry-van capacity (an equipment spec constant, not Alvys operational data).
+        var request = new TrailerFitRequest(new TrailerCapacitySpec(null, null, null), items);
+        var result = await _trailerFit.EvaluateAsync(request, ct);
+
+        return new ConsolidationTrailerFit
+        {
+            Verdict = result.Verdict.ToString(),
+            Rationale = result.Rationale,
+            EstimatedFit = result.EstimatedFit,
+            LinearFeet = result.LinearFeet,
+            WeightUtilization = result.WeightUtilization,
+            CubeUtilization = result.CubeUtilization,
+            TotalWeightLbs = result.TotalWeightLbs,
+            TrailerMaxWeightLbs = result.TrailerMaxWeightLbs,
+            TotalPallets = result.TotalPallets,
+            TrailerMaxPallets = result.TrailerMaxPallets,
+            CapacityExceeded = result.CapacityExceeded,
+            WeightUnknown = result.WeightUnknown,
         };
     }
 

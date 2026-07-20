@@ -38,6 +38,20 @@ public sealed class OptimizationServiceSelectionTests
     }
 
     [Fact]
+    public void TrailerFit_flag_on_registers_the_http_service()
+    {
+        using var provider = BuildProvider(new Dictionary<string, string?>
+        {
+            ["Ltl:Optimization:TrailerFit:Enabled"] = "true",
+            ["Ltl:Optimization:TrailerFit:BaseUrl"] = "http://trailer-fit:8080",
+        });
+
+        var svc = provider.GetRequiredService<ITrailerFitService>();
+        Assert.IsType<HttpTrailerFitService>(svc);
+        Assert.True(svc.IsEnabled);
+    }
+
+    [Fact]
     public async Task NullTrailerFitService_returns_unknown_verdict()
     {
         var svc = new NullTrailerFitService(TimeProvider.System);

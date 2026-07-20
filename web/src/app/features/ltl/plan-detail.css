@@ -383,3 +383,105 @@
 .assumption-info::before {
   background: var(--accent) !important;
 }
+
+/* ===================== Shared value emphasis ===================== */
+/* Reusable weight/verdict emphasis: green (good), amber (warn), red (danger). Kept as generic
+   value-* utilities so other plan surfaces can reuse the same emphasis vocabulary (issue #76). */
+.value-good {
+  color: var(--success-text);
+  font-weight: 700;
+}
+
+.value-warn {
+  color: var(--warning-text);
+  font-weight: 700;
+}
+
+.value-danger {
+  color: var(--danger-text);
+  font-weight: 700;
+}
+
+/* ===================== Trailer-fit verdict panel (#76) ===================== */
+.fit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  padding: 14px;
+  background: var(--body-bg);
+}
+
+.fit-panel-fits {
+  border-color: var(--success);
+  background: var(--success-bg, var(--success-row-bg));
+}
+
+.fit-panel-fails {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.fit-panel-unknown {
+  border-style: dashed;
+}
+
+.fit-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fit-badge {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fit-estimated {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.fit-rationale {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.fit-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.fit-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fit-metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.fit-metric strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.fit-metric-max {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.fit-note {
+  margin: 0;
+  font-size: 11px;
+}

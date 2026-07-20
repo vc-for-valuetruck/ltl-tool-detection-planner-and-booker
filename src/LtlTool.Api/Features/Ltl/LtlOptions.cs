@@ -95,7 +95,7 @@ public sealed class LtlOptions
 public sealed class OptimizationOptions
 {
     /// <summary>3D / weight-and-cube trailer-fit engine (Phase 2). Off by default.</summary>
-    public OptimizationFeatureToggle TrailerFit { get; set; } = new();
+    public TrailerFitOptions TrailerFit { get; set; } = new();
 
     /// <summary>Capacity/cost balancing solver, e.g. OR-Tools (Phase 2). Off by default.</summary>
     public OptimizationFeatureToggle Solver { get; set; } = new();
@@ -105,13 +105,58 @@ public sealed class OptimizationOptions
 }
 
 /// <summary>A single on/off toggle for an optimization engine. Defaults to disabled.</summary>
-public sealed class OptimizationFeatureToggle
+public class OptimizationFeatureToggle
 {
     /// <summary>
     /// When <c>false</c> (default), the engine's <c>Null…</c> no-op implementation is registered
     /// and no optimization computation runs.
     /// </summary>
     public bool Enabled { get; set; } = false;
+}
+
+/// <summary>
+/// Configuration for the trailer-fit engine (bound from <c>Ltl:Optimization:TrailerFit</c>).
+/// Adds the packing sidecar connection details to the base <see cref="OptimizationFeatureToggle.Enabled"/>
+/// flag. When <see cref="OptimizationFeatureToggle.Enabled"/> is <c>false</c> (default) the
+/// <c>NullTrailerFitService</c> is registered and none of the connection fields are read.
+///
+/// <para>
+/// The standard-trailer fields describe the equipment a consolidation targets (a 53' dry van by
+/// default). These are physical equipment specifications — not Alvys operational data — so they may
+/// safely have defaults; they match the 45,000 lb constant already used in the SPA. They are only a
+/// fallback: when an actual assigned trailer's Alvys capacity is known, the caller passes it instead.
+/// </para>
+/// </summary>
+public sealed class TrailerFitOptions : OptimizationFeatureToggle
+{
+    public const string SectionName = "Ltl:Optimization:TrailerFit";
+
+    /// <summary>Base URL of the trailer-fit packing sidecar (e.g. <c>http://trailer-fit:8000</c>).</summary>
+    public string? BaseUrl { get; set; }
+
+    /// <summary>
+    /// Per-request timeout for a sidecar call. On timeout the service degrades to an
+    /// <c>Unknown</c> verdict ("verify at dock") rather than failing the plan request.
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 10;
+
+    /// <summary>Standard equipment code sent to the sidecar for the target trailer (see its GET /equipment-types).</summary>
+    public string EquipmentCode { get; set; } = "DV_53";
+
+    /// <summary>Standard 53' dry-van max payload (lbs) used when no assigned-trailer capacity is supplied.</summary>
+    public decimal StandardTrailerMaxWeightLbs { get; set; } = 45_000m;
+
+    /// <summary>Standard 53' dry-van pallet positions used when no assigned-trailer capacity is supplied.</summary>
+    public int StandardTrailerMaxPallets { get; set; } = 26;
+
+    /// <summary>
+    /// Assumed weight per pallet (lbs) used only to derive a pallet count when neither an
+    /// explicit pallet count nor a volume is available for a load. Never overrides a real Alvys value.
+    /// </summary>
+    public decimal AssumedWeightPerPalletLbs { get; set; } = 1_500m;
+
+    /// <summary>Assumed piece height (inches) used when a load carries no volume to derive height from.</summary>
+    public decimal AssumedPalletHeightInches { get; set; } = 48m;
 }
 
 /// <summary>

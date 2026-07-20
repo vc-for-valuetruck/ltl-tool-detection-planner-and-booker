@@ -1,6 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using LtlTool.Api.Features.Ltl.Optimization;
 using Xunit;
 
 namespace LtlTool.Api.Tests.Ltl.Consolidation;
@@ -35,7 +36,8 @@ public sealed class ConsolidationPlanServiceTests
             Microsoft.Extensions.Options.Options.Create(overrides ?? DefaultOptions()),
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
-            LtlTestFactory.StaticPolicyReader(overrides ?? DefaultOptions()));
+            LtlTestFactory.StaticPolicyReader(overrides ?? DefaultOptions()),
+            new NullTrailerFitService(TimeProvider.System));
     }
 
     private static AlvysLoad Load(
@@ -209,7 +211,8 @@ public sealed class ConsolidationPlanServiceTests
             Microsoft.Extensions.Options.Options.Create(options),
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
-            LtlTestFactory.StaticPolicyReader(options));
+            LtlTestFactory.StaticPolicyReader(options),
+            new NullTrailerFitService(TimeProvider.System));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -268,7 +271,8 @@ public sealed class ConsolidationPlanServiceTests
             Microsoft.Extensions.Options.Options.Create(options),
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
-            LtlTestFactory.StaticPolicyReader(options));
+            LtlTestFactory.StaticPolicyReader(options),
+            new NullTrailerFitService(TimeProvider.System));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -314,7 +318,8 @@ public sealed class ConsolidationPlanServiceTests
             Microsoft.Extensions.Options.Options.Create(DefaultOptions()),
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
-            LtlTestFactory.StaticPolicyReader(DefaultOptions()));
+            LtlTestFactory.StaticPolicyReader(DefaultOptions()),
+            new NullTrailerFitService(TimeProvider.System));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -351,7 +356,8 @@ public sealed class ConsolidationPlanServiceTests
             Microsoft.Extensions.Options.Options.Create(DefaultOptions()),
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
-            LtlTestFactory.StaticPolicyReader(DefaultOptions()));
+            LtlTestFactory.StaticPolicyReader(DefaultOptions()),
+            new NullTrailerFitService(TimeProvider.System));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -395,7 +401,8 @@ public sealed class ConsolidationPlanServiceTests
             Microsoft.Extensions.Options.Options.Create(options),
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
-            LtlTestFactory.StaticPolicyReader(options));
+            LtlTestFactory.StaticPolicyReader(options),
+            new NullTrailerFitService(TimeProvider.System));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest
@@ -445,7 +452,8 @@ public sealed class ConsolidationPlanServiceTests
             Microsoft.Extensions.Options.Options.Create(options),
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
-            LtlTestFactory.StaticPolicyReader(options));
+            LtlTestFactory.StaticPolicyReader(options),
+            new NullTrailerFitService(TimeProvider.System));
 
         var response = await service.BuildAsync(
             new ConsolidationPlanRequest

@@ -75,8 +75,24 @@ services:
       # LTL app settings.
       Ltl__DetectionEnabled: "${LTL_DETECTION_ENABLED:-false}"
       Ltl__DefaultTimezone: "${LTL_DEFAULT_TIMEZONE:-America/Chicago}"
+      # Trailer-fit packing sidecar (Phase 2 M2). Disabled by default — the API runs the
+      # NullTrailerFitService until the flag is turned on. Even when the sidecar container is
+      # up, the flag must be flipped explicitly (LTL_TRAILER_FIT_ENABLED=true) to route to it.
+      Ltl__Optimization__TrailerFit__Enabled: "${LTL_TRAILER_FIT_ENABLED:-false}"
+      Ltl__Optimization__TrailerFit__BaseUrl: "${LTL_TRAILER_FIT_BASE_URL:-http://trailer-fit:8080}"
     ports:
       - "5072:8080"
+
+  trailer-fit:
+    build:
+      context: services/trailer-fit
+    image: ltl-tool-detection-planner-and-booker-trailer-fit:local
+    container_name: ltl-tool-detection-planner-and-booker-trailer-fit
+    # Pure compute sidecar: receives shipment geometry (inches + pounds) and returns a load-plan
+    # summary. It never talks to Alvys and holds no credentials — the API passes it only the
+    # dimensions/weights it already has. Off the critical path unless the TrailerFit flag is on.
+    ports:
+      - "8099:8080"
 
   web:
     build:

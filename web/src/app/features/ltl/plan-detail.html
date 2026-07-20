@@ -72,6 +72,80 @@
           <div class="trailer-footnote">
             Total {{ totalWeight() !== null ? (formatNumber(totalWeight()) + ' lb') : '— lb' }} · trailer max 45,000 lb · pallet count unavailable unless verified at dock
           </div>
+
+          @if (trailerFit(); as fit) {
+            <div
+              class="fit-panel"
+              [class.fit-panel-fits]="trailerFitOk()"
+              [class.fit-panel-fails]="trailerFitFails()"
+              data-testid="fit-panel"
+            >
+              <div class="fit-panel-head">
+                <span
+                  class="fit-badge"
+                  [class.value-danger]="trailerFitFails()"
+                  [class.value-good]="trailerFitOk()"
+                  [class.value-warn]="!trailerFitFails() && !trailerFitOk()"
+                  data-testid="fit-verdict"
+                >
+                  @if (trailerFitFails()) {
+                    Does not fit
+                  } @else if (trailerFitOk()) {
+                    Estimated fit
+                  } @else {
+                    Fit unknown
+                  }
+                </span>
+                @if (fit.estimatedFit) {
+                  <span class="fit-estimated">estimated — dims assumed</span>
+                }
+              </div>
+
+              <p class="fit-rationale" data-testid="fit-rationale">{{ fit.rationale }}</p>
+
+              <div class="fit-metrics">
+                <div class="fit-metric">
+                  <span class="fit-metric-label">Combined weight</span>
+                  <strong [class.value-danger]="fit.capacityExceeded" data-testid="fit-weight">
+                    {{ formatFitWeight(fit) }}
+                    <span class="fit-metric-max">/ {{ formatNumber(fit.trailerMaxWeightLbs) }} lb</span>
+                  </strong>
+                </div>
+                <div class="fit-metric">
+                  <span class="fit-metric-label">Weight utilization</span>
+                  <strong>{{ formatPercent(fit.weightUtilization) }}</strong>
+                </div>
+                <div class="fit-metric">
+                  <span class="fit-metric-label">Linear feet</span>
+                  <strong>{{ formatLinearFeet(fit.linearFeet) }}</strong>
+                </div>
+                <div class="fit-metric">
+                  <span class="fit-metric-label">Cube utilization</span>
+                  <strong>{{ formatPercent(fit.cubeUtilization) }}</strong>
+                </div>
+                @if (fit.totalPallets !== null && fit.totalPallets !== undefined) {
+                  <div class="fit-metric">
+                    <span class="fit-metric-label">Pallets</span>
+                    <strong [class.value-danger]="fit.capacityExceeded" data-testid="fit-pallets">
+                      {{ formatNumber(fit.totalPallets) }}
+                      <span class="fit-metric-max">/ {{ formatNumber(fit.trailerMaxPallets) }}</span>
+                    </strong>
+                  </div>
+                }
+              </div>
+
+              @if (fit.weightUnknown) {
+                <p class="fit-note value-warn" data-testid="fit-weight-unknown">
+                  One or more loads have no weight in Alvys — combined figure is a floor. Verify at dock.
+                </p>
+              }
+            </div>
+          } @else {
+            <div class="fit-panel fit-panel-unknown" data-testid="fit-panel-unknown">
+              <span class="fit-badge value-warn">Fit not checked</span>
+              <p class="fit-rationale">Trailer-fit engine is off — verify the arrangement at the dock.</p>
+            </div>
+          }
         </div>
 
         <div class="card">
