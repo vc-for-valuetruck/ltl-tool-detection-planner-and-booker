@@ -43,16 +43,25 @@ export class ClickCard implements OnInit {
     const siblings = this.siblingLoadNumbers();
     if (!parent || siblings.length === 0) return '';
 
+    const siblingList = siblings.join(', ');
     return [
       'LTL CONSOLIDATION PLAN',
       `Parent load: ${parent}`,
-      `Sibling loads: ${siblings.join(', ')}`,
+      `Sibling loads: ${siblingList}`,
       '',
-      'Operator action:',
-      '1. Open the parent and sibling loads in Alvys.',
-      '2. Verify same customer, same day, same corridor, dock fit, and receiver requirements.',
-      '3. Keep the parent trip as the absorbing trip; manually zero child loaded miles only after verification.',
-      '4. Preserve this audit id on the dispatcher notes once recorded.',
+      'Operator steps (do in Alvys, after dock verification):',
+      '',
+      `Step 1 — On the PARENT trip (${parent}), open Trip References and set:`,
+      '          • LTL = true',
+      `          • Main Load Id = ${parent}`,
+      '',
+      `Step 2 — On EACH sibling (${siblingList}), open Trip References and set:`,
+      '          • LTL = true',
+      `          • Main Load Id = ${parent}`,
+      '          • Loaded miles = 0  (child miles ride the parent linehaul — do not pay twice)',
+      '',
+      'Step 3 — Keep the parent trip as the absorbing trip. Do not delete the sibling',
+      '          loads; they stay in Alvys linked to the parent for billing + audit.',
       '',
       `Projected combined revenue: ${this.formatCurrency(this.combinedRevenue())}`,
       `Projected combined RPM: ${this.formatRpm(this.combinedRpm())}`,

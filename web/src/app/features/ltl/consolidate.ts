@@ -81,6 +81,68 @@ export class Consolidate implements OnInit {
     () => !!this.plan() && (this.plan()?.blockers.length ?? 0) === 0 && !this.recordingAudit(),
   );
 
+  /**
+   * Combined RPM for the plan = combined customer revenue ÷ parent linehaul miles. Null (renders
+   * "—") when either input is missing — never guessed. This is the same billing-side ratio the
+   * plan-detail economics panel shows.
+   */
+  readonly combinedRpm = computed<number | null>(() => {
+    const p = this.plan();
+    if (!p || p.combinedRevenue == null || p.linehaulMiles == null || p.linehaulMiles <= 0) {
+      return null;
+    }
+    return p.combinedRevenue / p.linehaulMiles;
+  });
+
+  /**
+   * "If sold individually" = the average of each load's own RPM (its own revenue ÷ its own miles).
+   * Every input is a real per-load Alvys value; loads missing revenue or miles are skipped rather
+   * than zeroed, and the average is null when nothing is computable.
+   */
+  readonly individualRpm = computed<number | null>(() => {
+    const p = this.plan();
+    const seed = this.candidateResponse()?.seed;
+    if (!p || !seed) return null;
+    const rpms: number[] = [];
+    if (seed.revenue != null && p.linehaulMiles != null && p.linehaulMiles > 0) {
+      rpms.push(seed.revenue / p.linehaulMiles);
+    }
+    for (const s of p.siblings) {
+      if (s.revenue != null && s.loadedMiles != null && s.loadedMiles > 0) {
+        rpms.push(s.revenue / s.loadedMiles);
+      }
+    }
+    if (rpms.length === 0) return null;
+    return rpms.reduce((a, b) => a + b, 0) / rpms.length;
+  });
+
+  /** Incremental revenue the siblings add on the parent's linehaul = combined − parent revenue. */
+  readonly projectedUpliftDollars = computed<number | null>(() => {
+    const p = this.plan();
+    const seed = this.candidateResponse()?.seed;
+    if (!p || !seed || p.combinedRevenue == null || seed.revenue == null) return null;
+    return p.combinedRevenue - seed.revenue;
+  });
+
+  /** RPM uplift vs selling each load on its own, as a whole-percent delta. Null when uncomputable. */
+  readonly projectedUpliftRpmPct = computed<number | null>(() => {
+    const combined = this.combinedRpm();
+    const individual = this.individualRpm();
+    if (combined == null || individual == null || individual <= 0) return null;
+    return (combined / individual - 1) * 100;
+  });
+
+  /** One-line uplift summary for the Current plan panel. Renders only the parts we can compute. */
+  readonly upliftText = computed<string>(() => {
+    const dollars = this.projectedUpliftDollars();
+    const pct = this.projectedUpliftRpmPct();
+    const parts: string[] = [];
+    if (dollars != null) parts.push(`+${this.formatMoney0(dollars)}`);
+    if (pct != null) parts.push(`+${Math.round(pct)}% RPM`);
+    if (parts.length === 0) return 'Projected uplift: — (vs individual dispatch)';
+    return `Projected uplift: ${parts.join(' · ')} (vs individual dispatch)`;
+  });
+
   ngOnInit(): void {
     // Fire both calls in parallel. /corridors is static config and cheap; /corridors/health
     // hits Alvys per corridor. Merged into a single picker row so we can display counts
@@ -155,6 +217,10 @@ export class Consolidate implements OnInit {
     this.plan.set(null);
     this.planError.set(null);
     this.auditRecord.set(null);
+    // Auto-build the plan preview so the Current plan economics fill in immediately on
+    // selection — the mockup has no separate "Build plan" button. buildPlan() is still a
+    // public method (canBuildPlan gates it) for the routed detail flow and specs.
+    if (next.size > 0) this.buildPlan();
   }
 
   isSelected(loadId: string): boolean {
@@ -285,5 +351,17 @@ export class Consolidate implements OnInit {
     } catch {
       return value;
     }
+  }
+
+  /** Whole-dollar money for the uplift summary (no cents), e.g. "$1,235". "—" when null. */
+  formatMoney0(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '—';
+    return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  }
+
+  /** RPM rendered as "$1.85 / mi". "—" when null — never guessed. */
+  formatRpm(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '—';
+    return `$${value.toFixed(2)} / mi`;
   }
 }

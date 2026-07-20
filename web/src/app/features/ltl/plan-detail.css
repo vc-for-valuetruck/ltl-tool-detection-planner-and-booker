@@ -236,7 +236,43 @@
   background: var(--danger) !important;
 }
 
+/* Child-miles amber note on the economics card */
+.econ-note-amber {
+  font-size: 11px;
+  color: var(--warning-text);
+  background: var(--warning-bg);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 4px 0;
+}
+
 /* ===================== Audit trail ===================== */
+.audit-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.audit-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.audit-dot {
+  flex-shrink: 0;
+  margin-top: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 .audit-dl {
   display: grid;
   grid-template-columns: 160px 1fr;

@@ -64,6 +64,18 @@ describe('PlanDetail', () => {
     expect(c.projectedUplift()).toBe(4250);
   });
 
+  it('sums sibling loaded miles as child miles, null when none report miles', () => {
+    const c = newComponent();
+    c.siblings.set([
+      load({ id: 'S1', loadedMiles: 300 }),
+      load({ id: 'S2', loadedMiles: 150 }),
+    ]);
+    expect(c.childLoadedMiles()).toBe(450);
+
+    c.siblings.set([load({ id: 'S3', loadedMiles: null })]);
+    expect(c.childLoadedMiles()).toBeNull();
+  });
+
   it('builds an Alvys deep-link from the load number', () => {
     const c = newComponent();
     expect(c.alvysLoadUrl(load({ loadNumber: 'L-100234' }))).toBe(

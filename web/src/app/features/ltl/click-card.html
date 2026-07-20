@@ -65,6 +65,24 @@
           </ul>
         </div>
 
+        <div class="card card-info">
+          <h2>What the tool did NOT do</h2>
+          <ul class="did-list did-not" data-testid="did-not-list">
+            <li><span class="bullet" aria-hidden="true">✕</span>Did not write anything to Alvys — no trip references set, no miles zeroed</li>
+            <li><span class="bullet" aria-hidden="true">✕</span>Did not verify dock fit, pallet count, or receiver requirements</li>
+            <li><span class="bullet" aria-hidden="true">✕</span>Did not dispatch, tender, or assign any load</li>
+          </ul>
+        </div>
+
+        <div class="card" data-testid="next-steps">
+          <h2>Next steps</h2>
+          <ol class="next-steps">
+            <li>Verify the loads at the dock — weight, pallet count, and receiver match.</li>
+            <li>Apply Steps 1–3 from the click card in Alvys manually.</li>
+            <li>Paste the audit id below into the dispatcher notes on the parent trip.</li>
+          </ol>
+        </div>
+
         <div class="card card-audit">
           <h2>Audit record</h2>
           @if (auditRecord(); as record) {
@@ -72,11 +90,15 @@
             <div class="audit-line">Recorded by {{ record.recordedBy }} @ {{ record.recordedAt | date: 'medium' }}</div>
             <div class="audit-line">Parent: {{ record.parentLoadNumber }}</div>
             <div class="audit-line">Siblings: {{ record.siblingLoadNumbers.join(', ') }}</div>
+            <div class="audit-line audit-uplift" data-testid="audit-uplift">
+              Combined revenue {{ formatCurrency(record.combinedRevenue) }} · RPM {{ formatRpm(record.combinedRpm) }} —
+              uplift claim visible to leadership at any time
+            </div>
           }
         </div>
       </div>
     </div>
 
-    <p class="disclaimer">Everything on this screen came from live route/query context and the audit API response. No load data was fabricated.</p>
+    <p class="disclaimer">Everything on this screen was computed from live Alvys data. No values fabricated. Read-only — nothing was written to Alvys.</p>
   }
 </div>

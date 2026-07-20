@@ -225,20 +225,23 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     }
 
     await pauseSoOperatorCanSee(page, 'Selecting the first candidate as a sibling');
-    await firstCandidate.getByTestId('consolidate-candidate-checkbox').check();
+    // "Add sibling" is a button (not a native checkbox) — selecting it auto-builds the plan
+    // preview, so there is no separate "Build plan" click in the mockup-parity UI.
+    await firstCandidate.getByTestId('consolidate-candidate-checkbox').click();
 
-    await pauseSoOperatorCanSee(page, 'Building the plan preview');
-    await page.getByTestId('consolidate-build-plan').click();
+    // The Current plan panel fills in with the empirically-corrected RPM math: Combined RPM
+    // vs. "If sold individually", plus the projected-uplift line. If the uplift line is
+    // missing the plan preview shipped billing-only math and leadership sees an inflated number.
+    await pauseSoOperatorCanSee(page, 'Asserting the Current plan economics rendered');
+    await expect(page.getByTestId('consolidate-uplift')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Combined RPM')).toBeVisible();
+    await expect(page.getByText('If sold individually')).toBeVisible();
+    await expect(page.getByTestId('consolidate-readonly-note')).toBeVisible();
 
-    // The empirically-corrected driver-RPM section (PR #59) — this is the whole reason
-    // the pilot demo matters. If this header is missing, the plan preview shipped
-    // billing-only math and leadership sees an inflated number.
-    await pauseSoOperatorCanSee(page, 'Asserting the Driver-side (RPM math) section rendered');
-    await expect(page.getByTestId('driver-side-header')).toBeVisible();
-    await expect(page.getByText('Customer-side (billing)')).toBeVisible();
-
-    // The click card — text the dispatcher pastes into Alvys — must be non-empty.
-    const cardText = await page.getByTestId('click-card-text').textContent();
-    expect(cardText?.length ?? 0).toBeGreaterThan(50);
+    // "Generate click card →" routes to the Plan detail screen with the same live load numbers.
+    await pauseSoOperatorCanSee(page, 'Opening the plan detail (Generate click card)');
+    await page.getByTestId('consolidate-generate-card').click();
+    await expect(page).toHaveURL(/\/ltl\/consolidate\/plan/);
+    await expect(page.getByTestId('audit-trail')).toBeVisible({ timeout: 10_000 });
   });
 });
