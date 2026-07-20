@@ -18,6 +18,10 @@ export const routes: Routes = [
     loadComponent: () => import('./features/ltl/ltl-exceptions').then((m) => m.LtlExceptions),
   },
   {
+    path: 'ltl/tenders',
+    loadComponent: () => import('./features/ltl/ltl-tenders').then((m) => m.LtlTenders),
+  },
+  {
     path: 'ltl/consolidate',
     loadComponent: () => import('./features/ltl/consolidate').then((m) => m.Consolidate),
   },

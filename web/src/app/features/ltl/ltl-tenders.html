@@ -1,0 +1,75 @@
+<app-ltl-nav active="tenders" />
+
+<div class="worklist page-shell">
+  <div class="worklist-head">
+    <h1>Tenders</h1>
+    <span class="worklist-sub">
+      Inbound tender offers from live Alvys (Status: New), soonest to expire first. Accept/reject
+      still happens in Alvys — this board is read-only and writes nothing back.
+    </span>
+  </div>
+
+  <div class="filter-row">
+    @if (!loading() && !error()) {
+      <span class="filter-count" data-testid="tenders-count">
+        {{ rows().length }} new tenders · {{ expiringSoonCount() }} expiring within the hour
+      </span>
+    }
+  </div>
+
+  @if (loading()) {
+    <div class="state" data-testid="tenders-loading">Loading tenders from Alvys…</div>
+  } @else if (error()) {
+    <div class="state state-error" data-testid="tenders-error">
+      <strong>Couldn't reach Alvys.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="load()">Retry</button>
+    </div>
+  } @else if (!hasRows()) {
+    <div class="state" data-testid="tenders-empty">
+      No new tenders right now. Nothing is waiting on an accept/reject decision.
+    </div>
+  } @else {
+    <div class="card">
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>Expires</th>
+              <th>Reference</th>
+              <th>Customer</th>
+              <th>Lane</th>
+              <th>Equipment</th>
+              <th>Weight</th>
+              <th>Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of rows(); track row.tender.Id) {
+              <tr data-testid="tenders-row">
+                <td>
+                  <span [class]="'chip chip-' + urgency(row)">{{ expiryLabel(row) }}</span>
+                </td>
+                <td>
+                  <div class="load-cell">
+                    <strong>{{ row.reference }}</strong>
+                    <span class="load-tag">{{ row.tender.ShipmentId ?? '—' }}</span>
+                  </div>
+                </td>
+                <td>{{ row.customer }}</td>
+                <td>{{ row.origin }} → {{ row.destination }}</td>
+                <td>{{ row.equipment }}</td>
+                <td>{{ formatWeight(row.weight) }}</td>
+                <td>{{ formatRate(row.rate) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="worklist-footer" data-testid="tenders-footer">
+      Source: Live Alvys · Tenders (New) · Read-only
+    </div>
+  }
+</div>

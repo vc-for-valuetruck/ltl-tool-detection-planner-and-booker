@@ -641,16 +641,15 @@ describe('LtlNav active states', () => {
     expect(search!.nativeElement.classList).not.toContain('active');
   });
 
-  it('keeps only Tenders as a non-navigating Phase 2 stub; Billing / Exceptions are live links', () => {
+  it('renders Billing / Exceptions / Tenders as live links with no Phase 2 stubs left', () => {
     const fixture = renderNav('search');
-    const stubs = fixture.debugElement.queryAll(By.css('span.shell-tab-stub'));
-    const labels = stubs.map((s) => s.nativeElement.textContent.trim().split(/\s+/)[0]);
-    expect(labels).toEqual(['Tenders']);
-    expect(stubs.every((s) => s.nativeElement.querySelector('.phase-badge'))).toBeTrue();
+    expect(fixture.debugElement.queryAll(By.css('span.shell-tab-stub')).length).toBe(0);
+    expect(fixture.debugElement.queryAll(By.css('.phase-badge')).length).toBe(0);
 
     const anchors = fixture.debugElement.queryAll(By.css('a.shell-tab'));
     const hrefs = anchors.map((a) => a.nativeElement.getAttribute('href'));
     expect(hrefs).toContain('/ltl/billing');
     expect(hrefs).toContain('/ltl/exceptions');
+    expect(hrefs).toContain('/ltl/tenders');
   });
 });
