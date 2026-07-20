@@ -63,26 +63,6 @@ public sealed class LtlController(
         }
     }
 
-    // Diagnostic-only: reports whether Alvys credentials are wired without leaking values.
-    // Enable/read via GET /api/ltl/consolidation/config-check.
-    [HttpGet("consolidation/config-check")]
-    public IActionResult ConfigCheck(
-        [FromServices] Microsoft.Extensions.Options.IOptions<Integrations.Alvys.AlvysOptions> alvysOpts)
-    {
-        var o = alvysOpts.Value;
-        return Ok(new
-        {
-            provider = o.Provider,
-            apiBaseUrl = o.ApiBaseUrl,
-            apiVersion = o.ApiVersion,
-            tenantId = o.TenantId,
-            clientIdLen = (o.ClientId ?? "").Length,
-            clientIdPrefix = string.IsNullOrEmpty(o.ClientId) ? "" : o.ClientId[..Math.Min(6, o.ClientId.Length)] + "…",
-            clientSecretLen = (o.ClientSecret ?? "").Length,
-
-        });
-    }
-
     [HttpPost("consolidation/audit")]
     [ProducesResponseType(typeof(ConsolidationAuditResponse), StatusCodes.Status200OK)]
     public IActionResult RecordAudit([FromBody] ConsolidationAuditRequest req)
