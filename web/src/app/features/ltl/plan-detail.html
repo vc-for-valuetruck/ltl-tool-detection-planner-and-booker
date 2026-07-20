@@ -103,13 +103,7 @@
                   [class.value-warn]="!trailerFitFails() && !trailerFitOk()"
                   data-testid="fit-verdict"
                 >
-                  @if (trailerFitFails()) {
-                    Does not fit
-                  } @else if (trailerFitOk()) {
-                    Estimated fit
-                  } @else {
-                    Fit unknown
-                  }
+                  {{ fitVerdictLabel() }}
                 </span>
                 @if (fit.estimatedFit) {
                   <span class="fit-estimated">estimated — dims assumed</span>
@@ -157,7 +151,7 @@
             </div>
           } @else {
             <div class="fit-panel fit-panel-unknown" data-testid="fit-panel-unknown">
-              <span class="fit-badge value-warn">Fit not checked</span>
+              <span class="fit-badge value-warn" data-testid="fit-verdict-off">UNVERIFIED</span>
               <p class="fit-rationale">Trailer-fit engine is off — verify the arrangement at the dock.</p>
             </div>
           }

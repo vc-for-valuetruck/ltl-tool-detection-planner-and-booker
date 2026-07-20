@@ -115,6 +115,36 @@ describe('PlanDetail', () => {
       expect(c.trailerFitFails()).toBe(false);
     });
 
+    it('labels a Fits verdict PASS (Phase 7.1)', () => {
+      const c = newComponent();
+      c.trailerFit.set(fit({ verdict: 'Fits' }));
+      expect(c.fitVerdictLabel()).toBe('PASS');
+    });
+
+    it('labels a capacity-exceeded DoesNotFit as OVER', () => {
+      const c = newComponent();
+      c.trailerFit.set(fit({ verdict: 'DoesNotFit', capacityExceeded: true }));
+      expect(c.fitVerdictLabel()).toBe('OVER');
+    });
+
+    it('labels a geometry-only DoesNotFit as DOES NOT FIT', () => {
+      const c = newComponent();
+      c.trailerFit.set(fit({ verdict: 'DoesNotFit', capacityExceeded: false }));
+      expect(c.fitVerdictLabel()).toBe('DOES NOT FIT');
+    });
+
+    it('labels an Unknown verdict UNVERIFIED', () => {
+      const c = newComponent();
+      c.trailerFit.set(fit({ verdict: 'Unknown' }));
+      expect(c.fitVerdictLabel()).toBe('UNVERIFIED');
+    });
+
+    it('labels a missing fit (engine off) UNVERIFIED', () => {
+      const c = newComponent();
+      c.trailerFit.set(null);
+      expect(c.fitVerdictLabel()).toBe('UNVERIFIED');
+    });
+
     it('renders the combined weight with a "≥" prefix when weight is unknown', () => {
       const c = newComponent();
       expect(c.formatFitWeight(fit({ totalWeightLbs: 12000, weightUnknown: true }))).toBe(

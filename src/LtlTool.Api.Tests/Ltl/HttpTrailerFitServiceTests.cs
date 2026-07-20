@@ -249,6 +249,61 @@ public sealed class HttpTrailerFitServiceTests
         Assert.Equal(32, result.TotalPallets);
     }
 
+    // --- Phase 7.1: verdict paths anchored on live-tenant ground-truth weights ---
+    // Weights below are the real Alvys va336 Open-load payloads recorded in
+    // alvys_ground_truth/open_loads_page1.json (Weight.Value, Pounds):
+    //   load 1003516 = 42,500 lb, load 1002398 = 16,800.09 lb, load 1004858 = 43,400 lb.
+    // These pin the demo talk track ("we caught a 59,300 lb pair before dispatch") to data.
+
+    [Fact]
+    public async Task GroundTruth_pair_over_trailer_max_is_OVER_capacity_even_with_valid_packer()
+    {
+        // 1003516 (42,500) + 1002398 (16,800.09) = 59,300.09 lb > 45,000 lb standard dry van.
+        var handler = PackerReturns(new TrailerFitPlanSummary
+        {
+            ArrangementIsValid = true,
+            TrailerIsOverweight = false,
+        });
+        var svc = BuildService(handler);
+
+        var request = new TrailerFitRequest(
+            new TrailerCapacitySpec(null, null, null), // no assigned trailer → standard 45,000 lb spec
+            [new TrailerFitItem("1003516", 42_500m, null, null),
+             new TrailerFitItem("1002398", 16_800.09m, null, null)]);
+
+        var result = await svc.EvaluateAsync(request);
+
+        Assert.Equal(TrailerFitVerdict.DoesNotFit, result.Verdict); // maps to the OVER chip in the SPA
+        Assert.True(result.CapacityExceeded);
+        Assert.False(result.WeightUnknown);
+        Assert.Equal(59_300.09m, result.TotalWeightLbs);
+        Assert.Equal(45_000m, result.TrailerMaxWeightLbs);
+    }
+
+    [Fact]
+    public async Task GroundTruth_single_load_within_capacity_is_PASS()
+    {
+        // 1002398 alone (16,800.09 lb) sits well under the 45,000 lb max → packer-backed PASS.
+        var handler = PackerReturns(new TrailerFitPlanSummary
+        {
+            ArrangementIsValid = true,
+            TrailerIsOverweight = false,
+            LinearFeet = 18.0m,
+            StackedCubePortionOfTrailer = 0.42m,
+        });
+        var svc = BuildService(handler);
+
+        var request = new TrailerFitRequest(
+            new TrailerCapacitySpec(null, null, null),
+            [new TrailerFitItem("1002398", 16_800.09m, null, null)]);
+
+        var result = await svc.EvaluateAsync(request);
+
+        Assert.Equal(TrailerFitVerdict.Fits, result.Verdict); // maps to the PASS chip in the SPA
+        Assert.False(result.CapacityExceeded);
+        Assert.True(result.EstimatedFit);
+    }
+
     private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> responder)
         : HttpMessageHandler
     {
