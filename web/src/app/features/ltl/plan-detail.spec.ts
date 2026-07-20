@@ -185,6 +185,44 @@ describe('PlanDetail', () => {
     });
   });
 
+  describe('delivered-example gating (queue honesty)', () => {
+    it('flags the plan as a delivered example when a load status is Delivered', () => {
+      const c = newComponent();
+      c.parent.set(load({ id: 'P', status: 'Delivered' }));
+      c.siblings.set([load({ id: 'S1', status: 'Delivered' })]);
+      expect(c.deliveredExample()).toBeTrue();
+    });
+
+    it('flags a delivered example when any single load is closed, even if others are open', () => {
+      const c = newComponent();
+      c.parent.set(load({ id: 'P', status: 'Dispatched' }));
+      c.siblings.set([load({ id: 'S1', status: 'Invoiced' })]);
+      expect(c.deliveredExample()).toBeTrue();
+    });
+
+    it('treats open freight (Available/Dispatched) as dispatchable', () => {
+      const c = newComponent();
+      c.parent.set(load({ id: 'P', status: 'Available' }));
+      c.siblings.set([load({ id: 'S1', status: 'Dispatched' })]);
+      expect(c.deliveredExample()).toBeFalse();
+    });
+
+    it('does not record an audit for a delivered example', () => {
+      let calls = 0;
+      const c = newComponent(null, {
+        recordPlanAudit: () => {
+          calls++;
+          return of({} as ConsolidationAuditRecord);
+        },
+      });
+      c.parent.set(load({ id: 'P', status: 'Delivered' }));
+      c.siblings.set([load({ id: 'S1', status: 'Delivered' })]);
+      c.recordAudit();
+      expect(calls).toBe(0);
+      expect(c.auditRecord()).toBeNull();
+    });
+  });
+
   describe('recordAudit (item 7)', () => {
     function auditRecord(): ConsolidationAuditRecord {
       return {

@@ -10,7 +10,7 @@
       </p>
     } @else {
       <p class="subtitle">
-        {{ totalPairsFound() }} candidate pairs from your live Alvys pipeline, ranked by projected uplift.
+        {{ totalPairsFound() }} candidate pairs from recently delivered Alvys loads, ranked by projected uplift.
       </p>
     }
   </div>
@@ -37,6 +37,13 @@
       No consolidations available right now. Your Alvys pipeline is clean.
     </div>
   } @else {
+    <div class="delivered-note" data-testid="queue-delivered-note">
+      <strong>Recent delivered examples — not open freight.</strong>
+      These pairs are discovered from recently <em>delivered</em> Alvys loads so the consolidation
+      workflow can be walked end-to-end against real data. They are not open, dispatchable freight —
+      dispatch actions are disabled on the plan detail. Read-only.
+    </div>
+
     <div class="opportunity-list">
       @for (opportunity of visibleOpportunities(); track opportunity.rank) {
         <article class="opportunity-card">
