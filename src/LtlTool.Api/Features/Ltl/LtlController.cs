@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using LtlTool.Api.Features.Ltl.Arrivals;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Security;
@@ -29,6 +30,7 @@ public sealed class LtlController(
     IAssignmentAuditStore auditStore,
     ConsolidationOpportunityService consolidationOpportunityService,
     CapacitySnapshotService capacity,
+    LaredoArrivalsService arrivals,
     ILogger<LtlController> logger) : ControllerBase
 {
     /// <summary>Normalized, filtered, sorted, paged LTL search over the swept Alvys loads.</summary>
@@ -236,6 +238,17 @@ public sealed class LtlController(
     [ProducesResponseType(typeof(CapacitySnapshot), StatusCodes.Status200OK)]
     public async Task<ActionResult<CapacitySnapshot>> CapacityToday(CancellationToken ct)
         => Ok(await capacity.GetSnapshotAsync(ct));
+
+    /// <summary>
+    /// Laredo Arrivals Board (Phase 8.1): every truck/trailer scheduled to arrive at the Laredo
+    /// yard on the given day (default: today, UTC), Dallas-bound first. Every value is a read-only
+    /// Alvys trip/stop read; a capped sweep is reported via <see cref="LaredoArrivalsBoard.Truncated"/>.
+    /// </summary>
+    [HttpGet("arrivals")]
+    [ProducesResponseType(typeof(LaredoArrivalsBoard), StatusCodes.Status200OK)]
+    public async Task<ActionResult<LaredoArrivalsBoard>> Arrivals(
+        [FromQuery] DateOnly? date, CancellationToken ct)
+        => Ok(await arrivals.GetBoardAsync(date, ct));
 
     /// <summary>
     /// Recent lane rate context (Phase 7.4): the revenue-per-mile spread across recently delivered

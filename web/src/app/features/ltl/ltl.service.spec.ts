@@ -7,6 +7,7 @@ import {
 import { LtlService } from './ltl.service';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import { AccessorialReviewContext, CapacitySnapshot, LaneRateContext } from './ltl.models';
+import { LaredoArrivalsBoard } from './arrivals.models';
 
 describe('LtlService — accessorial signals', () => {
   let service: LtlService;
@@ -124,6 +125,43 @@ describe('LtlService — rating & capacity context', () => {
     expect(result).toBeDefined();
     expect(result!.activeTrucks).toBe(3);
     expect(result!.trailersByType[0].equipmentType).toBe('Dry Van');
+  });
+
+  it('calls GET /api/ltl/arrivals (no date) and maps the board', () => {
+    let result: LaredoArrivalsBoard | undefined;
+
+    service.arrivals().subscribe((b) => (result = b));
+
+    const req = http.expectOne('/api/ltl/arrivals');
+    expect(req.request.method).toBe('GET');
+
+    const fakeResponse: LaredoArrivalsBoard = {
+      generatedAt: '2026-07-20T00:00:00Z',
+      date: '2026-07-20',
+      yard: 'LAREDO',
+      arrivals: [],
+      truncated: false,
+      source: 'Live Alvys trips.',
+    };
+    req.flush(fakeResponse);
+
+    expect(result).toBeDefined();
+    expect(result!.yard).toBe('LAREDO');
+  });
+
+  it('calls GET /api/ltl/arrivals with the date query param when supplied', () => {
+    service.arrivals('2026-07-21').subscribe();
+
+    const req = http.expectOne('/api/ltl/arrivals?date=2026-07-21');
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      generatedAt: '2026-07-21T00:00:00Z',
+      date: '2026-07-21',
+      yard: 'LAREDO',
+      arrivals: [],
+      truncated: false,
+      source: 'Live Alvys trips.',
+    } as LaredoArrivalsBoard);
   });
 
   it('calls GET /api/ltl/lane-rate with the origin/destination states as query params', () => {
