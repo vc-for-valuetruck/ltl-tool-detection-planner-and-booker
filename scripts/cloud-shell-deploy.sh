@@ -375,3 +375,70 @@ cat <<EOF
   Tear down when done:
     az group delete --name $RESOURCE_GROUP --yes --no-wait
 EOF
+
+# ---- 13. show today's top 3 consolidation opportunities ---------------------
+#
+# Automatically pulls the ranked opportunity list so the operator sees value
+# without having to hit the endpoint by hand.
+
+echo ""
+echo "============================================================"
+echo "  Today's top 3 consolidation opportunities (live Alvys)"
+echo "============================================================"
+
+OPP_JSON=$(curl -sf "$API_URL/api/ltl/consolidation/opportunities?limit=3" 2>/dev/null || echo "")
+if [[ -z "$OPP_JSON" ]]; then
+    echo "  (Endpoint not yet ready — wait ~30s and try:"
+    echo "    curl -s $API_URL/api/ltl/consolidation/opportunities?limit=3 | python3 -m json.tool)"
+else
+    printf '%s' "$OPP_JSON" | python3 - <<'PY' 2>/dev/null || echo "  (Response was not JSON; open $API_URL/api/ltl/consolidation/opportunities?limit=3 in a browser.)"
+import json, sys, os
+try:
+    d = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(1)
+
+print(f"  Data source:     {d.get('DataSource') or d.get('dataSource')}")
+print(f"  Total scanned:   {d.get('TotalScanned') or d.get('totalScanned')} loads")
+print(f"  Pairs found:     {d.get('TotalPairsFound') or d.get('totalPairsFound')}")
+print()
+
+opps = d.get('Opportunities') or d.get('opportunities') or []
+if not opps:
+    print("  No consolidations available right now — your Alvys pipeline is clean.")
+    sys.exit(0)
+
+for o in opps:
+    rank    = o.get('Rank') or o.get('rank')
+    os_st   = o.get('OriginState') or o.get('originState')
+    ds_st   = o.get('DestinationState') or o.get('destinationState')
+    oc      = o.get('OriginCity') or o.get('originCity')
+    dc      = o.get('DestinationCity') or o.get('destinationCity')
+    cust    = o.get('CustomerName') or o.get('customerName')
+    pd      = o.get('PickupDate') or o.get('pickupDate')
+    rev     = o.get('CombinedRevenue') or o.get('combinedRevenue') or 0
+    rpm     = o.get('CombinedRpm') or o.get('combinedRpm') or 0
+    uplift  = o.get('ProjectedUplift') or o.get('projectedUplift') or 0
+    parent  = o.get('Parent') or o.get('parent') or {}
+    sibs    = o.get('Siblings') or o.get('siblings') or []
+
+    print(f"  #{rank} · {os_st} → {ds_st} · pickup {pd} · +${uplift:,.0f} uplift")
+    print(f"        Customer:  {cust}")
+    print(f"        Route:     {oc}, {os_st} → {dc}, {ds_st}")
+    p_ln = parent.get('LoadNumber') or parent.get('loadNumber')
+    p_lh = parent.get('LinehaulAmount') or parent.get('linehaulAmount') or 0
+    p_mi = parent.get('Miles') or parent.get('miles') or 0
+    print(f"        Parent:    L-{p_ln}  ${p_lh:,.0f}  · {p_mi} mi")
+    for s in sibs:
+        s_ln = s.get('LoadNumber') or s.get('loadNumber')
+        s_lh = s.get('LinehaulAmount') or s.get('linehaulAmount') or 0
+        s_mi = s.get('Miles') or s.get('miles') or 0
+        print(f"        Sibling:   L-{s_ln}  ${s_lh:,.0f}  · {s_mi} mi")
+    print(f"        Combined:  ${rev:,.0f} rev · ${rpm:.2f}/mi RPM")
+    print()
+PY
+fi
+
+echo "============================================================"
+echo "  Open the app: $WEB_URL/ltl"
+echo "============================================================"
