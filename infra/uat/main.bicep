@@ -184,7 +184,7 @@ resource trailerFitApp 'Microsoft.Web/sites@2023-12-01' = {
           action: 'Allow'
           priority: 100
           name: 'AllowAzureInternal'
-          description: 'Allow AzureCloud service tag only; default deny'
+          description: 'Allow AzureCloud service tag only - default deny'
         }
       ]
       appSettings: [
