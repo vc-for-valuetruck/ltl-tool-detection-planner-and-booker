@@ -359,3 +359,41 @@ export interface LtlSearchQuery {
   page?: number;
   pageSize?: number;
 }
+
+/** One equipment-type bucket in the trailer pool breakdown (Phase 7.4 capacity snapshot). */
+export interface TrailerTypeCount {
+  equipmentType: string;
+  count: number;
+}
+
+/**
+ * Live "Capacity today" snapshot (Phase 7.4): active trucks, trailer pool by equipment type, and
+ * in-transit trips — every count a read-only Alvys read. `truncated` means a sweep hit its scan cap
+ * so the counts are a floor ("at least N"), surfaced honestly rather than as an exact total.
+ */
+export interface CapacitySnapshot {
+  generatedAt: string;
+  activeTrucks: number;
+  totalTrucks: number;
+  inTransitTrips: number;
+  totalTrailers: number;
+  trailersByType: TrailerTypeCount[];
+  truncated: boolean;
+  source: string;
+}
+
+/**
+ * Recent lane rate context (Phase 7.4): revenue-per-mile spread across recently delivered loads on
+ * the same origin→destination state pair. Recent tenant history (what Value Truck billed), NOT a
+ * DAT/Greenscreens market rate. Null RPMs mean too few priced samples — surfaced, never guessed.
+ */
+export interface LaneRateContext {
+  originState: string;
+  destinationState: string;
+  sampleSize: number;
+  medianRpm: number | null;
+  minRpm: number | null;
+  maxRpm: number | null;
+  basis: string;
+  generatedAt: string;
+}

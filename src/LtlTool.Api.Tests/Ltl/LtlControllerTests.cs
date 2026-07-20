@@ -20,7 +20,7 @@ public sealed class LtlControllerTests
     {
         var options = LtlTestFactory.Options();
         var normalizer = LtlTestFactory.Normalizer();
-        var loadService = new LtlLoadService(client, normalizer, LtlTestFactory.Visibility(), LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(), options);
+        var loadService = new LtlLoadService(client, normalizer, LtlTestFactory.Visibility(), LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(), options, LtlTestFactory.Clock());
         var matchService = new MatchService(
             client, LtlTestFactory.Scorer(), LtlTestFactory.EquipmentEvents(), options);
         var validation = new AssignmentValidationService(options, LtlTestFactory.Clock());
@@ -32,6 +32,7 @@ public sealed class LtlControllerTests
                 new LtlTool.Api.Features.Ltl.Optimization.NullCapacityCostSolver(LtlTestFactory.Clock()),
                 Microsoft.Extensions.Options.Options.Create(new LtlTool.Api.Features.Ltl.Optimization.CapacityCostSolverOptions()),
                 NullLogger<ConsolidationOpportunityService>.Instance),
+            new CapacitySnapshotService(client, options, LtlTestFactory.Clock()),
             NullLogger<LtlController>.Instance);
 
         var identity = user is null ? new ClaimsIdentity() : new ClaimsIdentity([new Claim("preferred_username", user)], "test");

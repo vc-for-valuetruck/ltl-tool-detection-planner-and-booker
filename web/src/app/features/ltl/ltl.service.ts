@@ -9,6 +9,8 @@ import {
   AssignmentValidationResult,
   BillingBadge,
   BillingReadinessResult,
+  CapacitySnapshot,
+  LaneRateContext,
   LtlLoadSummary,
   LtlSearchQuery,
   LtlSearchResponse,
@@ -70,6 +72,24 @@ export class LtlService {
 
   exceptions(): Observable<LtlLoadSummary[]> {
     return this.http.get<LtlLoadSummary[]>(`${this.base}/exceptions`);
+  }
+
+  /**
+   * Live "Capacity today" snapshot: active trucks, trailer pool by equipment type, and in-transit
+   * trips. Read-only; every count is a live Alvys read, truncation reported honestly.
+   */
+  capacityToday(): Observable<CapacitySnapshot> {
+    return this.http.get<CapacitySnapshot>(`${this.base}/capacity/today`);
+  }
+
+  /**
+   * Recent lane rate context: revenue-per-mile spread across recently delivered loads on the same
+   * origin→destination state pair. Recent tenant history, not a market rate. Read-only.
+   */
+  laneRate(originState: string, destinationState: string): Observable<LaneRateContext> {
+    return this.http.get<LaneRateContext>(`${this.base}/lane-rate`, {
+      params: new HttpParams().set('originState', originState).set('destinationState', destinationState),
+    });
   }
 
   /**

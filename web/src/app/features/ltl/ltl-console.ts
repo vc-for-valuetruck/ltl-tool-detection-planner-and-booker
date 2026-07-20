@@ -6,6 +6,7 @@ import { LtlService } from './ltl.service';
 import {
   AssignmentState,
   BillingBadge,
+  CapacitySnapshot,
   LtlLoadSummary,
   LtlSearchQuery,
   LtlSortField,
@@ -65,6 +66,8 @@ export class LtlConsole implements OnInit {
 
   protected readonly hasLoads = computed(() => this.loads().length > 0);
 
+  protected readonly capacity = signal<CapacitySnapshot | null>(null);
+
   protected readonly quickToggles: QuickToggle[] = [
     { key: 'unassigned', label: 'Unassigned' },
     { key: 'readyToBill', label: 'Ready to Bill' },
@@ -102,7 +105,23 @@ export class LtlConsole implements OnInit {
 
   ngOnInit(): void {
     this.loadSavedViews();
+    this.loadCapacity();
     this.search();
+  }
+
+  /**
+   * Fetches the live "Capacity today" snapshot. A failure just hides the widget — capacity context
+   * is a convenience header, never the grid's data, so a degraded read must not blank the console.
+   */
+  protected loadCapacity(): void {
+    this.ltl.capacityToday().subscribe({
+      next: (snapshot) => this.capacity.set(snapshot),
+      error: () => this.capacity.set(null),
+    });
+  }
+
+  protected topTrailerTypes(snapshot: CapacitySnapshot): CapacitySnapshot['trailersByType'] {
+    return snapshot.trailersByType.slice(0, 4);
   }
 
   /** Toggling a filter clears the "which saved view is applied" highlight — the state now differs. */

@@ -134,3 +134,63 @@ th.sortable:hover {
   border-radius: 6px;
   padding: 8px 12px;
 }
+
+/* "Capacity today" widget (Phase 7.4) — live Alvys fleet snapshot above the search panel. */
+.capacity-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.capacity-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.capacity-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.capacity-source {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.capacity-metrics {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.capacity-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.capacity-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.capacity-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.capacity-of {
+  opacity: 0.75;
+}
+
+.capacity-trailer-types {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

@@ -1,6 +1,6 @@
 import { LtlConsole } from './ltl-console';
 import { LtlService } from './ltl.service';
-import { LtlLoadSummary, LtlSearchResponse, SavedView, SavedViewCollection } from './ltl.models';
+import { CapacitySnapshot, LtlLoadSummary, LtlSearchResponse, SavedView, SavedViewCollection } from './ltl.models';
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
@@ -145,6 +145,38 @@ describe('LtlConsole', () => {
     c['saveCurrentView']();
     expect(c['views']().some((v) => v.id === 'new')).toBeTrue();
     expect(c['activeViewId']()).toBe('new');
+  });
+
+  function snapshot(partial: Partial<CapacitySnapshot> = {}): CapacitySnapshot {
+    return {
+      generatedAt: '2026-07-20T00:00:00Z',
+      activeTrucks: 12,
+      totalTrucks: 20,
+      inTransitTrips: 5,
+      totalTrailers: 30,
+      trailersByType: [
+        { equipmentType: 'Dry Van', count: 18 },
+        { equipmentType: 'Reefer', count: 8 },
+        { equipmentType: 'Flatbed', count: 3 },
+        { equipmentType: 'Unspecified', count: 1 },
+      ],
+      truncated: false,
+      source: 'Live Alvys',
+      ...partial,
+    };
+  }
+
+  it('loads the capacity snapshot and caps the trailer-type breakdown at four', () => {
+    const c = build({ capacityToday: () => of(snapshot()) });
+    c['loadCapacity']();
+    expect(c['capacity']()?.activeTrucks).toBe(12);
+    expect(c['topTrailerTypes'](c['capacity']()!).length).toBe(4);
+  });
+
+  it('hides the capacity widget when the snapshot read fails (never blanks the grid)', () => {
+    const c = build({ capacityToday: () => throwError(() => ({ message: 'x' })) });
+    c['loadCapacity']();
+    expect(c['capacity']()).toBeNull();
   });
 
   it('renders unknown weight and missing money honestly, never zero', () => {

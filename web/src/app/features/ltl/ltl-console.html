@@ -9,6 +9,36 @@
     </span>
   </div>
 
+  @if (capacity(); as cap) {
+    <div class="capacity-widget card" data-testid="capacity-widget">
+      <div class="capacity-head">
+        <span class="capacity-title">Capacity today</span>
+        <span class="capacity-source">Live Alvys · read-only{{ cap.truncated ? ' · counts are a floor' : '' }}</span>
+      </div>
+      <div class="capacity-metrics">
+        <div class="capacity-metric" data-testid="capacity-active-trucks">
+          <span class="capacity-value">{{ cap.truncated ? '≥ ' : '' }}{{ cap.activeTrucks }}</span>
+          <span class="capacity-label">Active trucks<span class="capacity-of"> / {{ cap.totalTrucks }} total</span></span>
+        </div>
+        <div class="capacity-metric" data-testid="capacity-in-transit">
+          <span class="capacity-value">{{ cap.truncated ? '≥ ' : '' }}{{ cap.inTransitTrips }}</span>
+          <span class="capacity-label">In transit</span>
+        </div>
+        <div class="capacity-metric" data-testid="capacity-trailers">
+          <span class="capacity-value">{{ cap.truncated ? '≥ ' : '' }}{{ cap.totalTrailers }}</span>
+          <span class="capacity-label">Trailers</span>
+        </div>
+      </div>
+      @if (topTrailerTypes(cap).length) {
+        <div class="capacity-trailer-types" data-testid="capacity-trailer-types">
+          @for (t of topTrailerTypes(cap); track t.equipmentType) {
+            <span class="chip chip-neutral">{{ t.equipmentType }} · {{ t.count }}</span>
+          }
+        </div>
+      }
+    </div>
+  }
+
   <form class="search-panel card" (ngSubmit)="search()" data-testid="console-filters">
     <div class="field-grid">
       <label class="field">
