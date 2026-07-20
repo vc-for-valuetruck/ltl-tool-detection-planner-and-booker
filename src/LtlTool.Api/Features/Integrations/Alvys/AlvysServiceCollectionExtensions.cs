@@ -24,6 +24,13 @@ public static class AlvysServiceCollectionExtensions
         services
             .AddOptions<AlvysWriteOptions>()
             .Bind(configuration.GetSection(AlvysWriteOptions.SectionName));
+
+        // Internal-API (Phase-2 consolidation) write path. Bound from "Alvys:InternalApi"; defaults
+        // to Enabled=false with every per-operation arm switch off, so a fresh clone / CI /
+        // production never dispatches an internal-API write. Observed-not-contracted (decision #10).
+        services
+            .AddOptions<AlvysInternalApiOptions>()
+            .Bind(configuration.GetSection(AlvysInternalApiOptions.SectionName));
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IAlvysSyncTracker, InMemoryAlvysSyncTracker>();
         services.AddScoped<IAlvysWriteGateway, AlvysWriteGateway>();
@@ -34,6 +41,13 @@ public static class AlvysServiceCollectionExtensions
         services.AddScoped<IAlvysOperationStore, EfAlvysOperationStore>();
         services.AddScoped<IAlvysOperationRecorder, AlvysOperationRecorder>();
         services.AddScoped<IAlvysWriteClient, AlvysHttpWriteClient>();
+
+        // Internal-API write path: per-acting-user session-token provider + write client. The token
+        // provider is a singleton so a session token is cached across scoped requests for the same
+        // acting user; the write client is scoped like its Public-API counterpart. Neither ever
+        // dispatches unless the internal API is enabled and the operation individually armed.
+        services.AddSingleton<IAlvysInternalTokenProvider, AlvysInternalTokenProvider>();
+        services.AddScoped<IAlvysInternalWriteClient, AlvysHttpInternalWriteClient>();
 
         var options = configuration.GetSection(AlvysOptions.SectionName).Get<AlvysOptions>()
             ?? new AlvysOptions();
@@ -50,6 +64,13 @@ public static class AlvysServiceCollectionExtensions
 
         // Sandbox write client — base address is overridden at call time with the sandbox URL.
         services.AddHttpClient(AlvysHttpWriteClient.SandboxHttpClientName,
+            client => client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds));
+
+        // Internal-API named clients: one for per-acting-user session-token acquisition, one for the
+        // internal write calls. Base addresses come from Alvys:InternalApi config at call time.
+        services.AddHttpClient(AlvysInternalTokenProvider.AuthHttpClientName,
+            client => client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds));
+        services.AddHttpClient(AlvysHttpInternalWriteClient.HttpClientName,
             client => client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds));
 
         services.AddSingleton<IAlvysTokenProvider, AlvysTokenProvider>();

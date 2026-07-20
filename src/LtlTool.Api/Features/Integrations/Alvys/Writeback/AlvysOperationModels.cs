@@ -86,6 +86,26 @@ public sealed class AlvysOperationRequest
     /// <summary>Optional dispatcher justification captured on the audit trail.</summary>
     public string? Reason { get; set; }
 
+    // --- Internal-API (Phase-2 consolidation) inputs ------------------------------------------
+
+    /// <summary>
+    /// The Alvys acting-user id whose session token authorises an internal-API write. Required for
+    /// every internal-surface operation; never persisted to the outbox and never logged.
+    /// </summary>
+    public string? ActingUserId { get; set; }
+
+    /// <summary>Waypoint / extended stop to create on the parent trip (add-extended-stop).</summary>
+    public AlvysWaypointStop? WaypointStop { get; set; }
+
+    /// <summary>
+    /// LTL reference flag for set-trip-references. Transported to Alvys as the string
+    /// <c>"true"</c>/<c>"false"</c> (decision #10), not a JSON boolean.
+    /// </summary>
+    public bool? LtlReference { get; set; }
+
+    /// <summary>Main load id reference for set-trip-references (transported as a string).</summary>
+    public string? MainLoadId { get; set; }
+
     /// <summary>
     /// Optional idempotency key for the execute path. A repeat with the same key and an equivalent
     /// payload is a no-op replay; a repeat with the same key and a different payload is a conflict.
@@ -128,6 +148,20 @@ public enum AlvysOperationDisposition
     /// error). Nothing durable changed upstream; the failure is surfaced to the caller.
     /// </summary>
     SandboxFailed,
+
+    /// <summary>
+    /// An internal-API (Phase-2 consolidation) write is enabled, armed, and eligible to dispatch
+    /// against the Alvys internal API using the acting user's session token. (Reached only when the
+    /// internal endpoint contract is confirmed — scaffolding keeps operations Unsupported today.)
+    /// </summary>
+    InternalExecuted,
+
+    /// <summary>
+    /// An internal-API write was attempted but failed — including the mandatory <c>token_expired</c>
+    /// path (a single re-auth retry then honest failure). Nothing durable changed upstream and the
+    /// outbox row is marked <see cref="AlvysOperationRecordStatus.InternalFailed"/>.
+    /// </summary>
+    InternalFailed,
 }
 
 /// <summary>A single validation finding on an operation request.</summary>
@@ -181,6 +215,13 @@ public sealed class AlvysOperationOutcome
     /// </summary>
     public bool SandboxExecutionEligible { get; init; }
 
+    /// <summary>
+    /// True when an internal-surface operation is enabled, armed and configured, so the recorder
+    /// should dispatch via <see cref="IAlvysInternalWriteClient"/>. Always false for Public-surface
+    /// operations and for dry-run/blocked/unsupported ones.
+    /// </summary>
+    public bool InternalExecutionEligible { get; init; }
+
     /// <summary>A one-line, dispatcher-facing summary of the disposition.</summary>
     public required string Message { get; init; }
 
@@ -204,4 +245,22 @@ public sealed class TenderStopCompanyLink
 {
     public required string StopId { get; set; }
     public required string CompanyId { get; set; }
+}
+
+/// <summary>
+/// A Waypoint / extended stop to create on the parent trip during consolidation
+/// (<c>add-extended-stop</c>). The exact internal-API field shape is observed-not-contracted
+/// (decision #10); this captures the minimum the scaffolding needs to build a deterministic,
+/// snapshot-testable payload.
+/// </summary>
+public sealed class AlvysWaypointStop
+{
+    /// <summary>Alvys company/location id the waypoint links to.</summary>
+    public required string CompanyId { get; set; }
+
+    /// <summary>Zero-based position of the new stop within the parent trip's stop sequence.</summary>
+    public required int Sequence { get; set; }
+
+    /// <summary>Optional scheduled arrival for the waypoint.</summary>
+    public DateTimeOffset? ScheduledAt { get; set; }
 }

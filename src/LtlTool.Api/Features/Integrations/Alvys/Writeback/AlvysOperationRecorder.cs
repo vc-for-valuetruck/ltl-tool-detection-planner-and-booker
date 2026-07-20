@@ -70,10 +70,24 @@ public sealed class AlvysOperationRecorder(
     IAlvysWriteGateway gateway,
     IAlvysOperationStore store,
     TimeProvider clock,
-    IAlvysWriteClient writeClient) : IAlvysOperationRecorder
+    IAlvysWriteClient writeClient,
+    IAlvysInternalWriteClient internalWriteClient) : IAlvysOperationRecorder
 {
     /// <summary>Upper bound on the stored payload preview so a row can never grow unbounded.</summary>
     private const int MaxPreviewLength = 4000;
+
+    /// <summary>
+    /// Convenience overload for callers/tests that only exercise the Public-API surface. Internal
+    /// dispatch is never reached (internal eligibility requires the internal API to be armed).
+    /// </summary>
+    public AlvysOperationRecorder(
+        IAlvysWriteGateway gateway,
+        IAlvysOperationStore store,
+        TimeProvider clock,
+        IAlvysWriteClient writeClient)
+        : this(gateway, store, clock, writeClient, new NoOpAlvysInternalWriteClient())
+    {
+    }
 
     public AlvysRecordResult RecordDryRun(string ownerId, string operationCode, AlvysOperationRequest request)
     {
@@ -170,6 +184,19 @@ public sealed class AlvysOperationRecorder(
                     };
                 }
 
+                // Same idempotent-retry semantics for a prior failed internal-API write.
+                if (existing.Status == AlvysOperationRecordStatus.InternalFailed
+                    && outcome.InternalExecutionEligible && outcome.Payload is not null)
+                {
+                    var replayedOutcome = await DispatchInternalAndApplyAsync(operationCode, request, outcome, existing, ct);
+                    return new AlvysRecordResult
+                    {
+                        Outcome = replayedOutcome,
+                        Disposition = AlvysRecordDisposition.DuplicateReplay,
+                        Record = existing,
+                    };
+                }
+
                 store.Update(existing);
                 return new AlvysRecordResult
                 {
@@ -186,6 +213,11 @@ public sealed class AlvysOperationRecorder(
         if (outcome.SandboxExecutionEligible && outcome.Payload is not null)
         {
             outcome = await DispatchAndApplyAsync(operationCode, request, outcome, record, ct);
+        }
+        // Or dispatch the internal-API call when the gateway signals internal eligibility.
+        else if (outcome.InternalExecutionEligible && outcome.Payload is not null)
+        {
+            outcome = await DispatchInternalAndApplyAsync(operationCode, request, outcome, record, ct);
         }
 
         return new AlvysRecordResult
@@ -225,6 +257,36 @@ public sealed class AlvysOperationRecorder(
             $"Sandbox execution failed: {callResult.Error ?? "the Alvys sandbox rejected the request"}.");
     }
 
+    /// <summary>
+    /// Issues the live internal-API call (the acting user's session token is acquired inside the
+    /// client, including the mandatory single <c>token_expired</c> re-auth retry), updates the
+    /// persisted record, and returns an outcome reflecting the result (success → InternalExecuted;
+    /// failure → InternalFailed, so the controller surfaces HTTP 502 — never a false success).
+    /// </summary>
+    private async Task<AlvysOperationOutcome> DispatchInternalAndApplyAsync(
+        string operationCode, AlvysOperationRequest request, AlvysOperationOutcome outcome,
+        AlvysOperationRecord record, CancellationToken ct)
+    {
+        var op = AlvysWriteOperationRegistry.Find(operationCode)!;
+        var callResult = await internalWriteClient.ExecuteAsync(op, request, outcome.Payload!, ct);
+
+        record.UpdatedAt = clock.GetUtcNow();
+        if (callResult.IsSuccess)
+        {
+            record.Status = AlvysOperationRecordStatus.Recorded;
+            record.LastError = null;
+            store.Update(record);
+            return WithExecution(outcome, executed: true, AlvysOperationDisposition.InternalExecuted,
+                "Internal-API execution succeeded — sent to the Alvys internal API.");
+        }
+
+        record.Status = AlvysOperationRecordStatus.InternalFailed;
+        record.LastError = callResult.Error;
+        store.Update(record);
+        return WithExecution(outcome, executed: false, AlvysOperationDisposition.InternalFailed,
+            $"Internal-API execution failed: {callResult.Error ?? "the Alvys internal API rejected the request"}.");
+    }
+
     /// <summary>Clones an outcome overriding only the post-execution fields.</summary>
     private static AlvysOperationOutcome WithExecution(
         AlvysOperationOutcome o, bool executed, AlvysOperationDisposition disposition, string message) => new()
@@ -235,6 +297,7 @@ public sealed class AlvysOperationRecorder(
         Disposition = disposition,
         Executed = executed,
         SandboxExecutionEligible = o.SandboxExecutionEligible,
+        InternalExecutionEligible = o.InternalExecutionEligible,
         Message = message,
         Payload = o.Payload,
         Validation = o.Validation,
@@ -266,6 +329,9 @@ public sealed class AlvysOperationRecorder(
             AlvysWriteOperationKind.TripAssign => $"trip:{request.TripId}",
             AlvysWriteOperationKind.TripDispatch => $"trip:{request.TripId}",
             AlvysWriteOperationKind.CarrierStatusUpdate => $"carrier:{request.CarrierId}",
+            AlvysWriteOperationKind.AddExtendedStop => $"trip:{request.TripId}",
+            AlvysWriteOperationKind.ZeroChildDispatchMiles => $"trip:{request.TripId}",
+            AlvysWriteOperationKind.SetTripReferences => $"trip:{request.TripId}",
             _ => string.Empty,
         };
     }
@@ -312,6 +378,7 @@ public sealed class AlvysOperationRecorder(
     {
         AlvysOperationDisposition.Blocked => AlvysOperationRecordStatus.Blocked,
         AlvysOperationDisposition.SandboxFailed => AlvysOperationRecordStatus.Blocked,
+        AlvysOperationDisposition.InternalFailed => AlvysOperationRecordStatus.InternalFailed,
         AlvysOperationDisposition.Unsupported => AlvysOperationRecordStatus.Unsupported,
         _ => AlvysOperationRecordStatus.Recorded,
     };
@@ -330,6 +397,9 @@ public sealed class AlvysOperationRecorder(
             AlvysWriteOperationKind.TripAssign => ("trip", request.TripId),
             AlvysWriteOperationKind.TripDispatch => ("trip", request.TripId),
             AlvysWriteOperationKind.CarrierStatusUpdate => ("carrier", request.CarrierId),
+            AlvysWriteOperationKind.AddExtendedStop => ("trip", request.TripId),
+            AlvysWriteOperationKind.ZeroChildDispatchMiles => ("trip", request.TripId),
+            AlvysWriteOperationKind.SetTripReferences => ("trip", request.TripId),
             _ => (null, null),
         };
     }

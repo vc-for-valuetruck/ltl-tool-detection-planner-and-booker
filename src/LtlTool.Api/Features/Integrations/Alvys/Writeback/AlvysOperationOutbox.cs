@@ -35,6 +35,13 @@ public enum AlvysOperationRecordStatus
 
     /// <summary>No documented Alvys mutating endpoint; recorded with the reason it cannot execute.</summary>
     Unsupported,
+
+    /// <summary>
+    /// An internal-API (Phase-2 consolidation) write was dispatched but failed — including the
+    /// mandatory <c>token_expired</c> path (one re-auth retry, then honest failure). Nothing durable
+    /// changed upstream; the failure is surfaced to the caller as HTTP 502.
+    /// </summary>
+    InternalFailed,
 }
 
 /// <summary>

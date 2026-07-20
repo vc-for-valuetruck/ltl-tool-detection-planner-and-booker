@@ -30,10 +30,24 @@ public interface IAlvysWriteGateway
 /// <inheritdoc cref="IAlvysWriteGateway"/>
 public sealed class AlvysWriteGateway(
     IOptions<AlvysWriteOptions> writeOptions,
-    IOptions<AlvysOptions> alvysOptions) : IAlvysWriteGateway
+    IOptions<AlvysOptions> alvysOptions,
+    IOptions<AlvysInternalApiOptions> internalOptions) : IAlvysWriteGateway
 {
     private readonly AlvysWriteOptions _write = writeOptions.Value;
     private readonly AlvysOptions _alvys = alvysOptions.Value;
+    private readonly AlvysInternalApiOptions _internal = internalOptions.Value;
+
+    /// <summary>
+    /// Convenience overload for callers/tests that only exercise the Public-API surface. The internal
+    /// API defaults to disabled, so internal operations resolve to audit-only.
+    /// </summary>
+    public AlvysWriteGateway(
+        IOptions<AlvysWriteOptions> writeOptions,
+        IOptions<AlvysOptions> alvysOptions)
+        : this(writeOptions, alvysOptions,
+            Microsoft.Extensions.Options.Options.Create(new AlvysInternalApiOptions()))
+    {
+    }
 
     public AlvysOperationOutcome DryRun(string operationCode, AlvysOperationRequest request)
         => Build(operationCode, request, executing: false);
@@ -73,6 +87,12 @@ public sealed class AlvysWriteGateway(
         }
 
         var payload = BuildPayload(op, request);
+
+        // Internal-API surface (Phase-2 consolidation) has its own gate and disposition set,
+        // separate from the Public-API sandbox path.
+        if (op.Surface == AlvysWriteApiSurface.Internal)
+            return BuildInternal(op, request, payload, executing);
+
         var blockers = SandboxBlockers(op);
 
         // Decide disposition. Sandbox execution is gated by mode + config blockers + live support;
@@ -140,6 +160,78 @@ public sealed class AlvysWriteGateway(
             Blockers = blockers,
             RequiredToEnable = op.LiveSupport == AlvysLiveSupport.Unsupported ? op.RequiredToEnable : null,
         };
+    }
+
+    /// <summary>
+    /// Resolves the disposition for an internal-API (Phase-2 consolidation) operation. Dispatch is
+    /// gated by <see cref="AlvysInternalApiOptions"/>: the surface must be enabled, a base URL must be
+    /// configured, and the specific operation must be individually armed. Every gate defaults to off,
+    /// so a fresh clone / CI / production never dispatches an internal write. When all gates pass on
+    /// the execute path the recorder dispatches via <see cref="IAlvysInternalWriteClient"/>.
+    /// </summary>
+    private AlvysOperationOutcome BuildInternal(
+        AlvysWriteOperationDescriptor op,
+        AlvysOperationRequest request,
+        AlvysOperationPayload payload,
+        bool executing)
+    {
+        var blockers = InternalBlockers(op);
+
+        AlvysOperationDisposition disposition;
+        string message;
+        var eligible = false;
+
+        if (blockers.Count > 0)
+        {
+            // Not armed/configured — recorded for audit only, never sent.
+            disposition = AlvysOperationDisposition.AuditOnly;
+            message = "Internal-API write is not armed/configured — payload recorded for audit only, "
+                + "not sent to Alvys.";
+        }
+        else if (!executing)
+        {
+            disposition = AlvysOperationDisposition.Simulated;
+            message = "Dry run — payload eligible for internal-API execution but not sent.";
+        }
+        else
+        {
+            // All gates passed: the recorder dispatches the internal call and updates the disposition
+            // to InternalExecuted on success or InternalFailed on failure.
+            disposition = AlvysOperationDisposition.InternalExecuted;
+            message = "Internal-API execution eligible — dispatching to the Alvys internal API.";
+            eligible = true;
+        }
+
+        return new AlvysOperationOutcome
+        {
+            OperationCode = op.Code,
+            Title = op.Title,
+            Mode = _write.Mode,
+            Disposition = disposition,
+            Executed = false,
+            InternalExecutionEligible = eligible,
+            Message = message,
+            Payload = payload,
+            Blockers = blockers,
+            RequiredToEnable = eligible ? null : op.RequiredToEnable,
+        };
+    }
+
+    /// <summary>
+    /// Reasons an internal-API operation cannot dispatch under the current configuration. Mirrors the
+    /// sandbox gate posture: enabling the surface alone is never enough — each operation must also be
+    /// individually armed.
+    /// </summary>
+    private List<string> InternalBlockers(AlvysWriteOperationDescriptor op)
+    {
+        var blockers = new List<string>();
+        if (!_internal.Enabled)
+            blockers.Add("The Alvys internal API is disabled (Alvys:InternalApi:Enabled=false).");
+        if (!_internal.HasBaseUrl)
+            blockers.Add("No Alvys internal API base URL is configured (Alvys:InternalApi:BaseUrl).");
+        if (!_internal.IsOperationArmed(op.Kind))
+            blockers.Add($"Operation '{op.Code}' is not individually armed for internal-API execution.");
+        return blockers;
     }
 
     /// <summary>Per-operation required-input validation. Pure; no upstream calls.</summary>
@@ -253,6 +345,39 @@ public sealed class AlvysWriteGateway(
                 Require(!string.IsNullOrWhiteSpace(request.Status), "STATUS_REQUIRED",
                     "A status value is required (e.g. Active, Inactive).");
                 break;
+
+            case AlvysWriteOperationKind.AddExtendedStop:
+                Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
+                    "A parent trip id is required.");
+                Require(request.WaypointStop is not null, "WAYPOINT_REQUIRED",
+                    "A waypoint stop (CompanyId + Sequence) is required.");
+                if (request.WaypointStop is { } wp)
+                {
+                    Require(!string.IsNullOrWhiteSpace(wp.CompanyId), "WAYPOINT_COMPANY_REQUIRED",
+                        "The waypoint requires a CompanyId.");
+                    Require(wp.Sequence >= 0, "WAYPOINT_SEQUENCE_INVALID",
+                        "The waypoint sequence must be zero or greater.");
+                }
+                Require(!string.IsNullOrWhiteSpace(request.ActingUserId), "ACTING_USER_REQUIRED",
+                    "An acting user id is required to authorise an internal-API write.");
+                break;
+
+            case AlvysWriteOperationKind.ZeroChildDispatchMiles:
+                Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
+                    "A child trip id is required.");
+                Require(!string.IsNullOrWhiteSpace(request.ActingUserId), "ACTING_USER_REQUIRED",
+                    "An acting user id is required to authorise an internal-API write.");
+                break;
+
+            case AlvysWriteOperationKind.SetTripReferences:
+                Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
+                    "A trip id is required.");
+                Require(request.LtlReference is not null || !string.IsNullOrWhiteSpace(request.MainLoadId),
+                    "REFERENCE_REQUIRED",
+                    "At least one reference (LtlReference or MainLoadId) is required.");
+                Require(!string.IsNullOrWhiteSpace(request.ActingUserId), "ACTING_USER_REQUIRED",
+                    "An acting user id is required to authorise an internal-API write.");
+                break;
         }
 
         // ETag is mandatory for mutate-existing operations so a concurrent change can never be
@@ -324,6 +449,33 @@ public sealed class AlvysWriteGateway(
             case AlvysWriteOperationKind.CarrierStatusUpdate:
                 body["Status"] = request.Status;
                 target = $"PATCH /carriers/{request.CarrierId}/status";
+                break;
+
+            case AlvysWriteOperationKind.AddExtendedStop:
+                // Internal API (observed, not contracted). CompanyId + zero-based sequence identify
+                // where the new Waypoint lands in the parent trip's stop order.
+                body["CompanyId"] = request.WaypointStop!.CompanyId;
+                body["Sequence"] = request.WaypointStop.Sequence;
+                if (request.WaypointStop.ScheduledAt is { } scheduled)
+                    body["ScheduledAt"] = scheduled;
+                target = $"POST internal trip {request.TripId} waypoint";
+                break;
+
+            case AlvysWriteOperationKind.ZeroChildDispatchMiles:
+                // Only dispatch (loaded) mileage is zeroed; customer miles are preserved upstream and
+                // are deliberately not part of this payload (decision #10).
+                body["DispatchMiles"] = 0;
+                target = $"PATCH internal trip {request.TripId} dispatch-miles";
+                break;
+
+            case AlvysWriteOperationKind.SetTripReferences:
+                // Both references transport as strings (decision #10): LTL as "true"/"false", the
+                // main load id verbatim.
+                if (request.LtlReference is { } ltl)
+                    body["LTL"] = ltl ? "true" : "false";
+                if (!string.IsNullOrWhiteSpace(request.MainLoadId))
+                    body["MainLoadId"] = request.MainLoadId;
+                target = $"PATCH internal trip {request.TripId} references";
                 break;
 
             default:
