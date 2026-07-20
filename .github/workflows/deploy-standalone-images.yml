@@ -87,7 +87,7 @@ jobs:
       - name: Build + push Web image
         uses: docker/build-push-action@v5
         with:
-          context: web
+          context: .
           file: web/Dockerfile
           push: true
           tags: |
