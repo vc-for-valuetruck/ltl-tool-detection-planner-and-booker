@@ -2,8 +2,10 @@ using System.Security.Claims;
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Assignment;
+using LtlTool.Api.Features.Ltl.Consolidation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace LtlTool.Api.Tests.Ltl;
@@ -23,7 +25,9 @@ public sealed class LtlControllerTests
             client, LtlTestFactory.Scorer(), LtlTestFactory.EquipmentEvents(), options);
         var validation = new AssignmentValidationService(options, LtlTestFactory.Clock());
         var controller = new LtlController(
-            loadService, matchService, validation, store ?? new InMemoryAssignmentAuditStore());
+            loadService, matchService, validation, store ?? new InMemoryAssignmentAuditStore(),
+            new ConsolidationOpportunityService(client, LtlTestFactory.Clock()),
+            NullLogger<LtlController>.Instance);
 
         var identity = user is null ? new ClaimsIdentity() : new ClaimsIdentity([new Claim("preferred_username", user)], "test");
         controller.ControllerContext = new ControllerContext
