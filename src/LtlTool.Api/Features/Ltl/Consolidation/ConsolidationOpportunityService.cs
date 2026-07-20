@@ -1,4 +1,5 @@
 using LtlTool.Api.Features.Integrations.Alvys;
+using Microsoft.Extensions.Logging;
 
 namespace LtlTool.Api.Features.Ltl.Consolidation;
 
@@ -7,7 +8,10 @@ namespace LtlTool.Api.Features.Ltl.Consolidation;
 /// directly from live Alvys load-search data. No values are imputed: loads with missing
 /// locations, pickup dates, linehaul, mileage, customer id, or load number are excluded.
 /// </summary>
-public sealed class ConsolidationOpportunityService(IAlvysClient alvys, TimeProvider clock)
+public sealed class ConsolidationOpportunityService(
+    IAlvysClient alvys,
+    TimeProvider clock,
+    ILogger<ConsolidationOpportunityService> logger)
 {
     private const int PageSize = 100;
     private const int PagesToFetch = 3;
@@ -40,16 +44,27 @@ public sealed class ConsolidationOpportunityService(IAlvysClient alvys, TimeProv
                     Status = ["Delivered"],
                 }, ct);
             }
-            catch
+            catch (Exception ex)
             {
-                // Alvys transport error — return what we have so far instead of 500ing.
+                // Alvys transport error — log it and return what we have instead of 500ing.
+                logger.LogError(ex,
+                    "Alvys SearchLoadsAsync failed on page {Page}: {Message}",
+                    page, ex.Message);
                 break;
             }
+
+            logger.LogInformation(
+                "Alvys page {Page} returned Total={Total} Items={ItemCount} rawLoads.Count={Accumulated}",
+                page, response.Total, response.Items.Count, rawLoads.Count);
 
             if (response.Items.Count == 0) break;
             rawLoads.AddRange(response.Items);
             if (response.Items.Count < PageSize) break;
         }
+
+        logger.LogInformation(
+            "Consolidation scan complete: totalScanned={Scanned}, eligible={Eligible}",
+            rawLoads.Count, rawLoads.Count);
 
         // Client-side lookback filter (uses ScheduledPickupAt when present).
         rawLoads = rawLoads
