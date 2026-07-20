@@ -1,0 +1,467 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "OptimizeLoadRequest": {
+        "additionalProperties": false,
+        "description": "Request body for POST /optimize-load.\n\nProvide exactly one of `equipment_code` (a STANDARD_TRAILER_DIMS code) or\n`trailer_dims` (explicit dimensions).",
+        "properties": {
+          "allow_rotations": {
+            "default": true,
+            "description": "Allow 90-degree rotation in the length x width plane",
+            "title": "Allow Rotations",
+            "type": "boolean"
+          },
+          "equipment_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Standard equipment code, e.g. DV_53 (see GET /equipment-types)",
+            "title": "Equipment Code"
+          },
+          "max_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wall-clock budget for the optimization (seconds)",
+            "title": "Max Seconds"
+          },
+          "overweight_shipment_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pieces heavier than this (lbs) are placed at the trailer rear",
+            "title": "Overweight Shipment Threshold"
+          },
+          "piece_arrangement_algorithm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Piece-arrangement algorithm key (default GREEDY_STACK)",
+            "title": "Piece Arrangement Algorithm"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Seed numpy.random for a reproducible plan (same request -> same load_order)",
+            "title": "Seed"
+          },
+          "shipment_list": {
+            "description": "Shipment lines to load",
+            "items": {
+              "$ref": "#/components/schemas/ShipmentItem"
+            },
+            "minItems": 1,
+            "title": "Shipment List",
+            "type": "array"
+          },
+          "shipment_optimization_ls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ShipmentOptimizationStage"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Ordered shipment-arrangement pipeline; default used if omitted",
+            "title": "Shipment Optimization Ls"
+          },
+          "trailer_dims": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrailerDims"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Explicit trailer dimensions; alternative to equipment_code"
+          }
+        },
+        "required": [
+          "shipment_list"
+        ],
+        "title": "OptimizeLoadRequest",
+        "type": "object"
+      },
+      "ShipmentItem": {
+        "additionalProperties": true,
+        "description": "A single shipment line. `num_pieces` expands into N identical pieces.",
+        "properties": {
+          "commodity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional passthrough commodity",
+            "title": "Commodity"
+          },
+          "desc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional passthrough description",
+            "title": "Desc"
+          },
+          "height": {
+            "description": "Piece height in inches",
+            "exclusiveMinimum": 0.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional passthrough identifier",
+            "title": "Id"
+          },
+          "length": {
+            "description": "Piece length in inches",
+            "exclusiveMinimum": 0.0,
+            "title": "Length",
+            "type": "number"
+          },
+          "num_pieces": {
+            "default": 1,
+            "description": "Number of identical pieces this line expands into",
+            "exclusiveMinimum": 0.0,
+            "title": "Num Pieces",
+            "type": "integer"
+          },
+          "packing": {
+            "description": "Packing type: 'PALLET' or 'BOX'",
+            "title": "Packing",
+            "type": "string"
+          },
+          "stack_limit": {
+            "description": "Max pieces in a vertical stack; 1 = not stackable",
+            "exclusiveMinimum": 0.0,
+            "title": "Stack Limit",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional passthrough declared value",
+            "title": "Value"
+          },
+          "weight": {
+            "description": "Piece weight in pounds",
+            "exclusiveMinimum": 0.0,
+            "title": "Weight",
+            "type": "number"
+          },
+          "width": {
+            "description": "Piece width in inches",
+            "exclusiveMinimum": 0.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "length",
+          "width",
+          "height",
+          "weight",
+          "packing",
+          "stack_limit"
+        ],
+        "title": "ShipmentItem",
+        "type": "object"
+      },
+      "ShipmentOptimizationStage": {
+        "additionalProperties": true,
+        "description": "One stage of the shipment-arrangement pipeline.",
+        "properties": {
+          "algorithm": {
+            "description": "Shipment-arrangement algorithm key",
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "max_iter": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Max iterations for this stage",
+            "title": "Max Iter"
+          },
+          "timeout": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-stage timeout in seconds",
+            "title": "Timeout"
+          }
+        },
+        "required": [
+          "algorithm"
+        ],
+        "title": "ShipmentOptimizationStage",
+        "type": "object"
+      },
+      "TrailerDims": {
+        "description": "Explicit trailer inner dimensions (inches) and max weight (pounds).",
+        "properties": {
+          "inner_height": {
+            "description": "Trailer inner height in inches",
+            "exclusiveMinimum": 0.0,
+            "title": "Inner Height",
+            "type": "number"
+          },
+          "inner_length": {
+            "description": "Trailer inner length in inches",
+            "exclusiveMinimum": 0.0,
+            "title": "Inner Length",
+            "type": "number"
+          },
+          "inner_width": {
+            "description": "Trailer inner width in inches",
+            "exclusiveMinimum": 0.0,
+            "title": "Inner Width",
+            "type": "number"
+          },
+          "max_weight": {
+            "description": "Trailer max payload in pounds",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "inner_width",
+          "inner_length",
+          "inner_height",
+          "max_weight"
+        ],
+        "title": "TrailerDims",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Containerized wrapper around the MIT-licensed ytl (yat-trailer-loading) 3D packing optimizer. Computes a linear-feet-minimizing trailer load plan from shipment geometry. Inputs are inches + pounds. Ingests no Alvys data.",
+    "title": "Value Truck Trailer-Fit Sidecar",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/equipment-types": {
+      "get": {
+        "description": "Return the predefined standard trailer/equipment dimensions (STANDARD_TRAILER_DIMS).",
+        "operationId": "equipment_types_equipment_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {},
+                  "title": "Response Equipment Types Equipment Types Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Equipment Types",
+        "tags": [
+          "reference"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Liveness/readiness probe.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "ops"
+        ]
+      }
+    },
+    "/optimize-load": {
+      "post": {
+        "description": "Compute a trailer load plan.\n\nDelegates to ytl's `optimize_trailer_load_plan_wrapper`, returning its body with the\nexact HTTP status code the wrapper produced (200 success; 4xx invalid input; 5xx /\n503 optimization failure or timeout).",
+        "operationId": "optimize_load_optimize_load_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OptimizeLoadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Optimize Load",
+        "tags": [
+          "optimize"
+        ]
+      }
+    }
+  }
+}
