@@ -35,6 +35,10 @@ public class ConsolidationControllerHealthTests
         Assert.Equal("Laredo", laredoDallas.OriginCity);
         Assert.Equal("Dallas", laredoDallas.DestinationCity);
         Assert.False(laredoDallas.Truncated);
+        // The first open load on the lane is exposed as a default seed hint so the UI can
+        // auto-populate the pilot queue on tab-load. Present because loads exist; never fabricated.
+        Assert.NotNull(laredoDallas.SeedLoadId);
+        Assert.NotNull(laredoDallas.SeedLoadNumber);
     }
 
     [Fact]
@@ -52,6 +56,9 @@ public class ConsolidationControllerHealthTests
 
         var only = Assert.Single(healths);
         Assert.Equal(0, only.OpenLoadCount);
+        // No open loads on the lane → no seed hint (never fabricated).
+        Assert.Null(only.SeedLoadId);
+        Assert.Null(only.SeedLoadNumber);
     }
 
     [Fact]

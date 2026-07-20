@@ -432,6 +432,17 @@ public sealed class CorridorHealth
 
     /// <summary>Canonical destination city sampled for this count.</summary>
     public required string DestinationCity { get; init; }
+
+    /// <summary>
+    /// The Alvys load id of the first open load on this corridor's canonical lane, if any.
+    /// Lets the UI auto-seed the candidate queue by DEFAULT (no app-settings / manual seed
+    /// required) so the pilot corridor is populated the moment the Consolidate tab opens.
+    /// <c>null</c> when the lane has no open loads or the Alvys read degraded — never fabricated.
+    /// </summary>
+    public string? SeedLoadId { get; init; }
+
+    /// <summary>Human-facing load number for <see cref="SeedLoadId"/> (preferred for display).</summary>
+    public string? SeedLoadNumber { get; init; }
 }
 
 /// <summary>Public projection of a warehouse. Never carries geolocation — Phase 1 filters on state + NearbyCities.</summary>

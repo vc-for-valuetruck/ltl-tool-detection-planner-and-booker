@@ -27,6 +27,13 @@ export interface CorridorPickerRow {
    */
   openLoadCount: number | null;
   loadedCleanly: boolean;
+  /**
+   * First open load on the corridor's canonical lane. Used to auto-seed the candidate queue by
+   * DEFAULT so the pilot corridor is populated on tab-load without a manual seed / app-settings.
+   * `null` when the lane is empty or the Alvys read degraded — never fabricated.
+   */
+  seedLoadId: string | null;
+  seedLoadNumber: string | null;
 }
 
 /**
@@ -72,6 +79,9 @@ export class Consolidate implements OnInit {
   readonly auditError = signal<string | null>(null);
   readonly auditRecord = signal<ConsolidationAuditRecord | null>(null);
   readonly copyMessage = signal<string | null>(null);
+
+  /** Guards the one-time default auto-seed so a manual search is never re-seeded out from under the user. */
+  private autoSeeded = false;
 
   readonly hasSelection = computed(() => this.selectedSiblingIds().size > 0);
   readonly canBuildPlan = computed(
@@ -161,9 +171,12 @@ export class Consolidate implements OnInit {
             destinationName: c.destination.name,
             openLoadCount: healthByCode.get(c.code)?.openLoadCount ?? null,
             loadedCleanly: healthByCode.has(c.code) && healthByCode.get(c.code)?.openLoadCount !== null,
+            seedLoadId: healthByCode.get(c.code)?.seedLoadId ?? null,
+            seedLoadNumber: healthByCode.get(c.code)?.seedLoadNumber ?? null,
           })),
         );
         this.loadingCorridors.set(false);
+        this.maybeAutoSeedQueue();
       },
       error: () => {
         // Corridors are non-essential for the seed-based workflow — the picker's absence is
@@ -181,9 +194,30 @@ export class Consolidate implements OnInit {
     this.candidateResponse.set(null);
     this.selectedSiblingIds.set(new Set<string>());
     this.plan.set(null);
+    // A corridor switch is a deliberate re-seed: auto-seed the newly-selected corridor's queue.
+    this.autoSeeded = false;
+    this.maybeAutoSeedQueue();
   }
 
-  loadCandidates(): void {
+  /**
+   * Populate the candidate queue by DEFAULT — no manual seed or app-settings required — so the
+   * pilot corridor is live the moment the Consolidate tab opens (matches the approved mockup).
+   * Uses the first open load on the corridor's canonical lane (from /corridors/health) as the
+   * seed, then auto-selects the first eligible sibling so the Current plan panel fills in too.
+   * Runs at most once per corridor selection and never overrides a seed the dispatcher typed.
+   */
+  private maybeAutoSeedQueue(): void {
+    if (this.autoSeeded) return;
+    if (this.seedInput().trim() || this.candidateResponse()) return;
+    const row = this.corridors().find((r) => r.code === this.selectedCorridor());
+    const seed = row?.seedLoadNumber ?? row?.seedLoadId ?? null;
+    if (!seed) return;
+    this.autoSeeded = true;
+    this.seedInput.set(seed);
+    this.loadCandidates({ autoSelectFirstSibling: true });
+  }
+
+  loadCandidates(opts?: { autoSelectFirstSibling?: boolean }): void {
     const seed = this.seedInput().trim();
     if (!seed) return;
     this.loadingCandidates.set(true);
@@ -199,6 +233,13 @@ export class Consolidate implements OnInit {
       next: (response) => {
         this.candidateResponse.set(response);
         this.loadingCandidates.set(false);
+        // On the default auto-seed path, pre-select the first eligible sibling so the Current
+        // plan economics render immediately — matching the mockup's populated panel. A manual
+        // search leaves selection to the dispatcher.
+        if (opts?.autoSelectFirstSibling) {
+          const first = response.candidates.find((c) => !c.isBlocked);
+          if (first) this.toggleSibling(first);
+        }
       },
       error: (err) => {
         this.candidateError.set(err?.error?.error ?? err?.message ?? 'Failed to load candidates.');

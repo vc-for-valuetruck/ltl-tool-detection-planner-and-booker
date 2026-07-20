@@ -1,9 +1,10 @@
 import { PlanDetail } from './plan-detail';
 import { LtlLoadSummary } from './ltl.models';
-import { ConsolidationTrailerFit } from './consolidation.models';
+import { ConsolidationAuditRecord, ConsolidationTrailerFit } from './consolidation.models';
 import { LtlService } from './ltl.service';
 import { ConsolidationService } from './consolidation.service';
 import { TestBed } from '@angular/core/testing';
+import { of, throwError } from 'rxjs';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 
 /**
@@ -16,7 +17,10 @@ function load(partial: Partial<LtlLoadSummary>): LtlLoadSummary {
 }
 
 describe('PlanDetail', () => {
-  function newComponent(navState: Record<string, unknown> | null = null): PlanDetail {
+  function newComponent(
+    navState: Record<string, unknown> | null = null,
+    consolidationStub: Partial<ConsolidationService> = {},
+  ): PlanDetail {
     const routeStub = {
       snapshot: { paramMap: convertToParamMap({}), queryParamMap: convertToParamMap({}) },
     };
@@ -28,7 +32,7 @@ describe('PlanDetail', () => {
         { provide: ActivatedRoute, useValue: routeStub },
         { provide: Router, useValue: routerStub },
         { provide: LtlService, useValue: {} },
-        { provide: ConsolidationService, useValue: {} },
+        { provide: ConsolidationService, useValue: consolidationStub },
       ],
     });
     return TestBed.runInInjectionContext(() => new PlanDetail());
@@ -141,6 +145,96 @@ describe('PlanDetail', () => {
       const c = newComponent();
       expect(c.formatLinearFeet(24.5)).toBe('24.5 ft');
       expect(c.formatLinearFeet(undefined)).toBe('—');
+    });
+  });
+
+  describe('loading-order labels (item 5)', () => {
+    it('assigns mid to the first sibling and tail to the second', () => {
+      const c = newComponent();
+      expect(c.loadPosition(0)).toBe('mid');
+      expect(c.loadPosition(1)).toBe('tail');
+      expect(c.loadPosition(2)).toBe('mid');
+    });
+  });
+
+  describe('individual RPM + uplift line (item 7)', () => {
+    it('averages each load own RPM, skipping loads missing revenue or miles', () => {
+      const c = newComponent();
+      c.parent.set(load({ id: 'P', revenue: 2000, mileage: 1000 }));
+      c.siblings.set([
+        load({ id: 'S1', revenue: 3000, mileage: 1000 }),
+        load({ id: 'S2', revenue: undefined, mileage: 1000 }),
+      ]);
+      // parent 2, S1 3, S2 skipped → (2+3)/2 = 2.5
+      expect(c.individualRpm()).toBe(2.5);
+    });
+
+    it('summarizes dollars and RPM percent', () => {
+      const c = newComponent();
+      c.parent.set(load({ id: 'P', revenue: 5000, mileage: 1000 }));
+      c.siblings.set([load({ id: 'S1', revenue: 3000, mileage: 1000 })]);
+      // uplift $3000; combined RPM 8, individual (5+3)/2=4 → +100% RPM
+      expect(c.upliftLine()).toContain('+$3,000 combined revenue');
+      expect(c.upliftLine()).toContain('+100% RPM');
+      expect(c.upliftLine()).toContain('vs individual dispatch');
+    });
+
+    it('degrades to a dash line when nothing is computable', () => {
+      const c = newComponent();
+      expect(c.upliftLine()).toBe('— vs individual dispatch');
+    });
+  });
+
+  describe('recordAudit (item 7)', () => {
+    function auditRecord(): ConsolidationAuditRecord {
+      return {
+        id: 'audit-1',
+        corridorCode: 'LAREDO_TO_DALLAS',
+        parentLoadId: 'P',
+        siblingLoadIds: ['S1'],
+        siblingLoadNumbers: ['L-2'],
+        blockers: [],
+        alvysWriteback: 'NotPerformed',
+        recordedBy: 'demo.user',
+        recordedAt: '2026-07-20T00:00:00Z',
+      };
+    }
+
+    it('records the audit and stores the returned record', () => {
+      const c = newComponent(null, { recordPlanAudit: () => of(auditRecord()) });
+      c.parent.set(load({ id: 'P' }));
+      c.siblings.set([load({ id: 'S1' })]);
+      c.recordAudit();
+      expect(c.auditRecord()?.id).toBe('audit-1');
+      expect(c.recordingAudit()).toBeFalse();
+      expect(c.auditError()).toBeNull();
+    });
+
+    it('surfaces an error and clears the recording flag on failure', () => {
+      const c = newComponent(null, {
+        recordPlanAudit: () => throwError(() => ({ message: 'boom' })),
+      });
+      c.parent.set(load({ id: 'P' }));
+      c.siblings.set([load({ id: 'S1' })]);
+      c.recordAudit();
+      expect(c.auditRecord()).toBeNull();
+      expect(c.auditError()).toBe('boom');
+      expect(c.recordingAudit()).toBeFalse();
+    });
+
+    it('does not double-record once a record exists', () => {
+      let calls = 0;
+      const c = newComponent(null, {
+        recordPlanAudit: () => {
+          calls++;
+          return of(auditRecord());
+        },
+      });
+      c.parent.set(load({ id: 'P' }));
+      c.siblings.set([load({ id: 'S1' })]);
+      c.recordAudit();
+      c.recordAudit();
+      expect(calls).toBe(1);
     });
   });
 });

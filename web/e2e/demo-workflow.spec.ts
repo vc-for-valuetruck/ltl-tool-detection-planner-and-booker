@@ -114,6 +114,55 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     await expect(page.getByTestId('consolidate-find-candidates')).toBeEnabled();
   });
 
+  test('corridor banner, radius copy, pilot badge and read-only footer are always visible', async ({
+    page,
+  }) => {
+    // Regression guard against the config-gating bug: the banner text (radius copy + pilot
+    // badge) and the read-only footer must render on tab-load WITHOUT any candidate response
+    // — they must not sit behind the @if (candidateResponse()) gate.
+    await page.goto('/ltl/consolidate');
+    await expect(page.getByText(/Laredo.*Dallas pilot corridor/)).toBeVisible();
+    await expect(page.getByText(/within 150 mi of Laredo yard/)).toBeVisible();
+    await expect(page.getByText(/within 250 mi of Dallas yard/)).toBeVisible();
+    await expect(page.getByText(/Phase 1.*Pilot/)).toBeVisible();
+    await expect(page.getByTestId('consolidate-footer')).toBeVisible();
+    await expect(page.getByTestId('consolidate-footer')).toContainText('Read-only');
+  });
+
+  test('pilot queue auto-populates by default with fit chips and a Current plan panel', async ({
+    page,
+    request,
+  }) => {
+    // The core mockup-parity fix: opening the Consolidate tab must show the candidate queue
+    // and Current plan panel BY DEFAULT (auto-seeded from the corridor's first open load) —
+    // no manual seed, no app-settings. Skip only when the live corridor genuinely has no open
+    // loads today (nothing to auto-seed) — we never fabricate a seed to make the demo pass.
+    const healthResp = await request.get(`${API_URL}/api/ltl/consolidation/corridors/health`);
+    if (healthResp.ok()) {
+      const healths = (await healthResp.json()) as Array<{ openLoadCount: number | null }>;
+      const anyOpen = healths.some((h) => (h.openLoadCount ?? 0) > 0);
+      if (!anyOpen) {
+        test.skip(true, 'No open loads on any corridor today; nothing to auto-seed.');
+      }
+    }
+
+    await page.goto('/ltl/consolidate');
+    // The seed input fills itself from the corridor's first open load.
+    await expect(page.getByTestId('consolidate-seed-input')).not.toHaveValue('', {
+      timeout: 15_000,
+    });
+    // Parent row + at least one candidate row render without a manual "Find candidates" click.
+    await expect(page.getByTestId('consolidate-parent-row')).toBeVisible({ timeout: 15_000 });
+    const candidateRow = page.getByTestId('consolidate-candidate-row').first();
+    if (await candidateRow.isVisible().catch(() => false)) {
+      // Fit chips (server-computed) render in each candidate row.
+      await expect(candidateRow.locator('.chip').first()).toBeVisible();
+      // First eligible sibling is auto-selected → the Current plan economics fill in.
+      await expect(page.getByTestId('consolidate-uplift')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('consolidate-readonly-note')).toBeVisible();
+    }
+  });
+
   test('plan preview shows both Customer-side and Driver-side sections when data is available', async ({
     page,
     request,

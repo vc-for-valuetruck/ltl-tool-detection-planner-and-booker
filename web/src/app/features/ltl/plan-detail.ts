@@ -5,7 +5,7 @@ import { forkJoin } from 'rxjs';
 import { LtlService } from './ltl.service';
 import { LtlLoadSummary } from './ltl.models';
 import { ConsolidationService } from './consolidation.service';
-import { ConsolidationTrailerFit } from './consolidation.models';
+import { ConsolidationAuditRecord, ConsolidationTrailerFit } from './consolidation.models';
 import { LtlNav } from './ltl-nav';
 
 type GapTone = 'amber' | 'blue' | 'green';
@@ -56,6 +56,19 @@ export class PlanDetail implements OnInit {
    * falls back to the honest "verify at dock" copy rather than implying a fit was checked.
    */
   readonly trailerFit = signal<ConsolidationTrailerFit | null>(null);
+
+  /**
+   * Server-assigned preview id for this plan (from the plan-preview response). Shown as the
+   * audit-trail "Plan id" before the plan is recorded; once recorded, the persisted audit id
+   * takes over. Null until the preview resolves — never fabricated.
+   */
+  readonly previewPlanId = signal<string | null>(null);
+
+  // Audit-trail record state. The plan-detail can record the plan as an internal audit entry
+  // ("Save audit only") without generating a click card — read-only, nothing writes to Alvys.
+  readonly recordingAudit = signal(false);
+  readonly auditError = signal<string | null>(null);
+  readonly auditRecord = signal<ConsolidationAuditRecord | null>(null);
 
   /** True when the fit verdict is a hard fail: packer rejected OR combined capacity exceeded. */
   readonly trailerFitFails = computed(() => this.trailerFit()?.verdict === 'DoesNotFit');
@@ -115,6 +128,41 @@ export class PlanDetail implements OnInit {
   readonly combinedRpm = computed(() => {
     const miles = this.parentLinehaulMiles();
     return miles && miles > 0 ? this.combinedRevenue() / miles : null;
+  });
+
+  /**
+   * "If sold individually" RPM = average of each load's own RPM (its revenue ÷ its own miles).
+   * Loads missing revenue or miles are skipped, never zeroed; null when nothing is computable.
+   */
+  readonly individualRpm = computed<number | null>(() => {
+    const rpms: number[] = [];
+    for (const load of this.allLoads()) {
+      const miles = load.mileage;
+      if (load.revenue != null && miles != null && miles > 0) {
+        rpms.push(load.revenue / miles);
+      }
+    }
+    if (rpms.length === 0) return null;
+    return rpms.reduce((a, b) => a + b, 0) / rpms.length;
+  });
+
+  /** RPM uplift vs individual dispatch as a whole-percent delta. Null when uncomputable. */
+  readonly projectedUpliftRpmPct = computed<number | null>(() => {
+    const combined = this.combinedRpm();
+    const individual = this.individualRpm();
+    if (combined == null || individual == null || individual <= 0) return null;
+    return (combined / individual - 1) * 100;
+  });
+
+  /** One-line uplift summary for the audit trail. Only the parts we can compute are shown. */
+  readonly upliftLine = computed<string>(() => {
+    const dollars = this.projectedUplift();
+    const pct = this.projectedUpliftRpmPct();
+    const parts: string[] = [];
+    if (dollars != null) parts.push(`+${this.formatCurrency(dollars)} combined revenue`);
+    if (pct != null) parts.push(`+${Math.round(pct)}% RPM`);
+    if (parts.length === 0) return '— vs individual dispatch';
+    return `${parts.join(' · ')} vs individual dispatch`;
   });
 
   readonly totalWeight = computed(() => {
@@ -213,9 +261,47 @@ export class PlanDetail implements OnInit {
     this.consolidation
       .buildPlan({ parentLoadId, siblingLoadIds })
       .subscribe({
-        next: (plan) => this.trailerFit.set(plan.trailerFit ?? null),
+        next: (plan) => {
+          this.trailerFit.set(plan.trailerFit ?? null);
+          this.previewPlanId.set(plan.previewId ?? null);
+        },
         error: () => this.trailerFit.set(null),
       });
+  }
+
+  /**
+   * Records this plan as an internal audit entry ("Save audit only"). Read-only against Alvys —
+   * the audit store is internal-only; nothing is written upstream. Idempotent from the UI: the
+   * button disables once a record exists so leadership sees a single row per deliberate save.
+   */
+  recordAudit(): void {
+    const parent = this.parent();
+    if (!parent || this.recordingAudit() || this.auditRecord()) return;
+    const parentLoadId = parent.id;
+    const siblingLoadIds = this.siblings().map((s) => s.id).filter(Boolean);
+    if (!parentLoadId || siblingLoadIds.length === 0) return;
+
+    this.recordingAudit.set(true);
+    this.auditError.set(null);
+    this.consolidation.recordPlanAudit({ parentLoadId, siblingLoadIds }).subscribe({
+      next: (record) => {
+        this.auditRecord.set(record);
+        this.recordingAudit.set(false);
+      },
+      error: (err) => {
+        this.auditError.set(err?.error?.error ?? err?.message ?? 'Failed to record audit.');
+        this.recordingAudit.set(false);
+      },
+    });
+  }
+
+  /**
+   * Suggested loading order for a sibling by its index. Parent takes the nose; siblings fill
+   * mid then tail. A loading-sequence convention, not a dock-verified placement — the trailer
+   * plan is explicitly "visual only, dims not verified".
+   */
+  loadPosition(index: number): string {
+    return index === 0 ? 'mid' : index === 1 ? 'tail' : 'mid';
   }
 
   openClickCard(): void {

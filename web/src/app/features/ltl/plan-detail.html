@@ -48,7 +48,7 @@
                 {{ p.weightLbs ? (formatNumber(p.weightLbs) + ' lb') : '— lb' }} ·
                 <span class="missing-pallets">-- pallets</span>
               </span>
-              <span class="trailer-slot-tag">POSITION 1 · PARENT <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
+              <span class="trailer-slot-tag">PARENT · nose-load <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
             </a>
 
             @for (s of siblings(); track s.id; let i = $index) {
@@ -66,7 +66,7 @@
                   {{ s.weightLbs ? (formatNumber(s.weightLbs) + ' lb') : '— lb' }} ·
                   <span class="missing-pallets">-- pallets</span>
                 </span>
-                <span class="trailer-slot-tag">POSITION {{ i + 2 }} · SIBLING <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
+                <span class="trailer-slot-tag">SIBLING · {{ loadPosition(i) }} <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
               </a>
             }
 
@@ -198,12 +198,15 @@
             <strong>{{ formatNumber(parentLinehaulMiles()) }}</strong>
           </div>
           <div class="econ-row" data-testid="child-miles-row">
-            <span>Child load miles (not billed again)</span>
-            <strong>{{ formatNumber(childLoadedMiles()) }}</strong>
+            <span>Sibling child miles (Alvys → target)</span>
+            <strong data-testid="child-miles-target">
+              {{ formatNumber(childLoadedMiles()) }} <span aria-hidden="true">→</span> 0 (manual)
+            </strong>
           </div>
           <p class="econ-note-amber" data-testid="child-miles-note">
-            Child loads ride the parent's linehaul — their loaded miles are zeroed in Alvys so the
-            driver isn't paid twice for the same miles.
+            Live Alvys child miles shown first; Phase 1 target is 0 — the dispatcher zeros them
+            manually in Alvys so the driver isn't paid twice for the parent's linehaul. Nothing is
+            written automatically.
           </p>
           <div class="econ-row econ-row-bold">
             <span>Combined RPM</span>
@@ -212,21 +215,47 @@
         </div>
 
         <div class="card" data-testid="audit-trail">
-          <h2>Audit trail</h2>
-          <ul class="audit-list">
-            <li>
-              <span class="audit-dot" aria-hidden="true"></span>
-              Plan previewed from live Alvys — {{ p.loadNumber ?? p.id }} + {{ siblings().length }} sibling(s)
-            </li>
-            <li>
-              <span class="audit-dot" aria-hidden="true"></span>
-              No writes to Alvys — read-only preview
-            </li>
-            <li>
-              <span class="audit-dot" aria-hidden="true"></span>
-              Recorded to the internal audit log only when a dispatcher saves this plan
-            </li>
-          </ul>
+          <h2>Audit trail <span class="audit-subhead">(recorded even if no click card is generated)</span></h2>
+          <dl class="audit-dl">
+            <dt>Plan id</dt>
+            <dd data-testid="audit-plan-id">{{ auditRecord()?.id ?? previewPlanId() ?? '—' }}</dd>
+
+            <dt>Created by</dt>
+            <dd data-testid="audit-created-by">
+              @if (auditRecord(); as rec) {
+                {{ rec.recordedBy }} · {{ rec.recordedAt | date: 'medium' }}
+              } @else {
+                Not yet recorded — “Save audit only” to record
+              }
+            </dd>
+
+            <dt>Alvys writeback status</dt>
+            <dd data-testid="audit-writeback">Not performed (read-only)</dd>
+
+            <dt>Projected uplift</dt>
+            <dd data-testid="audit-uplift">{{ upliftLine() }}</dd>
+          </dl>
+
+          <div class="audit-actions">
+            <button
+              type="button"
+              class="btn-save-audit"
+              data-testid="save-audit-only"
+              [disabled]="recordingAudit() || !!auditRecord()"
+              (click)="recordAudit()"
+            >
+              {{ recordingAudit() ? 'Saving…' : (auditRecord() ? 'Saved' : 'Save audit only') }}
+            </button>
+          </div>
+
+          @if (auditError()) {
+            <p class="error" data-testid="audit-error">{{ auditError() }}</p>
+          }
+          @if (auditRecord()) {
+            <p class="audit-confirm" data-testid="audit-confirm">
+              Recorded internally — nothing written to Alvys.
+            </p>
+          }
         </div>
 
         <div class="card card-dark">
