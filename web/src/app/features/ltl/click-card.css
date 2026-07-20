@@ -268,7 +268,10 @@
 }
 
 .did-good li::before {
-  content: '\\2713';
+  /* U+2713 CHECK MARK — CSS content requires a single-backslash Unicode escape.
+     Double-escaping produced the literal string '\2713' next to each bullet in
+     the click-card sidebar. Direct character kept for redundancy. */
+  content: '✓';
   position: absolute;
   left: 0;
   color: var(--success);
@@ -282,7 +285,8 @@
 }
 
 .did-not li::before {
-  content: '\\2013';
+  /* U+2013 EN DASH — direct character avoids the same double-escape trap. */
+  content: '–';
   position: absolute;
   left: 0;
   color: var(--text-muted);
