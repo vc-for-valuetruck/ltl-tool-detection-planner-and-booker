@@ -155,6 +155,7 @@ public sealed class ConsolidationCandidateService(
             ScheduledDeliveryAt = candidate.ScheduledDeliveryAt,
             Revenue = candidate.Revenue,
             WeightLbs = candidate.WeightLbs,
+            EdiEnrichment = candidate.EdiEnrichment,
             CorridorCode = corridor.Code,
             Factors = factors,
             IsBlocked = blocked,

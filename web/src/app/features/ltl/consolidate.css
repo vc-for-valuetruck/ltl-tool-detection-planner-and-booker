@@ -441,6 +441,19 @@ table.grid td {
   font-size: 11px;
 }
 
+.edi-source-badge {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--success-text);
+  background: var(--success-bg);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
 /* Uplift + audit + actions on the Current plan card */
 .uplift-line {
   font-size: 13px;

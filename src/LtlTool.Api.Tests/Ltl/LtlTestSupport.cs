@@ -95,6 +95,7 @@ internal class FakeAlvysClient : IAlvysClient
     public List<AlvysTruckEvent> TruckEvents { get; set; } = [];
     public List<AlvysTrailerEvent> TrailerEvents { get; set; } = [];
     public List<AlvysCustomer> Customers { get; set; } = [];
+    public List<AlvysTender> Tenders { get; set; } = [];
     public int SearchCustomersCallCount { get; private set; }
 
     public Task<AlvysLoadsResponse> SearchLoadsAsync(
@@ -163,7 +164,24 @@ internal class FakeAlvysClient : IAlvysClient
     public Task<AlvysUsersResponse> SearchUsersAsync(UserSearchRequest request, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<AlvysTendersResponse> SearchTendersAsync(TenderSearchRequest request, CancellationToken ct = default)
-        => throw new NotSupportedException();
+    {
+        IEnumerable<AlvysTender> matched = Tenders;
+        var loadNumber = request.Filter?.LoadNumber;
+        var shipmentId = request.Filter?.ShipmentId;
+        if (!string.IsNullOrWhiteSpace(loadNumber))
+            matched = matched.Where(t => string.Equals(t.LoadNumber, loadNumber, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(shipmentId))
+            matched = matched.Where(t => string.Equals(t.ShipmentId, shipmentId, StringComparison.OrdinalIgnoreCase));
+
+        var items = matched.ToList();
+        return Task.FromResult(new AlvysTendersResponse
+        {
+            Page = request.Page,
+            PageSize = request.PageSize,
+            Total = items.Count,
+            Items = items,
+        });
+    }
     public Task<AlvysTender?> GetTenderByIdAsync(string tenderId, CancellationToken ct = default)
         => throw new NotSupportedException();
 

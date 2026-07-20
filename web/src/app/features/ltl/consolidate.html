@@ -135,8 +135,15 @@
                 <td>{{ formatDate(response.seed.scheduledPickupAt) }}</td>
                 <td>
                   <div class="wp-cell">
-                    <span>{{ response.seed.weightLbs ? (formatNumber(response.seed.weightLbs) + ' lb') : '— lb' }}</span>
-                    <span class="wp-pallets muted">— pallets · visual verify</span>
+                    <span>{{ weightCellLabel(response.seed) }}</span>
+                    <span
+                      class="wp-pallets"
+                      [class.muted]="!ediSourced(response.seed)"
+                      [attr.title]="palletCellTitle(response.seed)"
+                    >{{ palletCellLabel(response.seed) }}</span>
+                    @if (ediSourced(response.seed)) {
+                      <span class="edi-source-badge" [attr.title]="response.seed.ediEnrichment?.matchedOn">EDI tender</span>
+                    }
                   </div>
                 </td>
                 <td><span class="chip chip-good">Good</span></td>
@@ -176,8 +183,15 @@
                   <td>{{ formatDate(candidate.scheduledPickupAt) }}</td>
                   <td>
                     <div class="wp-cell">
-                      <span>{{ candidate.weightLbs ? (formatNumber(candidate.weightLbs) + ' lb') : '— lb' }}</span>
-                      <span class="wp-pallets muted">— pallets · visual verify</span>
+                      <span>{{ weightCellLabel(candidate) }}</span>
+                      <span
+                        class="wp-pallets"
+                        [class.muted]="!ediSourced(candidate)"
+                        [attr.title]="palletCellTitle(candidate)"
+                      >{{ palletCellLabel(candidate) }}</span>
+                      @if (ediSourced(candidate)) {
+                        <span class="edi-source-badge" [attr.title]="candidate.ediEnrichment?.matchedOn">EDI tender</span>
+                      }
                     </div>
                   </td>
                   <td [title]="factorFit(candidate, 'Lane fit')?.rationale ?? ''">

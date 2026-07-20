@@ -1,4 +1,4 @@
-import { LtlLoadSummary } from './ltl.models';
+import { LtlEdiEnrichment, LtlLoadSummary } from './ltl.models';
 
 /**
  * TypeScript mirrors of the C# consolidation API contracts. Kept intentionally narrow so the
@@ -33,6 +33,11 @@ export interface ConsolidationCandidate {
   scheduledDeliveryAt?: string;
   revenue?: number;
   weightLbs?: number;
+  /**
+   * EDI-tender pallet/piece/weight/volume detail married onto this candidate (Phase 7.2). Null when
+   * no inbound tender shared an identifier — pallet data then stays honestly unknown.
+   */
+  ediEnrichment?: LtlEdiEnrichment | null;
   corridorCode: string;
   factors: ConsolidationFactor[];
   isBlocked: boolean;
@@ -62,6 +67,11 @@ export interface ConsolidationPlanSibling {
   scheduledDeliveryAt?: string;
   revenue?: number;
   weightLbs?: number;
+  /**
+   * EDI-tender pallet/piece/weight/volume detail married onto this sibling (Phase 7.2). Null when
+   * no inbound tender shared an identifier — pallet data then stays honestly unknown.
+   */
+  ediEnrichment?: LtlEdiEnrichment | null;
   /** Driver-facing trip rate (Trip.TripValue.Amount). Null when no trip is fetched. */
   driverTripRate?: number;
   /** Driver-facing loaded miles (Trip.LoadedMileage.Distance.Value). */

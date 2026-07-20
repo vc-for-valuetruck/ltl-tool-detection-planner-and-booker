@@ -267,7 +267,12 @@ export class PlanDetail implements OnInit {
     const gaps: HonestGap[] = [];
 
     for (const load of loads) {
-      if (load.weightLbs !== null && load.weightLbs !== undefined) {
+      if (load.ediEnrichment?.palletEstimate != null) {
+        gaps.push({
+          tone: 'green',
+          text: `Load ${load.loadNumber ?? load.id} ~${this.formatNumber(load.ediEnrichment.palletEstimate)} pallets (est. from EDI tender) — visual verify at dock`,
+        });
+      } else {
         gaps.push({
           tone: 'amber',
           text: `Load ${load.loadNumber ?? load.id} pallet count is missing — visual verify at dock`,
@@ -476,6 +481,41 @@ export class PlanDetail implements OnInit {
       default:
         return null;
     }
+  }
+
+  /**
+   * Pallet label for a trailer slot (Phase 7.2). When a matched EDI tender supplied a volume, show
+   * the estimate explicitly labelled "(est.)"; otherwise keep the honest "— pallets" and let
+   * {@link palletTitle} explain the dock-verify caveat. Never presents an estimate as verified.
+   */
+  palletLabel(load: LtlLoadSummary): string {
+    const est = load.ediEnrichment?.palletEstimate;
+    return est != null ? `~${this.formatNumber(est)} pallets (est.)` : '— pallets';
+  }
+
+  /** Tooltip behind {@link palletLabel}: the tender-derived math, or the dock-verify caveat. */
+  palletTitle(load: LtlLoadSummary): string {
+    return (
+      load.ediEnrichment?.palletBasis ??
+      'Pallet count not on the load or any matched tender — visual verify at dock.'
+    );
+  }
+
+  /** Weight label preferring the load's own weight, falling back to a matched tender's weight. */
+  weightLabel(load: LtlLoadSummary): string {
+    const weight = load.weightLbs ?? load.ediEnrichment?.weightLbs ?? null;
+    return weight != null ? `${this.formatNumber(weight)} lb` : '— lb';
+  }
+
+  /** Pieces from a matched EDI tender, or null when unknown. */
+  pieceLabel(load: LtlLoadSummary): string | null {
+    const pieces = load.ediEnrichment?.pieceCount;
+    return pieces != null ? `${this.formatNumber(pieces)} pcs` : null;
+  }
+
+  /** True when any dimension on this load came from a matched EDI tender (drives the source badge). */
+  ediSourced(load: LtlLoadSummary): boolean {
+    return !!load.ediEnrichment;
   }
 
   formatCurrency(value: number | null | undefined): string {

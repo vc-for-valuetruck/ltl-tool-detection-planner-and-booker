@@ -207,6 +207,17 @@ public sealed class LtlLoadSummary
     public decimal? WeightLbs { get; init; }
     public decimal? Volume { get; init; }
 
+    /// <summary>
+    /// Pallet/piece/weight/volume detail married onto this load from a matched inbound EDI tender
+    /// (Phase 7.2). The load record itself frequently lacks these dimensions; the EDI tender that
+    /// created the freight carries them per stop. Populated only when a tender shares an identifier
+    /// (ShipmentId / LoadNumber / order PO number or reference id) with this load — otherwise the
+    /// load's pallet/piece data honestly stays <c>null</c> (unknown), never fabricated. The pallet
+    /// count in <see cref="LtlEdiEnrichment.PalletEstimate"/> is always an estimate, never a
+    /// verified count.
+    /// </summary>
+    public LtlEdiEnrichment? EdiEnrichment { get; init; }
+
     /// <summary>Customer-facing revenue (rate). Null when no rate is on the load.</summary>
     public decimal? Revenue { get; init; }
     public decimal? Mileage { get; init; }
@@ -280,6 +291,45 @@ public sealed class LtlLoadSummary
 
     [JsonIgnore]
     public bool HasExceptions => Exceptions.Count > 0;
+}
+
+/// <summary>
+/// Pallet/piece/weight/volume detail lifted from a matched inbound EDI tender (Phase 7.2). Every
+/// field carries the <see cref="Source"/> label so the UI always shows where the number came from,
+/// and <see cref="PalletEstimate"/> is explicitly an estimate (see <see cref="PalletBasis"/> for
+/// the math) — never presented as a verified pallet count. Absent entirely when no tender matched.
+/// </summary>
+public sealed class LtlEdiEnrichment
+{
+    /// <summary>Fixed provenance label shown next to every enriched value. Always "EDI tender".</summary>
+    public string Source { get; init; } = "EDI tender";
+
+    /// <summary>The matched tender's <c>ShipmentId</c>, for audit/traceability.</summary>
+    public string? TenderShipmentId { get; init; }
+
+    /// <summary>
+    /// Which identifiers joined the load to the tender (e.g. "load OrderNumber = tender ShipmentId"),
+    /// so a dispatcher can see the match was real and not guessed.
+    /// </summary>
+    public string? MatchedOn { get; init; }
+
+    /// <summary>Total pieces (sum of the tender pickup stop's <c>Orders[].Quantity</c>). Null when none reported.</summary>
+    public int? PieceCount { get; init; }
+
+    /// <summary>Tender weight in pounds. Null when the tender carries no weight.</summary>
+    public decimal? WeightLbs { get; init; }
+
+    /// <summary>Tender volume in cubic feet. Null when the tender carries no volume.</summary>
+    public decimal? Volume { get; init; }
+
+    /// <summary>
+    /// Estimated pallet count derived from <see cref="Volume"/>. Always an estimate; null when the
+    /// tender reports no volume to estimate from. See <see cref="PalletBasis"/> for the exact math.
+    /// </summary>
+    public int? PalletEstimate { get; init; }
+
+    /// <summary>Human-readable derivation behind <see cref="PalletEstimate"/> for the "est." tooltip.</summary>
+    public string? PalletBasis { get; init; }
 }
 
 /// <summary>An operational exception on a load (revenue-protection / data-quality signal).</summary>

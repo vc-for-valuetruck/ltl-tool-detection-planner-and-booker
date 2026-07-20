@@ -57,7 +57,8 @@ public sealed class LtlNormalizationService(
         IReadOnlyList<LtlExceptionFlag>? extraExceptions = null,
         decimal? carrierPayable = null,
         decimal? driverTripRate = null,
-        decimal? loadedMiles = null)
+        decimal? loadedMiles = null,
+        LtlEdiEnrichment? ediEnrichment = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -173,6 +174,7 @@ public sealed class LtlNormalizationService(
             Equipment = equipment,
             WeightLbs = load.Weight is > 0 ? load.Weight : null,
             Volume = load.Volume is > 0 ? load.Volume : null,
+            EdiEnrichment = ediEnrichment,
             Revenue = revenue,
             Mileage = mileage,
             RevenuePerMile = revenuePerMile,

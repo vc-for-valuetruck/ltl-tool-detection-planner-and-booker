@@ -53,9 +53,16 @@
               <strong>{{ p.loadNumber ?? p.id }} · {{ p.customerName ?? '—' }}</strong>
               <span>{{ p.destination?.label ?? '—' }}</span>
               <span>
-                {{ p.weightLbs ? (formatNumber(p.weightLbs) + ' lb') : '— lb' }} ·
-                <span class="missing-pallets">-- pallets</span>
+                {{ weightLabel(p) }} ·
+                <span
+                  [class.missing-pallets]="!ediSourced(p)"
+                  [attr.title]="palletTitle(p)"
+                >{{ palletLabel(p) }}</span>
+                @if (pieceLabel(p); as pcs) { · {{ pcs }} }
               </span>
+              @if (ediSourced(p)) {
+                <span class="edi-source-badge" [attr.title]="p.ediEnrichment?.matchedOn">EDI tender</span>
+              }
               <span class="trailer-slot-tag">PARENT · nose-load <span class="trailer-slot-openhint" aria-hidden="true">→ detail</span></span>
             </a>
 
@@ -69,9 +76,16 @@
                 <strong>{{ s.loadNumber ?? s.id }} · {{ s.customerName ?? '—' }}</strong>
                 <span>{{ s.destination?.label ?? '—' }}</span>
                 <span>
-                  {{ s.weightLbs ? (formatNumber(s.weightLbs) + ' lb') : '— lb' }} ·
-                  <span class="missing-pallets">-- pallets</span>
+                  {{ weightLabel(s) }} ·
+                  <span
+                    [class.missing-pallets]="!ediSourced(s)"
+                    [attr.title]="palletTitle(s)"
+                  >{{ palletLabel(s) }}</span>
+                  @if (pieceLabel(s); as pcs) { · {{ pcs }} }
                 </span>
+                @if (ediSourced(s)) {
+                  <span class="edi-source-badge" [attr.title]="s.ediEnrichment?.matchedOn">EDI tender</span>
+                }
                 <span class="trailer-slot-tag">SIBLING · {{ loadPosition(i) }} <span class="trailer-slot-openhint" aria-hidden="true">→ detail</span></span>
               </a>
             }
@@ -85,7 +99,7 @@
           </div>
 
           <div class="trailer-footnote">
-            Total {{ totalWeight() !== null ? (formatNumber(totalWeight()) + ' lb') : '— lb' }} · trailer max 45,000 lb · pallet count unavailable unless verified at dock
+            Total {{ totalWeight() !== null ? (formatNumber(totalWeight()) + ' lb') : '— lb' }} · trailer max 45,000 lb · pallet counts marked "(est.)" are derived from matched EDI-tender volume — visual verify at dock
           </div>
 
           @if (trailerFit(); as fit) {

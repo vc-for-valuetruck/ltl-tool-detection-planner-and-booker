@@ -18,7 +18,8 @@ namespace LtlTool.Api.Features.Ltl;
 public sealed class LtlLoadService(
     IAlvysClient alvys, LtlNormalizationService normalizer, VisibilityAnalyzer visibility,
     AccessorialSignalAnalyzer accessorialAnalyzer, IAccessorialSignalExtractor accessorialExtractor,
-    IOptions<LtlOptions> options, TimeProvider clock)
+    IOptions<LtlOptions> options, TimeProvider clock,
+    TenderEnrichmentService? tenderEnrichment = null)
 {
     private readonly LtlOptions _options = options.Value;
 
@@ -27,7 +28,13 @@ public sealed class LtlLoadService(
     {
         var (loads, truncated) = await SweepAsync(BuildUpstreamRequest(query), ct);
 
-        var normalized = loads.Select(l => normalizer.Normalize(l)).ToList();
+        // Phase 7.2: one tender sweep enriches the whole page with EDI pallet/piece/weight/volume
+        // where a tender shares an identifier; null-safe so the search still runs with no tenders.
+        var tenderIndex = tenderEnrichment is null ? null : await tenderEnrichment.BuildIndexAsync(ct);
+        var normalized = loads
+            .Select(l => normalizer.Normalize(
+                l, ediEnrichment: tenderIndex is null ? null : tenderEnrichment!.Enrich(l, tenderIndex)))
+            .ToList();
         var filtered = normalized.Where(s => Matches(s, query));
         var sorted = ApplySort(filtered, query);
 
@@ -61,11 +68,13 @@ public sealed class LtlLoadService(
         var invoices = await FetchInvoicesForLoadAsync(loadNumber, ct);
         var tripEcon = await FetchTripEconomicsForLoadAsync(loadNumber, ct);
         var (context, visibilityExceptions) = await FetchVisibilityAsync(loadNumber, ct);
+        var ediEnrichment = tenderEnrichment is null ? null : await tenderEnrichment.EnrichOneAsync(load, ct);
         return normalizer.Normalize(
             load, documents, invoices, context, visibilityExceptions,
             carrierPayable: tripEcon.CarrierPayable,
             driverTripRate: tripEcon.DriverTripRate,
-            loadedMiles: tripEcon.LoadedMiles);
+            loadedMiles: tripEcon.LoadedMiles,
+            ediEnrichment: ediEnrichment);
     }
 
     /// <summary>
