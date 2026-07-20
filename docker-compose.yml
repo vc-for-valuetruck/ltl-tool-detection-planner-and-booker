@@ -80,6 +80,11 @@ services:
       # up, the flag must be flipped explicitly (LTL_TRAILER_FIT_ENABLED=true) to route to it.
       Ltl__Optimization__TrailerFit__Enabled: "${LTL_TRAILER_FIT_ENABLED:-false}"
       Ltl__Optimization__TrailerFit__BaseUrl: "${LTL_TRAILER_FIT_BASE_URL:-http://trailer-fit:8080}"
+      # In-memory capacity/cost solver and read-only agent command surface (Phase 2). Both
+      # default off so the API runs the Null engines locally; the E2E flags-on smoke flips
+      # them true to exercise the real engines. Neither writes to Alvys.
+      Ltl__Optimization__Solver__Enabled: "${LTL_SOLVER_ENABLED:-false}"
+      Ltl__Optimization__AgentCommands__Enabled: "${LTL_AGENT_COMMANDS_ENABLED:-false}"
     ports:
       - "5072:8080"
 

@@ -113,6 +113,13 @@ jobs:
           ALVYS_WRITEBACK_MODE: ${{ vars.ALVYS_WRITEBACK_MODE || 'Disabled' }}
           LTL_DETECTION_ENABLED: ${{ vars.LTL_DETECTION_ENABLED || 'false' }}
           LTL_DEFAULT_TIMEZONE: ${{ vars.LTL_DEFAULT_TIMEZONE || 'America/Chicago' }}
+          # Phase 2 optimization flags. UAT runs optimization ON so the pipeline exercises the
+          # real engines (read-only decision-support compute — no Alvys writes). Overridable via
+          # uat-environment vars to flip a flag off without a code change; the deploy script
+          # defaults each to true when the var is unset.
+          LTL_TRAILER_FIT_ENABLED: ${{ vars.LTL_TRAILER_FIT_ENABLED || 'true' }}
+          LTL_SOLVER_ENABLED: ${{ vars.LTL_SOLVER_ENABLED || 'true' }}
+          LTL_AGENT_COMMANDS_ENABLED: ${{ vars.LTL_AGENT_COMMANDS_ENABLED || 'true' }}
         run: ./scripts/deploy-azure-uat.sh
 
       - name: Smoke test deployment

@@ -16,6 +16,7 @@ RG=${RG:-ltl-uat-rg}
 BASE_NAME=${BASE_NAME:-ltl-uat}
 API_APP=${API_APP:-${BASE_NAME}-api}
 WEB_APP=${WEB_APP:-${BASE_NAME}-web}
+TRAILER_FIT_APP=${TRAILER_FIT_APP:-${BASE_NAME}-trailer-fit}
 SQL_DB=${SQL_DB:-${BASE_NAME}-sqldb}
 SQL_ADMIN=${SQL_ADMIN:-ltlsqladmin}
 IMAGE_TAG=${IMAGE_TAG:-$(date +%Y%m%d%H%M%S)}
@@ -30,6 +31,15 @@ ALVYS_TENANT_ID=${ALVYS_TENANT_ID:-}
 ALVYS_WRITEBACK_MODE=${ALVYS_WRITEBACK_MODE:-Disabled}
 LTL_DETECTION_ENABLED=${LTL_DETECTION_ENABLED:-false}
 LTL_DEFAULT_TIMEZONE=${LTL_DEFAULT_TIMEZONE:-America/Chicago}
+
+# Phase 2 optimization flags. UAT runs optimization ON so the pipeline exercises the real
+# engines; they still consume only Alvys-derived inputs passed in by the API. Writeback and the
+# Alvys internal API remain OFF and are never touched here — these flags are pure read-only
+# decision-support compute. The trailer-fit base URL points at the internal-only sidecar App
+# Service (resolved below once its hostname is known).
+LTL_TRAILER_FIT_ENABLED=${LTL_TRAILER_FIT_ENABLED:-true}
+LTL_SOLVER_ENABLED=${LTL_SOLVER_ENABLED:-true}
+LTL_AGENT_COMMANDS_ENABLED=${LTL_AGENT_COMMANDS_ENABLED:-true}
 
 required=(SQL_PASSWORD AZURE_AD_TENANT_ID AZURE_AD_API_CLIENT_ID AZURE_AD_CLIENT_SECRET AZURE_AD_WEB_CLIENT_ID)
 for name in "${required[@]}"; do
@@ -63,6 +73,11 @@ echo "Building and pushing Web image (tag ${IMAGE_TAG})..."
 az acr build --registry "$ACR_NAME" --resource-group "$RG" \
   --image "ltl-web:${IMAGE_TAG}" --file web/Dockerfile .
 
+echo "Building and pushing Trailer-Fit sidecar image (tag ${IMAGE_TAG})..."
+# The sidecar Dockerfile expects its own directory as the build context (COPY ytl/ app/).
+az acr build --registry "$ACR_NAME" --resource-group "$RG" \
+  --image "ltl-trailer-fit:${IMAGE_TAG}" --file services/trailer-fit/Dockerfile services/trailer-fit
+
 ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --resource-group "$RG" --query loginServer -o tsv)
 ACR_USER=$(az acr credential show --name "$ACR_NAME" --resource-group "$RG" --query username -o tsv)
 ACR_PASS=$(az acr credential show --name "$ACR_NAME" --resource-group "$RG" --query "passwords[0].value" -o tsv)
@@ -81,13 +96,24 @@ az webapp config container set --name "$WEB_APP" --resource-group "$RG" \
   --docker-registry-server-user "$ACR_USER" \
   --docker-registry-server-password "$ACR_PASS" >/dev/null
 
+echo "Pointing $TRAILER_FIT_APP at the new Trailer-Fit image..."
+az webapp config container set --name "$TRAILER_FIT_APP" --resource-group "$RG" \
+  --docker-custom-image-name "${ACR_LOGIN_SERVER}/ltl-trailer-fit:${IMAGE_TAG}" \
+  --docker-registry-server-url "https://${ACR_LOGIN_SERVER}" \
+  --docker-registry-server-user "$ACR_USER" \
+  --docker-registry-server-password "$ACR_PASS" >/dev/null
+
 SQL_CONNECTION_STRING="Server=tcp:${SQL_SERVER}.database.windows.net,1433;Initial Catalog=${SQL_DB};Persist Security Info=False;User ID=${SQL_ADMIN};Password=${SQL_PASSWORD};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
 
 echo "Fetching app URLs..."
 WEB_FQDN=$(az webapp show --name "$WEB_APP" --resource-group "$RG" --query defaultHostName -o tsv)
 API_FQDN=$(az webapp show --name "$API_APP" --resource-group "$RG" --query defaultHostName -o tsv)
+TRAILER_FIT_FQDN=$(az webapp show --name "$TRAILER_FIT_APP" --resource-group "$RG" --query defaultHostName -o tsv)
 WEB_URL="https://${WEB_FQDN}"
 API_URL="https://${API_FQDN}"
+# The API reaches the sidecar over the platform network (its public ingress is service-tag locked
+# to AzureCloud). HTTPS via the App Service default hostname is the supported in-Azure path.
+TRAILER_FIT_URL="https://${TRAILER_FIT_FQDN}"
 
 echo "Configuring $API_APP application settings..."
 az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --settings \
@@ -110,6 +136,10 @@ az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --sett
   Alvys__Writeback__Mode="$ALVYS_WRITEBACK_MODE" \
   Ltl__DetectionEnabled="$LTL_DETECTION_ENABLED" \
   Ltl__DefaultTimezone="$LTL_DEFAULT_TIMEZONE" \
+  Ltl__Optimization__TrailerFit__Enabled="$LTL_TRAILER_FIT_ENABLED" \
+  Ltl__Optimization__TrailerFit__BaseUrl="$TRAILER_FIT_URL" \
+  Ltl__Optimization__Solver__Enabled="$LTL_SOLVER_ENABLED" \
+  Ltl__Optimization__AgentCommands__Enabled="$LTL_AGENT_COMMANDS_ENABLED" \
   >/dev/null
 
 echo "Configuring $WEB_APP application settings..."
@@ -122,14 +152,18 @@ az webapp config appsettings set --name "$WEB_APP" --resource-group "$RG" --sett
   RUNTIME_API_BASE_URL=/api \
   >/dev/null
 
-echo "Restarting $API_APP and $WEB_APP..."
+# Restart the sidecar first so it is live before the API (which now points at it) comes back up.
+echo "Restarting $TRAILER_FIT_APP, $API_APP and $WEB_APP..."
+az webapp restart --name "$TRAILER_FIT_APP" --resource-group "$RG" >/dev/null
 az webapp restart --name "$API_APP" --resource-group "$RG" >/dev/null
 az webapp restart --name "$WEB_APP" --resource-group "$RG" >/dev/null
 
 echo ""
-echo "Done. Web:    $WEB_URL"
-echo "      API:    $API_URL"
-echo "      Health: ${API_URL}/api/health"
+echo "Done. Web:         $WEB_URL"
+echo "      API:         $API_URL"
+echo "      Trailer-fit: $TRAILER_FIT_URL (internal-only ingress)"
+echo "      Health:      ${API_URL}/api/health"
+echo "      Optimization health: ${API_URL}/api/health/optimization"
 echo ""
 echo "Next: confirm the ${BASE_NAME}-web Entra app registration's SPA redirect URIs include"
 echo "  $WEB_URL and $WEB_URL/ (Entra ID -> App registrations -> ${BASE_NAME}-web -> Authentication)."

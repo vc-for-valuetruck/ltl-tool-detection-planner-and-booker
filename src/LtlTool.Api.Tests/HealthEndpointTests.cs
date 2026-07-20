@@ -46,6 +46,25 @@ public sealed class HealthEndpointTests(TemplateWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task Optimization_health_is_anonymous_and_returns_ok_with_flags_off_by_default()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/health/optimization");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        // Default configuration leaves every optimization flag off, so nothing is enabled to be
+        // unhealthy — the probe must report "ok" and all flags false.
+        Assert.Equal("ok", root.GetProperty("status").GetString());
+        Assert.False(root.GetProperty("flags").GetProperty("trailerFit").GetBoolean());
+        Assert.False(root.GetProperty("flags").GetProperty("solver").GetBoolean());
+        Assert.False(root.GetProperty("flags").GetProperty("agentCommands").GetBoolean());
+    }
+
+    [Fact]
     public async Task Protected_endpoint_returns_401_when_unauthenticated()
     {
         var client = _factory.CreateClient();
