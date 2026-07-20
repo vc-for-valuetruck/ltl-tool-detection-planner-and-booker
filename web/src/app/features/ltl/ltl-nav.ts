@@ -6,9 +6,8 @@ import { RouterLink } from '@angular/router';
  * plan detail) so the navigation is visible from the `/ltl` landing — previously it only
  * appeared on the Consolidate board (issue #79).
  *
- * Search, Consolidate, Billing and Exceptions are live destinations. Tenders remains a Phase 2
- * stub: its backend read exists but no screen is wired yet, so it renders as a non-navigating tab
- * carrying a "Phase 2" badge rather than a link that misleads the dispatcher into a dead redirect.
+ * Search, Consolidate, Billing, Exceptions and Tenders are all live destinations. Every tab is a
+ * real routerLink; there is no Phase 2 stub left in the strip.
  */
 @Component({
   selector: 'app-ltl-nav',
@@ -26,10 +25,9 @@ import { RouterLink } from '@angular/router';
         <a routerLink="/ltl/exceptions" class="shell-tab" [class.active]="active === 'exceptions'" role="tab">
           Exceptions
         </a>
-        <span class="shell-tab shell-tab-stub" role="tab" aria-disabled="true" title="Coming in Phase 2">
+        <a routerLink="/ltl/tenders" class="shell-tab" [class.active]="active === 'tenders'" role="tab">
           Tenders
-          <span class="phase-badge">Phase 2</span>
-        </span>
+        </a>
         <a routerLink="/ltl/consolidate" class="shell-tab" [class.active]="active === 'consolidate'" role="tab">
           Consolidate
         </a>
@@ -85,28 +83,6 @@ import { RouterLink } from '@angular/router';
         font-weight: 600;
       }
 
-      .shell-tab-stub {
-        cursor: default;
-        color: var(--text-muted);
-      }
-
-      .shell-tab-stub:hover {
-        color: var(--text-muted);
-      }
-
-      .phase-badge {
-        font-size: 10px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-        color: var(--text-secondary);
-        background: var(--body-bg);
-        border: 1px solid var(--card-border);
-        border-radius: var(--radius-pill, 999px);
-        padding: 1px 6px;
-        line-height: 1.4;
-      }
-
       @media (max-width: 720px) {
         .shell-tabs-inner {
           gap: 14px;
@@ -118,6 +94,6 @@ import { RouterLink } from '@angular/router';
   ],
 })
 export class LtlNav {
-  /** Which live tab is currently active. Stub tabs are never "active". */
-  @Input() active: 'search' | 'consolidate' | 'billing' | 'exceptions' | null = null;
+  /** Which tab is currently active; null on screens outside the strip. */
+  @Input() active: 'search' | 'consolidate' | 'billing' | 'exceptions' | 'tenders' | null = null;
 }

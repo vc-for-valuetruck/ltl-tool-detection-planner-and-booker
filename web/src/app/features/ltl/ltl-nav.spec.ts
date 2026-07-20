@@ -66,11 +66,25 @@ describe('LtlNav', () => {
     expect(exceptions!.querySelector('.phase-badge')).toBeNull();
   });
 
-  it('keeps Tenders a non-navigating Phase 2 stub', () => {
+  it('renders Tenders as a live link to /ltl/tenders, no Phase 2 badge', () => {
     fixture.detectChanges();
 
     const tenders = tabByText('Tenders');
-    expect(tenders!.tagName).toBe('SPAN');
-    expect(tenders!.querySelector('.phase-badge')).toBeTruthy();
+    expect(tenders!.tagName).toBe('A');
+    expect(tenders!.getAttribute('href')).toBe('/ltl/tenders');
+    expect(tenders!.querySelector('.phase-badge')).toBeNull();
+  });
+
+  it('has no Phase 2 stub tabs left in the strip', () => {
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelectorAll('.shell-tab-stub').length).toBe(0);
+    expect(el.querySelectorAll('.phase-badge').length).toBe(0);
+  });
+
+  it('highlights the Tenders tab when active="tenders"', () => {
+    fixture.componentInstance.active = 'tenders';
+    fixture.detectChanges();
+    expect(tabByText('Tenders')!.classList).toContain('active');
   });
 });
