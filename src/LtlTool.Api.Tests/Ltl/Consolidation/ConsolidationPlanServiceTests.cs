@@ -26,6 +26,8 @@ public sealed class ConsolidationPlanServiceTests
             client,
             LtlTestFactory.Normalizer(),
             LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(),
+            new NullAccessorialSignalExtractor(),
             LtlTestFactory.Options());
 
         return new ConsolidationPlanService(
@@ -193,7 +195,9 @@ public sealed class ConsolidationPlanServiceTests
         });
 
         var loads = new LtlLoadService(
-            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(), LtlTestFactory.Options());
+            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
+            LtlTestFactory.Options());
         var options = DefaultOptions();
         options.CustomerPolicies.Add(new()
         {
@@ -250,7 +254,9 @@ public sealed class ConsolidationPlanServiceTests
 
         var client = new StatefulAlvysClient(parent, sibling); // no trips seeded
         var loads = new LtlLoadService(
-            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(), LtlTestFactory.Options());
+            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
+            LtlTestFactory.Options());
         var options = DefaultOptions();
         options.CustomerPolicies.Add(new()
         {
@@ -300,7 +306,9 @@ public sealed class ConsolidationPlanServiceTests
 
         var client = new StatefulAlvysClient(parent, sibling);
         var loads = new LtlLoadService(
-            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(), LtlTestFactory.Options());
+            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
+            LtlTestFactory.Options());
         var service = new ConsolidationPlanService(
             loads,
             Microsoft.Extensions.Options.Options.Create(DefaultOptions()),
@@ -335,7 +343,9 @@ public sealed class ConsolidationPlanServiceTests
 
         var client = new StatefulAlvysClient(parent, kroger);
         var loads = new LtlLoadService(
-            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(), LtlTestFactory.Options());
+            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
+            LtlTestFactory.Options());
         var service = new ConsolidationPlanService(
             loads,
             Microsoft.Extensions.Options.Options.Create(DefaultOptions()),
@@ -377,7 +387,9 @@ public sealed class ConsolidationPlanServiceTests
 
         var client = new StatefulAlvysClient(parent, sibling);
         var loads = new LtlLoadService(
-            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(), LtlTestFactory.Options());
+            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
+            LtlTestFactory.Options());
         var service = new ConsolidationPlanService(
             loads,
             Microsoft.Extensions.Options.Options.Create(options),
@@ -425,7 +437,9 @@ public sealed class ConsolidationPlanServiceTests
 
         var client = new StatefulAlvysClient(parent, sibling);
         var loads = new LtlLoadService(
-            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(), LtlTestFactory.Options());
+            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
+            LtlTestFactory.Options());
         var service = new ConsolidationPlanService(
             loads,
             Microsoft.Extensions.Options.Options.Create(options),

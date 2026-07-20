@@ -20,13 +20,13 @@ public sealed class LtlControllerTests
     {
         var options = LtlTestFactory.Options();
         var normalizer = LtlTestFactory.Normalizer();
-        var loadService = new LtlLoadService(client, normalizer, LtlTestFactory.Visibility(), options);
+        var loadService = new LtlLoadService(client, normalizer, LtlTestFactory.Visibility(), LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(), options);
         var matchService = new MatchService(
             client, LtlTestFactory.Scorer(), LtlTestFactory.EquipmentEvents(), options);
         var validation = new AssignmentValidationService(options, LtlTestFactory.Clock());
         var controller = new LtlController(
             loadService, matchService, validation, store ?? new InMemoryAssignmentAuditStore(),
-            new ConsolidationOpportunityService(client, LtlTestFactory.Clock()),
+            new ConsolidationOpportunityService(client, LtlTestFactory.Clock(), NullLogger<ConsolidationOpportunityService>.Instance),
             NullLogger<LtlController>.Instance);
 
         var identity = user is null ? new ClaimsIdentity() : new ClaimsIdentity([new Claim("preferred_username", user)], "test");

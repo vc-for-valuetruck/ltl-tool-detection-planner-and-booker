@@ -109,6 +109,35 @@ export interface VisibilityContext {
   events: VisibilityEventView[];
 }
 
+/** Type of an accessorial-signal evidence item extracted from Alvys notes/documents. */
+export type AccessorialSignalType = 'Detention' | 'Layover' | 'Lumper' | 'Reconsignment' | 'Other';
+
+/**
+ * A single accessorial-signal evidence item extracted from an Alvys note or document name.
+ * `evidenceQuote` is a verbatim excerpt from the source — never fabricated.
+ * Confidence is 1.0 for deterministic keyword matches, <1.0 for AI-derived signals.
+ */
+export interface AccessorialSignal {
+  type: AccessorialSignalType;
+  /** Verbatim excerpt from the note/document text that triggered this signal. */
+  evidenceQuote: string;
+  /** The Alvys note or document id that is the source of this signal. */
+  sourceId: string;
+  /** "Note" or "Document". */
+  sourceType: string;
+  /** 0.0–1.0. Deterministic keyword matches are always 1.0. */
+  confidence: number;
+}
+
+/**
+ * Accessorial-signal review context for a load. `evaluated=false` means no notes/documents
+ * were available (not evaluated ≠ clean — never assume clean when not evaluated).
+ */
+export interface AccessorialReviewContext {
+  evaluated: boolean;
+  signals: AccessorialSignal[];
+}
+
 export interface LtlLoadSummary {
   id: string;
   loadNumber: string | null;

@@ -472,6 +472,61 @@ public enum LtlSortField
     BillingReadiness,
 }
 
+/// <summary>
+/// Type of an accessorial-signal evidence item extracted from Alvys notes/documents.
+/// Deterministic keyword classification; humans price — the analyzer never asserts a dollar amount.
+/// </summary>
+public enum AccessorialSignalType
+{
+    Detention,
+    Layover,
+    Lumper,
+    Reconsignment,
+    Other,
+}
+
+/// <summary>
+/// A single accessorial-signal evidence item extracted from an Alvys note or document name.
+/// The <see cref="EvidenceQuote"/> is a verbatim excerpt from the source; it never fabricates.
+/// Confidence is 1.0 for deterministic keyword matches, &lt;1.0 for AI-derived signals.
+/// </summary>
+public sealed class AccessorialSignal
+{
+    public required AccessorialSignalType Type { get; init; }
+
+    /// <summary>Verbatim excerpt from the note/document text that triggered this signal.</summary>
+    public required string EvidenceQuote { get; init; }
+
+    /// <summary>The Alvys note or document id that is the source of this signal.</summary>
+    public required string SourceId { get; init; }
+
+    /// <summary>"Note" or "Document".</summary>
+    public required string SourceType { get; init; }
+
+    /// <summary>0.0–1.0. Deterministic keyword matches are always 1.0.</summary>
+    public double Confidence { get; init; } = 1.0;
+}
+
+/// <summary>
+/// Accessorial-signal review context for a load. <see cref="Evaluated"/> records whether
+/// notes/documents were available and inspected — when false an empty <see cref="Signals"/>
+/// means "not looked at", never "no signals". Mirrors the <see cref="VisibilityContext"/>
+/// not-evaluated / evaluated distinction.
+/// </summary>
+public sealed class AccessorialReviewContext
+{
+    /// <summary>
+    /// Shared singleton for the case where no notes/documents were supplied for analysis
+    /// (bulk/list path, or detail load with neither notes nor documents). An empty
+    /// <see cref="Signals"/> on the singleton must never be read as "no accessorials needed" —
+    /// it means "not evaluated".
+    /// </summary>
+    public static readonly AccessorialReviewContext NotEvaluated = new();
+
+    public bool Evaluated { get; init; }
+    public IReadOnlyList<AccessorialSignal> Signals { get; init; } = [];
+}
+
 /// <summary>Paged normalized LTL search response.</summary>
 public sealed class LtlSearchResponse
 {

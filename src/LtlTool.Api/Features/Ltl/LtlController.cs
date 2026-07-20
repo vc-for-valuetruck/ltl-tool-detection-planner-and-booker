@@ -125,6 +125,25 @@ public sealed class LtlController(
     }
 
     /// <summary>
+    /// Accessorial-signal review for a single load: keyword-extracted (and optionally
+    /// AI-supplemented) evidence of unbilled accessorials from Alvys notes and document
+    /// metadata. Returns <see cref="AccessorialReviewContext.NotEvaluated"/> when the load has
+    /// no notes or documents (not evaluated ≠ clean). 404 when the load is not found.
+    ///
+    /// <para>Read-only posture: no data is written back to Alvys.</para>
+    /// <para>AI is a signal-extraction layer only — it never prices or asserts dollar amounts.</para>
+    /// </summary>
+    [HttpGet("loads/{idOrNumber}/accessorial-signals")]
+    [ProducesResponseType(typeof(AccessorialReviewContext), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AccessorialReviewContext>> GetAccessorialSignals(
+        string idOrNumber, CancellationToken ct)
+    {
+        var context = await loads.GetAccessorialSignalsAsync(idOrNumber, ct);
+        return context is null ? NotFound() : Ok(context);
+    }
+
+    /// <summary>
     /// Validates a proposed internal assignment without recording it — the UI calls this to show
     /// blockers/warnings before the dispatcher commits. Returns 404 when the load is not found.
     /// </summary>

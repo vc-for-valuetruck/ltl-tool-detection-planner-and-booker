@@ -136,7 +136,7 @@ public class ConsolidationControllerHealthTests
     {
         var ltlOptions = LtlTestFactory.Options();
         var normalizer = LtlTestFactory.Normalizer();
-        var loads = new LtlLoadService(client, normalizer, LtlTestFactory.Visibility(), ltlOptions);
+        var loads = new LtlLoadService(client, normalizer, LtlTestFactory.Visibility(), LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(), ltlOptions);
         return new ConsolidationController(
             candidates: null!,
             plans: null!,

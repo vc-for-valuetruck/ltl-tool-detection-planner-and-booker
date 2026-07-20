@@ -1,3 +1,4 @@
+using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.SavedViews;
@@ -30,11 +31,28 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<WorkflowStageService>();
         services.AddScoped<VisibilityAnalyzer>();
         services.AddScoped<EquipmentEventAnalyzer>();
+        services.AddScoped<AccessorialSignalAnalyzer>();
         services.AddScoped<LtlNormalizationService>();
         services.AddScoped<MatchScoringService>();
         services.AddScoped<MatchService>();
         services.AddScoped<LtlLoadService>();
         services.AddScoped<AssignmentValidationService>();
+
+        // Accessorial signal AI extractor (Phase 6). Disabled by default — the
+        // NullAccessorialSignalExtractor is registered until Ltl:AccessorialAi:Enabled=true and
+        // credentials are supplied server-side. The AccessorialSignalAnalyzer (deterministic
+        // keyword extraction) is always registered regardless of this setting.
+        var accessorialAiEnabled = configuration
+            .GetSection($"{LtlOptions.SectionName}:AccessorialAi")
+            .GetValue<bool>("Enabled");
+        if (accessorialAiEnabled)
+        {
+            services.AddHttpClient<IAccessorialSignalExtractor, AzureOpenAiAccessorialSignalExtractor>();
+        }
+        else
+        {
+            services.AddSingleton<IAccessorialSignalExtractor, NullAccessorialSignalExtractor>();
+        }
 
         // Consolidation planner (Phase 1 pilot: Laredo → Dallas, read-only, click-card output).
         // Customer LTL policy: reads Alvys customer notes for LTL_TIER/LTL_ALLOW markers,

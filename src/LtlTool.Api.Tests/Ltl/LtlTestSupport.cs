@@ -34,6 +34,8 @@ internal static class LtlTestFactory
 
     public static VisibilityAnalyzer Visibility() => new();
 
+    public static AccessorialSignalAnalyzer AccessorialAnalyzer() => new();
+
     /// <summary>
     /// Test-double policy reader that resolves purely from the given
     /// <see cref="ConsolidationOptions.CustomerPolicies"/>. No Alvys calls. Same semantics
@@ -79,6 +81,7 @@ internal class FakeAlvysClient : IAlvysClient
     public List<AlvysLoad> Loads { get; set; } = [];
     public AlvysLoad? LoadDetail { get; set; }
     public List<AlvysLoadDocument> Documents { get; set; } = [];
+    public List<AlvysLoadNote> Notes { get; set; } = [];
     public List<AlvysDriver> Drivers { get; set; } = [];
     public List<AlvysTruck> Trucks { get; set; } = [];
     public List<AlvysTrailerEquipment> Trailers { get; set; } = [];
@@ -118,6 +121,9 @@ internal class FakeAlvysClient : IAlvysClient
     public Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(string loadNumber, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AlvysLoadDocument>>(Documents);
 
+    public Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(string loadNumber, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AlvysLoadNote>>(Notes);
+
     public Task<AlvysDriversResponse> SearchDriversAsync(DriverSearchRequest request, CancellationToken ct = default)
         => Task.FromResult(new AlvysDriversResponse { Total = Drivers.Count, Items = Drivers });
 
@@ -135,8 +141,6 @@ internal class FakeAlvysClient : IAlvysClient
     public Task<AlvysTrip?> GetTripAsync(TripLookup lookup, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<IReadOnlyList<AlvysTripStopDetail>> ListTripStopsAsync(string tripId, CancellationToken ct = default)
-        => throw new NotSupportedException();
-    public Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(string loadNumber, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<AlvysTripsResponse> SearchTripsAsync(TripSearchRequest request, CancellationToken ct = default)
         => Task.FromResult(new AlvysTripsResponse { Total = Trips.Count, Items = Trips });
