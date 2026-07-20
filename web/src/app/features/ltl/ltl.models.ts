@@ -19,7 +19,8 @@ export type MissingDataFlag =
   | 'DeliveryDate'
   | 'Equipment'
   | 'Commodity'
-  | 'InvoiceStatus';
+  | 'InvoiceStatus'
+  | 'Dimensions';
 
 export type MatchLabel = 'Excellent' | 'Good' | 'Possible' | 'Risky' | 'NotRecommended';
 

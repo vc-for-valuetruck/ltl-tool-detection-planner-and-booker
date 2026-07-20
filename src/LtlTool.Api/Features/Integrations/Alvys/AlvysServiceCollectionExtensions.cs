@@ -54,6 +54,10 @@ public static class AlvysServiceCollectionExtensions
 
         services.AddSingleton<IAlvysTokenProvider, AlvysTokenProvider>();
 
+        // Startup token pre-warm (issue #80). No-ops unless the Live provider is configured with
+        // credentials; runs off the startup thread so it can never block Kestrel from listening.
+        services.AddHostedService<AlvysTokenPrewarmService>();
+
         // Provider selection. Live is the default source of truth; Fallback must
         // be chosen explicitly and is intended for local/UAT only.
         if (options.Provider == AlvysProvider.Fallback)

@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Router, RouterLink } from '@angular/router';
 import { RUNTIME_CONFIG } from '../../runtime-config';
+import { LtlNav } from './ltl-nav';
 
 interface ConsolidationOpportunitiesResponse {
   opportunities: ConsolidationOpportunity[];
@@ -45,7 +46,7 @@ interface ConsolidationOpportunityLoad {
 @Component({
   selector: 'app-ltl-search',
   standalone: true,
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, LtlNav],
   templateUrl: './ltl-search.html',
   styleUrls: ['./ltl-search.css'],
 })
@@ -108,6 +109,10 @@ export class LtlSearch implements OnInit {
         parent: opportunity.parent.loadNumber,
         siblings: opportunity.siblings.map((s) => s.loadNumber).join(','),
       },
+      // Carry the queue card's projected uplift across the route so the plan detail can show
+      // the same figure the dispatcher clicked on (issue #77). Router state survives the
+      // navigation but not a refresh — plan detail derives it from live loads as a fallback.
+      state: { projectedUplift: opportunity.projectedUplift },
     });
   }
 

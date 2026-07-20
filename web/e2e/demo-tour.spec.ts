@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { detectHomeFlavor, isVisible } from './helpers/home-flavor';
+import { detectHomeFlavor } from './helpers/home-flavor';
 
 /**
  * Screenshot tour of the LTL demo stack.
@@ -80,26 +80,21 @@ test.describe('LTL demo — screenshot tour', () => {
     await shot(page, '05-consolidate-seed-entered');
   });
 
-  test('04 - Billing Worklist tab', async ({ page }) => {
+  test('04 - Billing nav stub (Phase 2)', async ({ page }) => {
+    // Billing is a Phase 2 stub in the shared LtlNav tab strip (issue #79): its backend
+    // endpoint exists but no screen is wired yet, so it renders as a non-navigating tab
+    // carrying a "Phase 2" badge rather than a link. Capture that state instead of clicking
+    // through to a screen that does not exist yet.
     await page.goto('/ltl/consolidate');
-    const billingTab = page.getByRole('tab', { name: 'Billing Worklist' });
-    if (await isVisible(billingTab)) {
-      await billingTab.click();
-    } else {
-      await page.getByRole('link', { name: 'Billing' }).click();
-    }
+    await expect(page.getByRole('tab', { name: 'Billing' })).toBeVisible();
     await page.waitForTimeout(1500);
     await shot(page, '06-billing-worklist');
   });
 
-  test('05 - Exceptions tab', async ({ page }) => {
+  test('05 - Exceptions nav stub (Phase 2)', async ({ page }) => {
+    // Exceptions is likewise a Phase 2 stub tab in the shared LtlNav strip (issue #79).
     await page.goto('/ltl/consolidate');
-    const exceptionsTab = page.getByRole('tab', { name: 'Exceptions' });
-    if (await isVisible(exceptionsTab)) {
-      await exceptionsTab.click();
-    } else {
-      await page.getByRole('link', { name: 'Exceptions' }).click();
-    }
+    await expect(page.getByRole('tab', { name: 'Exceptions' })).toBeVisible();
     await page.waitForTimeout(1500);
     await shot(page, '07-exceptions');
   });
