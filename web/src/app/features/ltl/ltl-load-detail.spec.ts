@@ -1,6 +1,7 @@
 import { LtlLoadDetail } from './ltl-load-detail';
 import { LtlService } from './ltl.service';
 import { LtlLoadSummary, LtlPlace } from './ltl.models';
+import { YardArtifactView } from './yard-artifacts.models';
 import { ActivatedRoute } from '@angular/router';
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
@@ -15,13 +16,35 @@ function load(partial: Partial<LtlLoadSummary>): LtlLoadSummary {
 
 describe('LtlLoadDetail', () => {
   function build(loadNumber: string | null, stub: Partial<LtlService>): LtlLoadDetail {
+    // Artifacts are supplementary; default to an empty feed unless a test overrides it.
+    const withArtifacts: Partial<LtlService> = { yardArtifacts: () => of([]), ...stub };
     TestBed.configureTestingModule({
       providers: [
-        { provide: LtlService, useValue: stub },
+        { provide: LtlService, useValue: withArtifacts },
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: new Map([['loadNumber', loadNumber]]) } } },
       ],
     });
     return TestBed.runInInjectionContext(() => new LtlLoadDetail());
+  }
+
+  function artifact(overrides: Partial<YardArtifactView>): YardArtifactView {
+    return {
+      id: 'a1',
+      yard: 'LAREDO',
+      truckUnit: 'T1',
+      trailerUnit: null,
+      loadNumber: 'L-1',
+      submittedBy: 'dock@valuetruck.com',
+      capturedAt: '2026-07-20T00:00:00Z',
+      createdAt: '2026-07-20T00:00:00Z',
+      status: 'Passed',
+      passedItems: 3,
+      failedItems: 0,
+      naItems: 0,
+      verifiedPallets: null,
+      files: [],
+      ...overrides,
+    };
   }
 
   it('fetches the load by the route param on init', () => {
@@ -78,5 +101,52 @@ describe('LtlLoadDetail', () => {
     const c = build('L-1', { getLoad: () => of(load({})) });
     expect(c['formatCurrency'](null)).toBe('—');
     expect(c['formatCurrency'](1200)).toBe('$1,200');
+  });
+
+  it('fetches yard artifacts for the load number and exposes them', () => {
+    let askedLoad: string | undefined;
+    const c = build('L-100234', {
+      getLoad: () => of(load({ loadNumber: 'L-100234' })),
+      yardArtifacts: (q) => {
+        askedLoad = q.loadNumber;
+        return of([artifact({ loadNumber: 'L-100234', status: 'Flagged' })]);
+      },
+    });
+    c.ngOnInit();
+    expect(askedLoad).toBe('L-100234');
+    expect(c['artifacts']().length).toBe(1);
+    expect(c['artifacts']()[0].status).toBe('Flagged');
+  });
+
+  it('keeps the load visible when the artifacts fetch fails', () => {
+    const c = build('L-1', {
+      getLoad: () => of(load({ loadNumber: 'L-1' })),
+      yardArtifacts: () => throwError(() => ({ message: 'boom' })),
+    });
+    c.ngOnInit();
+    expect(c['hasLoad']()).toBeTrue();
+    expect(c['artifacts']()).toEqual([]);
+  });
+
+  it('classifies artifact status chips and formats verified dims', () => {
+    const c = build('L-1', { getLoad: () => of(load({})) });
+    expect(c['artifactChipClass']('Passed')).toBe('chip chip-good');
+    expect(c['artifactChipClass']('Flagged')).toBe('chip chip-danger');
+    expect(c['artifactChipClass']('Submitted')).toBe('chip chip-neutral');
+
+    expect(
+      c['verifiedDims'](
+        artifact({
+          verifiedPallets: {
+            palletCount: 12,
+            lengthInches: 48,
+            widthInches: 40,
+            heightInches: 60,
+            source: 'yard verification',
+          },
+        }),
+      ),
+    ).toBe('48×40×60 in');
+    expect(c['verifiedDims'](artifact({ verifiedPallets: null }))).toBeNull();
   });
 });

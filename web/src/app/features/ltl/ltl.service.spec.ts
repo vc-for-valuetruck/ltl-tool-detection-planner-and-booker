@@ -8,6 +8,7 @@ import { LtlService } from './ltl.service';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import { AccessorialReviewContext, CapacitySnapshot, LaneRateContext } from './ltl.models';
 import { LaredoArrivalsBoard } from './arrivals.models';
+import { YardArtifactView } from './yard-artifacts.models';
 
 describe('LtlService — accessorial signals', () => {
   let service: LtlService;
@@ -187,5 +188,83 @@ describe('LtlService — rating & capacity context', () => {
     expect(result).toBeDefined();
     expect(result!.medianRpm).toBe(5);
     expect(result!.sampleSize).toBe(3);
+  });
+});
+
+describe('LtlService — yard artifacts', () => {
+  let service: LtlService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: RUNTIME_CONFIG,
+          useValue: { tenantId: '', clientId: '', apiScope: '', apiBaseUrl: '/api' },
+        },
+      ],
+    });
+    service = TestBed.inject(LtlService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('calls GET /api/ltl/yard-artifacts with only the supplied filters', () => {
+    let result: YardArtifactView[] | undefined;
+
+    service.yardArtifacts({ loadNumber: 'L100' }).subscribe((a) => (result = a));
+
+    const req = http.expectOne('/api/ltl/yard-artifacts?loadNumber=L100');
+    expect(req.request.method).toBe('GET');
+
+    const fakeResponse: YardArtifactView[] = [
+      {
+        id: 'a1',
+        yard: 'LAREDO',
+        truckUnit: 'T1',
+        trailerUnit: null,
+        loadNumber: 'L100',
+        submittedBy: 'dock@valuetruck.com',
+        capturedAt: '2026-07-20T00:00:00Z',
+        createdAt: '2026-07-20T00:00:00Z',
+        status: 'Flagged',
+        passedItems: 2,
+        failedItems: 1,
+        naItems: 0,
+        verifiedPallets: {
+          palletCount: 12,
+          lengthInches: 48,
+          widthInches: 40,
+          heightInches: 60,
+          source: 'yard verification',
+        },
+        files: [
+          { id: 'f1', kind: 'Photo', fileName: 'front.jpg', contentType: 'image/jpeg', sizeBytes: 100 },
+        ],
+      },
+    ];
+    req.flush(fakeResponse);
+
+    expect(result).toBeDefined();
+    expect(result!.length).toBe(1);
+    expect(result![0].status).toBe('Flagged');
+    expect(result![0].verifiedPallets!.source).toBe('yard verification');
+  });
+
+  it('passes yard, truck and trailer filters through as query params', () => {
+    service.yardArtifacts({ yard: 'LAREDO', truckUnit: 'T1', trailerUnit: 'TR9' }).subscribe();
+
+    const req = http.expectOne(
+      '/api/ltl/yard-artifacts?truckUnit=T1&trailerUnit=TR9&yard=LAREDO',
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('builds a file URL for streaming a stored photo/PDF', () => {
+    expect(service.yardArtifactFileUrl('a1', 'f1')).toBe('/api/ltl/yard-artifacts/a1/files/f1');
   });
 });

@@ -76,6 +76,15 @@
                 · {{ a.trailer?.lengthFeet }}′
               }
             </span>
+            @if (artifactFor(a); as artifact) {
+              <span
+                [class]="artifactChipClass(artifact.status)"
+                data-testid="arrival-artifact-chip"
+                title="Yard inspection captured at the dock"
+              >
+                Yard: {{ artifact.status }}
+              </span>
+            }
           </span>
 
           <span role="cell" class="cell-driver">{{ a.driverName || '—' }}</span>

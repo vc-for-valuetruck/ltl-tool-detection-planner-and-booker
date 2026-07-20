@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { interval } from 'rxjs';
 import { LtlService } from './ltl.service';
 import { ArrivalStatus, LaredoArrival, LaredoArrivalsBoard } from './arrivals.models';
+import { YardArtifactView } from './yard-artifacts.models';
 
 /**
  * Phase 8.1 Laredo Arrivals Board — the FIRST surface Ben Beddes / Jordan Baumgart see on `/ltl`.
@@ -34,6 +35,9 @@ export class LtlArrivalsBoard implements OnInit {
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
 
+  /** Yard artifacts (Phase 8.2) captured at Laredo, keyed by equipment unit for row lookup. */
+  private readonly artifactsByUnit = signal<Map<string, YardArtifactView>>(new Map());
+
   protected readonly arrivals = computed(() => this.board()?.arrivals ?? []);
   protected readonly dallasBoundCount = computed(
     () => this.arrivals().filter((a) => a.dallasBound).length,
@@ -56,12 +60,50 @@ export class LtlArrivalsBoard implements OnInit {
         this.board.set(board);
         this.error.set(null);
         this.loading.set(false);
+        this.loadArtifacts(board.yard);
       },
       error: (err) => {
         this.error.set(err?.error?.error ?? err?.message ?? `Couldn't reach Alvys.`);
         this.loading.set(false);
       },
     });
+  }
+
+  /**
+   * Loads this yard's artifacts once per board refresh and indexes them by truck/trailer unit so a
+   * row can show its dock-inspection status. Internal data — never Alvys. A failure here leaves the
+   * board untouched (artifacts are supplementary, not required to render arrivals).
+   */
+  private loadArtifacts(yard: string): void {
+    if (!yard) return;
+    this.ltl.yardArtifacts({ yard }).subscribe({
+      next: (artifacts) => {
+        const map = new Map<string, YardArtifactView>();
+        // Newest-first from the API; keep the first (latest) seen for each unit.
+        for (const a of artifacts) {
+          if (a.truckUnit && !map.has(a.truckUnit)) map.set(a.truckUnit, a);
+          if (a.trailerUnit && !map.has(a.trailerUnit)) map.set(a.trailerUnit, a);
+        }
+        this.artifactsByUnit.set(map);
+      },
+      error: () => {
+        /* supplementary; leave the board as-is */
+      },
+    });
+  }
+
+  /** The latest yard artifact for an arrival's truck or trailer unit, if one has been captured. */
+  protected artifactFor(arrival: LaredoArrival): YardArtifactView | null {
+    const map = this.artifactsByUnit();
+    const truck = arrival.truck?.unit;
+    const trailer = arrival.trailer?.unit;
+    return (truck && map.get(truck)) || (trailer && map.get(trailer)) || null;
+  }
+
+  protected artifactChipClass(status: string): string {
+    if (status === 'Passed') return 'chip chip-good';
+    if (status === 'Flagged') return 'chip chip-danger';
+    return 'chip chip-neutral';
   }
 
   /** Opens the trip's load detail when Alvys carries a load number; no-op otherwise. */

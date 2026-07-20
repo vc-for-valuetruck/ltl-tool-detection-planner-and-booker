@@ -21,6 +21,7 @@ import {
 } from './ltl.models';
 import { NotificationFeedResponse } from './notifications.models';
 import { LaredoArrivalsBoard } from './arrivals.models';
+import { YardArtifactQuery, YardArtifactView } from './yard-artifacts.models';
 
 /**
  * Client for the read-only LTL decision-support API. Bearer tokens are attached by the MSAL
@@ -112,6 +113,25 @@ export class LtlService {
     return this.http.get<NotificationFeedResponse>(`${this.base}/notifications`, {
       params: new HttpParams().set('max', max),
     });
+  }
+
+  /**
+   * Yard artifacts (Phase 8.2) matching any of load number / truck unit / trailer unit / yard.
+   * Our internal dock-inspection data (SQL + file store) — never read from or written to Alvys.
+   */
+  yardArtifacts(query: YardArtifactQuery): Observable<YardArtifactView[]> {
+    let params = new HttpParams();
+    if (query.loadNumber) params = params.set('loadNumber', query.loadNumber);
+    if (query.truckUnit) params = params.set('truckUnit', query.truckUnit);
+    if (query.trailerUnit) params = params.set('trailerUnit', query.trailerUnit);
+    if (query.yard) params = params.set('yard', query.yard);
+    if (query.max) params = params.set('max', query.max);
+    return this.http.get<YardArtifactView[]>(`${this.base}/yard-artifacts`, { params });
+  }
+
+  /** Absolute URL for streaming a stored artifact photo/PDF (inline gallery / PDF download). */
+  yardArtifactFileUrl(artifactId: string, fileId: string): string {
+    return `${this.base}/yard-artifacts/${encodeURIComponent(artifactId)}/files/${encodeURIComponent(fileId)}`;
   }
 
   validateAssignment(

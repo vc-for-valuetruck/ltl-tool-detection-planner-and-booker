@@ -1,5 +1,6 @@
 using LtlTool.Api.Features.Integrations.Alvys.Writeback;
 using LtlTool.Api.Features.Ltl.SavedViews;
+using LtlTool.Api.Features.Ltl.YardArtifacts;
 using Microsoft.EntityFrameworkCore;
 
 namespace LtlTool.Api.Data;
@@ -15,6 +16,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Durable, owner-scoped Alvys operation outbox/audit records (see <see cref="EfAlvysOperationStore"/>).</summary>
     public DbSet<AlvysOperationRecord> AlvysOperations => Set<AlvysOperationRecord>();
+
+    /// <summary>Durable yard-artifact intake metadata (see <see cref="EfYardArtifactStore"/>). Internal data, never Alvys.</summary>
+    public DbSet<YardArtifactRecord> YardArtifacts => Set<YardArtifactRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,6 +65,27 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(e => new { e.OwnerId, e.IdempotencyKey })
                 .IsUnique()
                 .HasFilter("[IdempotencyKey] IS NOT NULL AND [Channel] = 'Execute'");
+        });
+
+        modelBuilder.Entity<YardArtifactRecord>(entity =>
+        {
+            entity.ToTable("YardArtifacts");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(64);
+            entity.Property(e => e.Yard).IsRequired().HasMaxLength(16);
+            entity.Property(e => e.TruckUnit).HasMaxLength(64);
+            entity.Property(e => e.TrailerUnit).HasMaxLength(64);
+            entity.Property(e => e.LoadNumber).HasMaxLength(64);
+            entity.Property(e => e.SubmittedBy).IsRequired().HasMaxLength(256);
+            // Enum stored as a readable string so the table is legible in the database.
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(e => e.InspectionJson).IsRequired();
+            entity.Property(e => e.FilesJson).IsRequired();
+
+            // Surfacing lookups: arrivals board joins by equipment unit, load detail by load number.
+            entity.HasIndex(e => e.LoadNumber);
+            entity.HasIndex(e => e.TruckUnit);
+            entity.HasIndex(e => e.TrailerUnit);
         });
     }
 }
