@@ -103,4 +103,42 @@ public sealed class LtlNormalizationServiceTests
         Assert.Null(summary.IsLtl);
         Assert.Contains(MissingDataFlag.Equipment, summary.MissingData);
     }
+
+    [Fact]
+    public void Normalize_flags_predicted_late_in_transit_load_as_non_blocking_exception()
+    {
+        // Clock is pinned at LtlTestFactory.Now (2026-06-30). Anchor pickup at Now with 470 loaded
+        // miles ÷ 47 mph = 10h transit → ETA Now+10h, well past a Now+1h delivery window + grace.
+        var load = FullLoad();
+        load.Status = "In Transit";
+        load.ActualPickupAt = LtlTestFactory.Now;
+        load.ActualDeliveryAt = null;
+        load.DeliveredAt = null;
+        load.ScheduledDeliveryAt = LtlTestFactory.Now.AddHours(1);
+        load.CustomerMileage = null; // force use of the loadedMiles argument
+
+        var summary = LtlTestFactory.Normalizer().Normalize(load, loadedMiles: 470m);
+
+        Assert.True(summary.PredictedLate);
+        Assert.Equal(LtlTestFactory.Now.AddHours(10), summary.PredictedDeliveryAt);
+        Assert.Contains("PCMiler", summary.EtaBasis);
+
+        var flag = Assert.Single(
+            summary.Exceptions,
+            e => e.Code == LtlNormalizationService.PredictedLateExceptionCode);
+        Assert.False(flag.BlocksBilling);
+    }
+
+    [Fact]
+    public void Normalize_does_not_predict_eta_for_delivered_load()
+    {
+        // FullLoad() is Delivered — no in-transit ETA should be produced, and no predicted-late flag.
+        var summary = LtlTestFactory.Normalizer().Normalize(FullLoad(), loadedMiles: 470m);
+
+        Assert.Null(summary.PredictedDeliveryAt);
+        Assert.False(summary.PredictedLate);
+        Assert.DoesNotContain(
+            summary.Exceptions,
+            e => e.Code == LtlNormalizationService.PredictedLateExceptionCode);
+    }
 }

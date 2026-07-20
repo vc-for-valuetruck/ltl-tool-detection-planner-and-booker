@@ -95,6 +95,14 @@
   text-align: right;
 }
 
+.eta-basis {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .detail-note {
   margin-top: 10px;
   font-size: 12px;

@@ -1,3 +1,4 @@
+using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.Notifications;
 using Xunit;
@@ -61,5 +62,61 @@ public sealed class NotificationTriggerEngineTests
 
         Assert.Contains("Acme", trigger.Summary);
         Assert.Contains("2 sibling", trigger.Summary);
+    }
+
+    private static readonly DateTimeOffset Eta = new(2026, 7, 20, 14, 0, 0, TimeSpan.Zero);
+
+    private static LtlLoadSummary PredictedLateLoad(
+        string id = "L-late",
+        string? loadNumber = "100500",
+        DateTimeOffset? window = null) => new()
+    {
+        Id = id,
+        LoadNumber = loadNumber,
+        Status = "In Transit",
+        PredictedDeliveryAt = Eta,
+        PredictedLate = true,
+        ScheduledDeliveryAt = window,
+        EtaBasis = "Derived from PCMiler loaded miles (470 mi) via Alvys ÷ 47 mph average.",
+    };
+
+    [Fact]
+    public void ToPredictedLateTrigger_uses_load_id_as_source_key_and_eta_as_occurred_at()
+    {
+        // OccurredAt = predicted ETA (not "now") so re-polling an unchanged prediction dedupes.
+        var trigger = NotificationTriggerEngine.ToPredictedLateTrigger(PredictedLateLoad());
+
+        Assert.Equal(NotificationStage.ExceptionRaised, trigger.Stage);
+        Assert.Equal("L-late", trigger.SourceKey);
+        Assert.Equal("L-late", trigger.LoadId);
+        Assert.Equal(Eta, trigger.OccurredAt);
+    }
+
+    [Fact]
+    public void ToPredictedLateTrigger_links_to_load_number_when_present()
+    {
+        var trigger = NotificationTriggerEngine.ToPredictedLateTrigger(PredictedLateLoad(loadNumber: "100500"));
+
+        Assert.Equal("/ltl/loads/100500", trigger.LinkPath);
+        Assert.Contains("100500", trigger.Title);
+    }
+
+    [Fact]
+    public void ToPredictedLateTrigger_falls_back_to_load_id_when_number_missing()
+    {
+        var trigger = NotificationTriggerEngine.ToPredictedLateTrigger(
+            PredictedLateLoad(id: "L-late", loadNumber: null));
+
+        Assert.Equal("/ltl/loads/L-late", trigger.LinkPath);
+    }
+
+    [Fact]
+    public void ToPredictedLateTrigger_summary_names_window_and_basis_when_window_present()
+    {
+        var window = new DateTimeOffset(2026, 7, 20, 8, 0, 0, TimeSpan.Zero);
+        var trigger = NotificationTriggerEngine.ToPredictedLateTrigger(PredictedLateLoad(window: window));
+
+        Assert.Contains("delivery window", trigger.Summary);
+        Assert.Contains("PCMiler", trigger.Summary);
     }
 }

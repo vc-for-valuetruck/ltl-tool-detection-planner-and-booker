@@ -27,7 +27,7 @@ internal static class LtlTestFactory
     public static WorkflowStageService Workflow() => new();
 
     public static LtlNormalizationService Normalizer(LtlOptions? options = null) =>
-        new(Options(options), Billing(options), Workflow());
+        new(Options(options), Billing(options), Workflow(), Clock());
 
     public static MatchScoringService Scorer(LtlOptions? options = null) =>
         new(Options(options), Clock());

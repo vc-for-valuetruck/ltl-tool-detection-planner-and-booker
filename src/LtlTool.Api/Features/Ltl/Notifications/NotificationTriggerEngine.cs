@@ -48,6 +48,7 @@ public sealed class NotificationTriggerEngine(
         try
         {
             await SweepConsolidationPlansAsync(ct);
+            await SweepPredictedLateAsync(ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -78,6 +79,55 @@ public sealed class NotificationTriggerEngine(
             ct.ThrowIfCancellationRequested();
             await dispatcher.DispatchAsync(ToTrigger(record), ct);
         }
+    }
+
+    /// <summary>
+    /// T8 — every in-transit load the normalizer flagged "predicted late" (ETA past its delivery
+    /// window) becomes an exception notification, BEFORE an actual-late event. Dedupe identity is
+    /// the load id + predicted ETA (via the trigger's <c>OccurredAt</c>), so re-polling an unchanged
+    /// prediction never re-fires, while a materially shifted ETA surfaces a fresh heads-up. Reads the
+    /// internal <see cref="LtlLoadService"/> exception worklist (Alvys-read-only); writes nothing back.
+    /// </summary>
+    private async Task SweepPredictedLateAsync(CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        var loads = scope.ServiceProvider.GetRequiredService<LtlLoadService>();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<NotificationDispatcher>();
+
+        var exceptionLoads = await loads.ExceptionsAsync(ct);
+        foreach (var load in exceptionLoads)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!load.PredictedLate || load.PredictedDeliveryAt is null) continue;
+            await dispatcher.DispatchAsync(ToPredictedLateTrigger(load), ct);
+        }
+    }
+
+    /// <summary>
+    /// Maps a predicted-late load to a T8 exception trigger. <c>OccurredAt</c> is the predicted ETA
+    /// (not "now"), so the dispatcher idempotency key stays stable across polls of the same
+    /// prediction. Exposed for unit testing the mapping in isolation.
+    /// </summary>
+    public static NotificationTrigger ToPredictedLateTrigger(LtlLoadSummary load)
+    {
+        var loadLabel = load.LoadNumber ?? load.Id;
+        var eta = load.PredictedDeliveryAt!.Value;
+        var window = load.ScheduledDeliveryAt;
+        var summary = window is null
+            ? $"Load {loadLabel} is predicted late — ETA {eta:g}. {load.EtaBasis}"
+            : $"Load {loadLabel} is predicted late — ETA {eta:g} vs {window:g} delivery window. {load.EtaBasis}";
+
+        return new NotificationTrigger
+        {
+            Stage = NotificationStage.ExceptionRaised,
+            SourceKey = load.Id,
+            Title = $"Predicted late · {loadLabel}",
+            Summary = summary,
+            LoadId = load.Id,
+            LoadNumber = load.LoadNumber,
+            LinkPath = $"/ltl/loads/{Uri.EscapeDataString(loadLabel)}",
+            OccurredAt = eta,
+        };
     }
 
     /// <summary>

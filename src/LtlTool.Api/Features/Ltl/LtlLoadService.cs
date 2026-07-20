@@ -263,6 +263,10 @@ public sealed class LtlLoadService(
     {
         var (loads, _) = await SweepAsync(new LoadSearchRequest { PageSize = _options.AlvysPageSize }, ct);
 
+        // Trip economics (loaded miles) feed the predicted-delivery ETA so a predicted-late arrival
+        // surfaces here before an actual-late event. Missing miles simply yield no ETA — never a guess.
+        var tripEconByLoad = await FetchTripEconomicsForLoadsAsync(loads, ct);
+
         var enrichLimit = Math.Max(0, _options.MaxVisibilityEnriched);
         var summaries = new List<LtlLoadSummary>(loads.Count);
         var enriched = 0;
@@ -270,16 +274,28 @@ public sealed class LtlLoadService(
         foreach (var load in loads)
         {
             var loadNumber = load.LoadNumber;
+            var econ = !string.IsNullOrWhiteSpace(loadNumber)
+                && tripEconByLoad.TryGetValue(loadNumber, out var e)
+                ? e
+                : default;
+
             if (enriched < enrichLimit && !string.IsNullOrWhiteSpace(loadNumber))
             {
                 var (context, visibilityExceptions) = await FetchVisibilityAsync(loadNumber, ct);
                 summaries.Add(normalizer.Normalize(
-                    load, visibility: context, extraExceptions: visibilityExceptions));
+                    load, visibility: context, extraExceptions: visibilityExceptions,
+                    carrierPayable: econ.CarrierPayable,
+                    driverTripRate: econ.DriverTripRate,
+                    loadedMiles: econ.LoadedMiles));
                 enriched++;
             }
             else
             {
-                summaries.Add(normalizer.Normalize(load));
+                summaries.Add(normalizer.Normalize(
+                    load,
+                    carrierPayable: econ.CarrierPayable,
+                    driverTripRate: econ.DriverTripRate,
+                    loadedMiles: econ.LoadedMiles));
             }
         }
 

@@ -154,6 +154,17 @@ export interface LtlLoadSummary {
   scheduledDeliveryAt: string | null;
   actualPickupAt: string | null;
   actualDeliveryAt: string | null;
+  /**
+   * Predicted delivery instant for an in-transit load (Phase 7.3). Derived from PCMiler loaded
+   * miles via Alvys ÷ a configured average line-haul speed, anchored at actual pickup. Null when
+   * the load is not in transit or carries no mileage to estimate from — never guessed. See
+   * etaBasis for the exact derivation to show the user.
+   */
+  predictedDeliveryAt: string | null;
+  /** True when predictedDeliveryAt is past the scheduled delivery window (+grace). */
+  predictedLate: boolean;
+  /** Provenance for the ETA, so the UI never presents it as a routing-API promise. */
+  etaBasis: string | null;
   equipment: string[];
   weightLbs: number | null;
   volume: number | null;

@@ -60,6 +60,18 @@
           <dd>{{ l.scheduledDeliveryAt ? (l.scheduledDeliveryAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
           <dt>Delivery (actual)</dt>
           <dd>{{ l.actualDeliveryAt ? (l.actualDeliveryAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
+          @if (l.predictedDeliveryAt) {
+            <dt>Delivery (predicted)</dt>
+            <dd data-testid="detail-predicted-eta">
+              {{ l.predictedDeliveryAt | date: 'MMM d, y, h:mm a' }}
+              @if (l.predictedLate) {
+                <span class="chip chip-warn" data-testid="detail-predicted-late">Predicted late</span>
+              }
+              @if (l.etaBasis) {
+                <span class="eta-basis">{{ l.etaBasis }}</span>
+              }
+            </dd>
+          }
         </dl>
       </div>
 
