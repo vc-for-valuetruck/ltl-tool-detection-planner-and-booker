@@ -279,21 +279,8 @@ public sealed class AlvysLoad
     public bool? IsDeleted { get; set; }
 }
 
-/// <summary>
-/// Alvys ships Fleet as an object on load responses (Id/Name/InvoiceNumberPrefix). Only
-/// Name is meaningful downstream today; the rest are captured for future callers.
-/// </summary>
-public sealed class AlvysFleet
-{
-    [JsonPropertyName("Id")]
-    public string? Id { get; set; }
-
-    [JsonPropertyName("Name")]
-    public string? Name { get; set; }
-
-    [JsonPropertyName("InvoiceNumberPrefix")]
-    public string? InvoiceNumberPrefix { get; set; }
-}
+// AlvysFleet DTO is defined further down alongside the equipment models — same shape
+// (Id/Name/InvoiceNumberPrefix), reused here for the load-search Fleet field.
 
 /// <summary>
 /// A payment applied against a load, as carried on the load-detail response for the
