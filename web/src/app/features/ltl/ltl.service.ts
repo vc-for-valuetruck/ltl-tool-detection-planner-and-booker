@@ -20,6 +20,7 @@ import {
   SavedViewRequest,
 } from './ltl.models';
 import { NotificationFeedResponse } from './notifications.models';
+import { LaredoArrivalsBoard } from './arrivals.models';
 
 /**
  * Client for the read-only LTL decision-support API. Bearer tokens are attached by the MSAL
@@ -80,6 +81,17 @@ export class LtlService {
    */
   capacityToday(): Observable<CapacitySnapshot> {
     return this.http.get<CapacitySnapshot>(`${this.base}/capacity/today`);
+  }
+
+  /**
+   * Laredo Arrivals Board (Phase 8.1): every truck/trailer scheduled to arrive at the Laredo yard
+   * on the given day (default today), Dallas-bound first. Read-only; every value is a live Alvys
+   * trip/stop read, truncation reported honestly.
+   */
+  arrivals(date?: string): Observable<LaredoArrivalsBoard> {
+    let params = new HttpParams();
+    if (date) params = params.set('date', date);
+    return this.http.get<LaredoArrivalsBoard>(`${this.base}/arrivals`, { params });
   }
 
   /**

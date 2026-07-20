@@ -1,0 +1,122 @@
+<section class="arrivals" aria-label="Laredo arrivals board">
+  <div class="arrivals-head">
+    <div>
+      <p class="eyebrow">Live yard arrivals</p>
+      <h2>Laredo arrivals today</h2>
+    </div>
+    @if (!loading() && !error()) {
+      <p class="arrivals-sub" data-testid="arrivals-subtitle">
+        {{ arrivals().length }} scheduled ·
+        <span class="dallas-count">{{ dallasBoundCount() }} Dallas-bound</span>
+        @if (board()?.truncated) {
+          · <span class="truncated-note">list is a floor (scan capped)</span>
+        }
+      </p>
+    }
+  </div>
+
+  @if (loading()) {
+    <div class="skeleton-list" aria-label="Loading Laredo arrivals from Alvys">
+      @for (_ of [1, 2, 3]; track _) {
+        <div class="skeleton-row"></div>
+      }
+    </div>
+  } @else if (error()) {
+    <div class="state state-error" data-testid="arrivals-error">
+      <strong>Couldn't reach Alvys.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="load(true)">Retry</button>
+    </div>
+  } @else if (!hasArrivals()) {
+    <div class="state state-empty" data-testid="arrivals-empty">
+      No trucks scheduled to arrive in Laredo today, per live Alvys trips.
+    </div>
+  } @else {
+    <div class="arrivals-table" role="table">
+      <div class="arrivals-row header-row" role="row">
+        <span role="columnheader">Status</span>
+        <span role="columnheader">Truck / Trailer</span>
+        <span role="columnheader">Driver</span>
+        <span role="columnheader">Inbound from</span>
+        <span role="columnheader">Arrival window / ETA</span>
+        <span role="columnheader">Onward</span>
+        <span role="columnheader"></span>
+      </div>
+
+      @for (a of arrivals(); track a.tripId) {
+        <div
+          class="arrivals-row"
+          [class.dallas-bound]="a.dallasBound"
+          role="row"
+          tabindex="0"
+          data-testid="arrival-row"
+          (click)="openLoad(a)"
+          (keydown.enter)="openLoad(a)"
+        >
+          <span role="cell" class="cell-status">
+            <span [class]="statusClass(a.status)">{{ a.status }}</span>
+            @if (a.dallasBound) {
+              <span class="chip chip-dallas" data-testid="dallas-chip">Dallas-bound</span>
+            }
+          </span>
+
+          <span role="cell" class="cell-equipment">
+            <span class="equip-line">
+              <strong>{{ a.truck?.unit || '—' }}</strong>
+              <span class="ownership" [attr.data-ownership]="a.truck?.ownership || 'Unknown'">
+                {{ ownershipLabel(a.truck?.ownership || 'Unknown') }}
+              </span>
+            </span>
+            <span class="equip-sub">
+              {{ a.trailer?.unit || '—' }}
+              @if (a.trailer?.equipmentType) {
+                · {{ a.trailer?.equipmentType }}
+              }
+              @if (a.trailer?.lengthFeet) {
+                · {{ a.trailer?.lengthFeet }}′
+              }
+            </span>
+          </span>
+
+          <span role="cell" class="cell-driver">{{ a.driverName || '—' }}</span>
+
+          <span role="cell" class="cell-inbound">{{ a.inboundFrom?.label || '—' }}</span>
+
+          <span role="cell" class="cell-eta">
+            <span class="eta-window">
+              {{ a.scheduledArrivalStart ? (a.scheduledArrivalStart | date: 'MMM d, h:mm a') : '—' }}
+            </span>
+            @if (a.predictedArrivalAt) {
+              <span class="eta-predicted">
+                ETA {{ a.predictedArrivalAt | date: 'h:mm a' }}
+                @if (a.predictedLate) {
+                  <span class="chip chip-warn" data-testid="arrival-late">Predicted late</span>
+                }
+              </span>
+            }
+          </span>
+
+          <span role="cell" class="cell-onward">{{ onwardLabel(a) }}</span>
+
+          <span role="cell" class="cell-action">
+            @if (a.dallasBound) {
+              <button
+                type="button"
+                class="ltl-opportunity"
+                data-testid="ltl-opportunity"
+                (click)="openConsolidate($event)"
+              >
+                LTL opportunity →
+              </button>
+            }
+          </span>
+        </div>
+      }
+    </div>
+
+    <p class="arrivals-foot">
+      {{ board()?.source }}
+      · updated {{ board()?.generatedAt ? (board()?.generatedAt | date: 'short') : '—' }}
+    </p>
+  }
+</section>
