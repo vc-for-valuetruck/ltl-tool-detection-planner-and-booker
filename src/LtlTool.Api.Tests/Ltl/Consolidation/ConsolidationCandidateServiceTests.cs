@@ -304,6 +304,60 @@ public sealed class ConsolidationCandidateServiceTests
     }
 
     [Fact]
+    public async Task Sentinel_9999_pickup_window_reports_unknown_timing_and_is_not_excluded()
+    {
+        // Live Alvys emits a far-future sentinel (9999-12-31) on the stop window for Open loads
+        // with no appointment set (e.g. Vertiv siblings 1002070/1002190/1002196 on the same lane
+        // as their seed). Treating that as a real date made timing look impossibly far and dropped
+        // the sibling from the usable list. It must instead be surfaced as amber Unknown timing —
+        // never silently excluded on missing data.
+        var seed = SeedLoad();
+        // Both stop windows carry the Alvys "no appointment" sentinel. Built inline (not via the
+        // Sibling helper) because the helper derives delivery = pickup + 1 day, which would
+        // overflow DateTimeOffset past its 9999-12-31 max.
+        var sentinel = new DateTimeOffset(9999, 12, 31, 23, 59, 59, TimeSpan.Zero);
+        var sibling = new AlvysLoad
+        {
+            Id = "L-100070",
+            LoadNumber = "L-100070",
+            Status = "Open",
+            CustomerName = "Verdef",
+            Stops =
+            [
+                new AlvysLoadStop
+                {
+                    StopType = "Pickup",
+                    Address = new AlvysAddress { City = "Laredo", State = "TX" },
+                    ScheduledStart = sentinel,
+                    Sequence = 1,
+                },
+                new AlvysLoadStop
+                {
+                    StopType = "Delivery",
+                    Address = new AlvysAddress { City = "Dallas", State = "TX" },
+                    ScheduledStart = sentinel,
+                    Sequence = 2,
+                },
+            ],
+        };
+
+        var client = new FakeAlvysClient
+        {
+            LoadDetail = seed,
+            Loads = [seed, sibling],
+        };
+        var service = BuildService(client);
+
+        var response = await service.GetCandidatesAsync("SEED", "LAREDO_TO_DALLAS", default);
+
+        var candidate = Assert.Single(response.Candidates);
+        Assert.Equal("L-100070", candidate.LoadNumber);
+        Assert.False(candidate.IsBlocked);
+        var timing = candidate.Factors.Single(f => f.Name == "Timing fit");
+        Assert.Equal(ConsolidationFit.Unknown, timing.Fit);
+    }
+
+    [Fact]
     public async Task Seed_is_never_returned_as_its_own_sibling()
     {
         var seed = SeedLoad();
