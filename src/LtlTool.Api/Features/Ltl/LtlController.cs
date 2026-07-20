@@ -79,7 +79,7 @@ public sealed class LtlController(
             clientIdLen = (o.ClientId ?? "").Length,
             clientIdPrefix = string.IsNullOrEmpty(o.ClientId) ? "" : o.ClientId[..Math.Min(6, o.ClientId.Length)] + "…",
             clientSecretLen = (o.ClientSecret ?? "").Length,
-            writebackMode = o.Writeback?.Mode.ToString() ?? "(null)",
+
         });
     }
 
