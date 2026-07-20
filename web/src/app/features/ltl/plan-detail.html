@@ -25,6 +25,16 @@
     </h1>
     <p class="subtitle">Draft plan — nothing has been written to Alvys yet.</p>
 
+    @if (deliveredExample()) {
+      <div class="delivered-note" data-testid="plan-delivered-note">
+        <strong>Recent delivered example — not open freight.</strong>
+        These load numbers came from recently <em>delivered</em> Alvys loads so the workflow can be
+        walked against real data. Because they are already delivered, <strong>Generate Alvys click
+        card</strong> and <strong>Save audit only</strong> are disabled — nothing here is plannable
+        or writable. Read-only.
+      </div>
+    }
+
     <div class="plan-columns">
       <div class="plan-col-main">
         <div class="card">
@@ -241,7 +251,7 @@
               type="button"
               class="btn-save-audit"
               data-testid="save-audit-only"
-              [disabled]="recordingAudit() || !!auditRecord()"
+              [disabled]="recordingAudit() || !!auditRecord() || deliveredExample()"
               (click)="recordAudit()"
             >
               {{ recordingAudit() ? 'Saving…' : (auditRecord() ? 'Saved' : 'Save audit only') }}
@@ -260,8 +270,21 @@
 
         <div class="card card-dark">
           <h2>Ready to dispatch?</h2>
-          <p>Generate the operator-facing card with these same live load numbers.</p>
-          <button type="button" class="btn-generate" data-testid="generate-click-card" (click)="openClickCard()">
+          @if (deliveredExample()) {
+            <p data-testid="generate-disabled-note">
+              These loads are already delivered — a click card can't be generated for retrospective
+              freight. Walk this against an open load to dispatch.
+            </p>
+          } @else {
+            <p>Generate the operator-facing card with these same live load numbers.</p>
+          }
+          <button
+            type="button"
+            class="btn-generate"
+            data-testid="generate-click-card"
+            [disabled]="deliveredExample()"
+            (click)="openClickCard()"
+          >
             Generate Alvys click card
           </button>
         </div>

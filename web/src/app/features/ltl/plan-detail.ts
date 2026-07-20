@@ -70,6 +70,15 @@ export class PlanDetail implements OnInit {
   readonly auditError = signal<string | null>(null);
   readonly auditRecord = signal<ConsolidationAuditRecord | null>(null);
 
+  /**
+   * True when this plan is built on already-delivered (or invoiced/closed) loads rather than open
+   * freight. The queue that feeds this route sweeps recently *delivered* Alvys loads so the
+   * workflow can be walked against real data — but a delivered load is not plannable or
+   * dispatchable, so dispatch actions ("Generate Alvys click card", "Save audit only") are
+   * disabled and an honest caveat is shown. Derived from the live Alvys status, never a mode flag.
+   */
+  readonly deliveredExample = computed(() => this.allLoads().some((l) => this.isNotOpenFreight(l)));
+
   /** True when the fit verdict is a hard fail: packer rejected OR combined capacity exceeded. */
   readonly trailerFitFails = computed(() => this.trailerFit()?.verdict === 'DoesNotFit');
 
@@ -275,6 +284,7 @@ export class PlanDetail implements OnInit {
    * button disables once a record exists so leadership sees a single row per deliberate save.
    */
   recordAudit(): void {
+    if (this.deliveredExample()) return;
     const parent = this.parent();
     if (!parent || this.recordingAudit() || this.auditRecord()) return;
     const parentLoadId = parent.id;
@@ -305,6 +315,7 @@ export class PlanDetail implements OnInit {
   }
 
   openClickCard(): void {
+    if (this.deliveredExample()) return;
     const qp = this.route.snapshot.queryParamMap;
     this.router.navigate(['/ltl/consolidate/plan', 'live', 'click-card'], {
       queryParams: {
@@ -363,6 +374,21 @@ export class PlanDetail implements OnInit {
     if (fit.totalWeightLbs === null || fit.totalWeightLbs === undefined) return '—';
     const prefix = fit.weightUnknown ? '≥ ' : '';
     return `${prefix}${this.formatNumber(fit.totalWeightLbs)} lb`;
+  }
+
+  /**
+   * True when a load's live Alvys status places it in a delivered/closed lifecycle state — i.e.
+   * it is no longer open freight you could plan or dispatch. Keyword-matched (not an allow-list)
+   * so a genuinely open load routed here still reads as dispatchable; only clearly-terminal
+   * statuses gate the dispatch actions.
+   */
+  private isNotOpenFreight(load: LtlLoadSummary): boolean {
+    if (load.workflow?.stage === 'Billed') return true;
+    const status = load.status?.trim().toLowerCase() ?? '';
+    if (!status) return false;
+    return ['deliver', 'invoic', 'complet', 'closed', 'paid', 'billed'].some((k) =>
+      status.includes(k),
+    );
   }
 
   private hasNonUsState(load: LtlLoadSummary): boolean {
