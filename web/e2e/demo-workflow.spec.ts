@@ -299,4 +299,64 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     await expect(page).toHaveURL(/\/ltl\/consolidate\/plan/);
     await expect(page.getByTestId('audit-trail')).toBeVisible({ timeout: 10_000 });
   });
+
+  test('Consolidate auto-selects a lane (pilot OR live) and walks queue → plan → click card', async ({
+    page,
+    request,
+  }) => {
+    // The data-first-demo fix: when the Laredo→Dallas pilot has no open loads today, the board
+    // auto-selects the busiest LIVE lane discovered from the "Today's consolidations" sweep so the
+    // FULL workflow can be walked against real data — never a fabricated seed. This asserts the
+    // auto-selected lane (whichever it is) drives a populated queue with fit chips and a Current
+    // plan panel, then routes to plan detail + click card. Skips honestly if Alvys has nothing to
+    // consolidate right now (no pilot seed AND an empty opportunity sweep).
+    const oppResp = await request.get(`${API_URL}/api/ltl/consolidation/opportunities?limit=25`);
+    const healthResp = await request.get(`${API_URL}/api/ltl/consolidation/corridors/health`);
+    const opps = oppResp.ok()
+      ? ((await oppResp.json()).opportunities ?? []).length
+      : 0;
+    const pilotSeed = healthResp.ok()
+      ? ((await healthResp.json()) as Array<{ seedLoadId?: string | null; seedLoadNumber?: string | null }>).some(
+          (h) => h.seedLoadId || h.seedLoadNumber,
+        )
+      : false;
+    if (opps === 0 && !pilotSeed) {
+      test.skip(true, 'No pilot seed and an empty opportunity sweep — nothing to consolidate today.');
+      return;
+    }
+
+    await pauseSoOperatorCanSee(page, 'Opening Consolidate — board auto-selects a lane');
+    await page.goto('/ltl/consolidate');
+
+    // Report which lane the default-selection logic chose so the demo log is self-explanatory.
+    const liveNote = page.getByTestId('consolidate-live-lane-note');
+    const onLiveLane = await liveNote.isVisible({ timeout: 15_000 }).catch(() => false);
+    console.log(
+      onLiveLane
+        ? '  ▸ Default selection: a LIVE lane outside the pilot corridor (pilot had no open loads).'
+        : '  ▸ Default selection: the Laredo→Dallas pilot corridor (it had live candidates).',
+    );
+
+    // Parent row + at least one candidate row render for the auto-selected lane, no manual seed.
+    await expect(page.getByTestId('consolidate-parent-row')).toBeVisible({ timeout: 15_000 });
+    const candidateRow = page.getByTestId('consolidate-candidate-row').first();
+    await expect(candidateRow).toBeVisible({ timeout: 15_000 });
+    // Fit chips render in the candidate row (Lane / Timing / Customer).
+    await expect(candidateRow.locator('.chip').first()).toBeVisible();
+
+    // The Current plan panel auto-fills its economics (siblings selected by default).
+    await expect(page.getByTestId('consolidate-uplift')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Combined RPM')).toBeVisible();
+    await expect(page.getByText('If sold individually')).toBeVisible();
+    await expect(page.getByTestId('consolidate-readonly-note')).toBeVisible();
+
+    // Footer carries the honest source line AND the live sweep facts (loads scanned + updated).
+    await expect(page.getByTestId('consolidate-footer')).toContainText('Read-only');
+
+    // Generate click card → plan detail on the SAME live load numbers.
+    await pauseSoOperatorCanSee(page, 'Opening the plan detail (Generate click card)');
+    await page.getByTestId('consolidate-generate-card').click();
+    await expect(page).toHaveURL(/\/ltl\/consolidate\/plan/);
+    await expect(page.getByTestId('audit-trail')).toBeVisible({ timeout: 15_000 });
+  });
 });

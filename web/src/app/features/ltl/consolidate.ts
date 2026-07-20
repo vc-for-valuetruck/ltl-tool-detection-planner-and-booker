@@ -2,15 +2,19 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { catchError, forkJoin, of } from 'rxjs';
 import { ConsolidationService } from './consolidation.service';
 import { LtlNav } from './ltl-nav';
+import { LtlLoadSummary } from './ltl.models';
 import {
   ConsolidationAuditRecord,
   ConsolidationCandidate,
   ConsolidationCandidateResponse,
   ConsolidationFactor,
   ConsolidationFit,
+  ConsolidationOpportunitiesResponse,
+  ConsolidationOpportunity,
+  ConsolidationOpportunityLoad,
   ConsolidationPlanResponse,
   CorridorHealth,
   CorridorSummary,
@@ -34,6 +38,89 @@ export interface CorridorPickerRow {
    */
   seedLoadId: string | null;
   seedLoadNumber: string | null;
+  /**
+   * True for lanes discovered from the live "Today's consolidations" sweep rather than from the
+   * configured pilot corridors. Live lanes let the demo walk the full workflow against real data
+   * even when the pilot corridor has no open loads today.
+   */
+  isLiveLane: boolean;
+  /** True when a live lane is NOT a configured pilot corridor — surfaced honestly in the UI. */
+  outsidePilot: boolean;
+  /**
+   * The representative live opportunity (parent + siblings) that drives the walkthrough when a
+   * live lane is selected. `null` for pilot-corridor rows (which use the seed/candidate path).
+   */
+  opportunity: ConsolidationOpportunity | null;
+}
+
+/** Stable lane key from an opportunity load pair — normalises case/whitespace. */
+function laneKeyOf(o: ConsolidationOpportunity): string {
+  return [o.originCity, o.originState, o.destinationCity, o.destinationState]
+    .map((s) => (s ?? '').trim().toUpperCase())
+    .join('|');
+}
+
+/**
+ * Builds live-lane picker rows from the opportunity sweep. Opportunities are grouped by lane;
+ * each lane's representative opportunity is the one with the most loads (tie-broken by projected
+ * uplift). `openLoadCount` is the count of distinct loads on the lane. Lanes whose origin→dest
+ * state pair matches a configured pilot corridor are folded into the pilot row (skipped here) so
+ * the picker never shows a duplicate chip for the pilot lane.
+ */
+export function buildLiveLaneRows(
+  response: ConsolidationOpportunitiesResponse | null,
+  pilotStatePairs: Set<string>,
+): CorridorPickerRow[] {
+  const byLane = new Map<string, ConsolidationOpportunity[]>();
+  for (const opp of response?.opportunities ?? []) {
+    const statePair = `${(opp.originState ?? '').toUpperCase()}->${(opp.destinationState ?? '').toUpperCase()}`;
+    if (pilotStatePairs.has(statePair)) continue; // folded into the pilot row
+    const key = laneKeyOf(opp);
+    (byLane.get(key) ?? byLane.set(key, []).get(key)!).push(opp);
+  }
+
+  const rows: CorridorPickerRow[] = [];
+  for (const [, opps] of byLane) {
+    const loadCount = opps.reduce((n, o) => n + 1 + o.siblings.length, 0);
+    const rep = [...opps].sort(
+      (a, b) => b.siblings.length - a.siblings.length || b.projectedUplift - a.projectedUplift,
+    )[0];
+    rows.push({
+      code: `LIVE::${laneKeyOf(rep)}`,
+      originName: `${rep.originCity}, ${rep.originState}`,
+      destinationName: `${rep.destinationCity}, ${rep.destinationState}`,
+      openLoadCount: loadCount,
+      loadedCleanly: true,
+      seedLoadId: null,
+      seedLoadNumber: null,
+      isLiveLane: true,
+      outsidePilot: true,
+      opportunity: rep,
+    });
+  }
+  // Busiest lane first so the picker reads high-value → low-value.
+  return rows.sort((a, b) => (b.openLoadCount ?? 0) - (a.openLoadCount ?? 0));
+}
+
+/**
+ * Chooses which picker row to select by default:
+ *   1. the pilot corridor if it has live candidates (a seed hint we can auto-populate from);
+ *   2. otherwise the busiest live lane (most open loads), clearly labelled outside-pilot;
+ *   3. otherwise the first pilot corridor (an honest empty state — nothing to plan today).
+ * Pure and side-effect free so it can be unit-tested directly.
+ */
+export function chooseDefaultSelection(
+  pilotRows: CorridorPickerRow[],
+  liveLaneRows: CorridorPickerRow[],
+): string | null {
+  const pilotWithData = pilotRows.find((r) => r.seedLoadId || r.seedLoadNumber);
+  if (pilotWithData) return pilotWithData.code;
+  if (liveLaneRows.length > 0) {
+    return [...liveLaneRows].sort(
+      (a, b) => (b.openLoadCount ?? 0) - (a.openLoadCount ?? 0),
+    )[0].code;
+  }
+  return pilotRows[0]?.code ?? null;
 }
 
 /**
@@ -61,6 +148,22 @@ export class Consolidate implements OnInit {
   readonly loadingCorridors = signal(true);
   readonly corridors = signal<CorridorPickerRow[]>([]);
   readonly selectedCorridor = signal<string>('LAREDO_TO_DALLAS');
+
+  /**
+   * True when the selected picker row is a live lane discovered from the opportunity sweep
+   * (outside the configured pilot corridor). Live lanes drive the walkthrough from a synthesized
+   * candidate/plan built entirely from the opportunity's real Alvys fields — never fabricated —
+   * and route the "Generate click card" / "Save as audit" actions through the corridor-agnostic
+   * live-plan + ungated-audit endpoints (the corridor-gated ones reject non-pilot lanes by design).
+   */
+  readonly liveLaneMode = signal(false);
+  /** The live opportunity backing the current live-lane walkthrough. `null` in pilot mode. */
+  readonly selectedOpportunity = signal<ConsolidationOpportunity | null>(null);
+
+  // Live footer facts from the opportunity sweep (non-empty state only).
+  readonly totalScanned = signal<number | null>(null);
+  readonly generatedAt = signal<string | null>(null);
+  readonly dataSource = signal<string | null>(null);
 
   // Screen 1: candidate search
   readonly seedInput = signal('');
@@ -105,6 +208,15 @@ export class Consolidate implements OnInit {
     const row = this.corridors().find((r) => r.code === this.selectedCorridor());
     return row ? `${row.originName} → ${row.destinationName}` : 'Laredo → Dallas';
   });
+
+  /**
+   * True when the currently-selected picker row is a live lane outside the configured pilot
+   * corridor. Drives an honest "Live lane — outside pilot corridor" badge so the dispatcher is
+   * never misled into thinking a non-pilot lane is the sanctioned Laredo→Dallas pilot.
+   */
+  readonly selectedIsOutsidePilot = computed(
+    () => this.corridors().find((r) => r.code === this.selectedCorridor())?.outsidePilot ?? false,
+  );
 
   readonly canBuildPlan = computed(
     () => !!this.candidateResponse()?.seed && this.hasSelection() && !this.loadingPlan(),
@@ -176,49 +288,205 @@ export class Consolidate implements OnInit {
   });
 
   ngOnInit(): void {
-    // Fire both calls in parallel. /corridors is static config and cheap; /corridors/health
-    // hits Alvys per corridor. Merged into a single picker row so we can display counts
-    // alongside labels the moment both land. If /corridors returns first and /health is
-    // still in flight we render with openLoadCount=null ("…") and let it fill in.
+    // Fire all three reads in parallel. /corridors is static config; /corridors/health hits
+    // Alvys per pilot corridor; /opportunities is the live "Today's consolidations" sweep across
+    // ALL lanes. Each source is wrapped so one degrading never blanks the whole picker — a failed
+    // sweep just means no live lanes are offered, and a failed corridor read just means no pilot
+    // chips. Merged into one picker: pilot corridors first, then live lanes discovered from the
+    // sweep (busiest first), each with its open-load count.
     forkJoin({
-      corridors: this.consolidation.getCorridors(),
-      health: this.consolidation.getCorridorHealth(),
-    }).subscribe({
-      next: ({ corridors, health }) => {
-        const healthByCode = new Map<string, CorridorHealth>(health.map(h => [h.code, h]));
-        this.corridors.set(
-          corridors.map(c => ({
-            code: c.code,
-            originName: c.origin.name,
-            destinationName: c.destination.name,
-            openLoadCount: healthByCode.get(c.code)?.openLoadCount ?? null,
-            loadedCleanly: healthByCode.has(c.code) && healthByCode.get(c.code)?.openLoadCount !== null,
-            seedLoadId: healthByCode.get(c.code)?.seedLoadId ?? null,
-            seedLoadNumber: healthByCode.get(c.code)?.seedLoadNumber ?? null,
-          })),
-        );
-        this.loadingCorridors.set(false);
-        this.maybeAutoSeedQueue();
-      },
-      error: () => {
-        // Corridors are non-essential for the seed-based workflow — the picker's absence is
-        // not fatal; the dispatcher can still type a seed and hit Find candidates. Degrade
-        // silently and let the rest of the tab work.
-        this.corridors.set([]);
-        this.loadingCorridors.set(false);
-      },
+      corridors: this.consolidation.getCorridors().pipe(catchError(() => of([] as CorridorSummary[]))),
+      health: this.consolidation.getCorridorHealth().pipe(catchError(() => of([] as CorridorHealth[]))),
+      opportunities: this.consolidation
+        .getOpportunities()
+        .pipe(catchError(() => of(null as ConsolidationOpportunitiesResponse | null))),
+    }).subscribe(({ corridors, health, opportunities }) => {
+      const healthByCode = new Map<string, CorridorHealth>(health.map((h) => [h.code, h]));
+      const pilotRows: CorridorPickerRow[] = corridors.map((c) => ({
+        code: c.code,
+        originName: c.origin.name,
+        destinationName: c.destination.name,
+        openLoadCount: healthByCode.get(c.code)?.openLoadCount ?? null,
+        loadedCleanly: healthByCode.has(c.code) && healthByCode.get(c.code)?.openLoadCount !== null,
+        seedLoadId: healthByCode.get(c.code)?.seedLoadId ?? null,
+        seedLoadNumber: healthByCode.get(c.code)?.seedLoadNumber ?? null,
+        isLiveLane: false,
+        outsidePilot: false,
+        opportunity: null,
+      }));
+
+      // A live lane whose origin→dest state pair matches a pilot corridor is folded into that
+      // pilot row (not shown twice), so seed the fold-set from the pilot corridors' state pairs.
+      const pilotStatePairs = new Set<string>(
+        corridors
+          .map((c) => `${(c.origin.state ?? '').toUpperCase()}->${(c.destination.state ?? '').toUpperCase()}`),
+      );
+      const liveLaneRows = buildLiveLaneRows(opportunities, pilotStatePairs);
+
+      this.corridors.set([...pilotRows, ...liveLaneRows]);
+      this.totalScanned.set(opportunities?.totalScanned ?? null);
+      this.generatedAt.set(opportunities?.generatedAt ?? null);
+      this.dataSource.set(opportunities?.dataSource ?? null);
+      this.loadingCorridors.set(false);
+
+      // Default selection: pilot-with-data → pilot; else busiest live lane; else honest empty.
+      const defaultCode = chooseDefaultSelection(pilotRows, liveLaneRows);
+      if (defaultCode) {
+        this.selectedCorridor.set(defaultCode);
+        const row = this.corridors().find((r) => r.code === defaultCode);
+        if (row?.isLiveLane) this.selectLiveLane(row);
+        else this.maybeAutoSeedQueue();
+      }
     });
   }
 
   selectCorridor(code: string): void {
     this.selectedCorridor.set(code);
-    // Clear any stale candidates/plan when the corridor changes.
+    // Clear any stale candidates/plan/errors when the corridor changes.
     this.candidateResponse.set(null);
     this.selectedSiblingIds.set(new Set<string>());
     this.plan.set(null);
-    // A corridor switch is a deliberate re-seed: auto-seed the newly-selected corridor's queue.
+    this.candidateError.set(null);
+    this.planError.set(null);
+    this.auditError.set(null);
+    this.auditRecord.set(null);
+    this.seedInput.set('');
+
+    const row = this.corridors().find((r) => r.code === code);
+    if (row?.isLiveLane) {
+      // Live lanes drive the walkthrough from a synthesized candidate/plan (no seed search).
+      this.selectLiveLane(row);
+      return;
+    }
+
+    // Pilot corridor: leave live-lane mode and re-seed the newly-selected corridor's queue.
+    this.liveLaneMode.set(false);
+    this.selectedOpportunity.set(null);
     this.autoSeeded = false;
     this.maybeAutoSeedQueue();
+  }
+
+  /**
+   * Populates the full walkthrough for a live lane discovered by the opportunity sweep. Every
+   * value on-screen comes from the opportunity's real Alvys fields — parent + siblings, revenue,
+   * miles, weight — so the plan panel, click card, and audit all reflect live data. The candidate
+   * rows carry Lane fit = Good / Timing fit = Good (the sweep groups strictly by same-lane +
+   * same-day, so both are true by construction) and Customer = Unknown (consolidation policy tier
+   * can't be read client-side — surfaced honestly, never assumed Allowed). Read-only end to end.
+   */
+  selectLiveLane(row: CorridorPickerRow): void {
+    const opp = row.opportunity;
+    if (!opp) return;
+    this.liveLaneMode.set(true);
+    this.selectedOpportunity.set(opp);
+    this.candidateError.set(null);
+    this.planError.set(null);
+    this.auditError.set(null);
+    this.auditRecord.set(null);
+    this.loadingCandidates.set(false);
+    this.loadingPlan.set(false);
+
+    const seed = this.synthesizeSeed(opp.parent, opp.pickupDate, opp.customerName);
+    const candidates: ConsolidationCandidate[] = opp.siblings.map((s) =>
+      this.synthesizeCandidate(s, row.code),
+    );
+    this.candidateResponse.set({
+      corridorCode: row.code,
+      seed,
+      candidates,
+      scanTruncated: false,
+    });
+
+    // All siblings are in-plan by default so the Current plan panel fills in immediately.
+    this.selectedSiblingIds.set(new Set(opp.siblings.map((s) => s.loadId)));
+    this.plan.set(this.synthesizeLivePlan(opp, seed, row.code));
+  }
+
+  /** Builds a minimal LtlLoadSummary from an opportunity load — only the fields the UI reads. */
+  private synthesizeSeed(
+    load: ConsolidationOpportunityLoad,
+    pickupDate: string,
+    fallbackCustomer: string,
+  ): LtlLoadSummary {
+    return {
+      id: load.loadId,
+      loadNumber: load.loadNumber,
+      customerName: load.customerName || fallbackCustomer || null,
+      origin: { label: `${load.originCity}, ${load.originState}` },
+      destination: { label: `${load.destinationCity}, ${load.destinationState}` },
+      scheduledPickupAt: pickupDate,
+      weightLbs: load.weightPounds,
+      revenue: load.linehaulAmount,
+    } as unknown as LtlLoadSummary;
+  }
+
+  private synthesizeCandidate(
+    load: ConsolidationOpportunityLoad,
+    corridorCode: string,
+  ): ConsolidationCandidate {
+    return {
+      loadId: load.loadId,
+      loadNumber: load.loadNumber,
+      customerName: load.customerName,
+      originLabel: `${load.originCity}, ${load.originState}`,
+      destinationLabel: `${load.destinationCity}, ${load.destinationState}`,
+      scheduledPickupAt: undefined,
+      revenue: load.linehaulAmount,
+      weightLbs: load.weightPounds ?? undefined,
+      corridorCode,
+      factors: [
+        {
+          name: 'Lane fit',
+          fit: 'Good',
+          rationale: 'Same origin→destination lane as the parent (grouped from live Alvys loads).',
+        },
+        {
+          name: 'Timing fit',
+          fit: 'Good',
+          rationale: 'Same pickup day as the parent.',
+        },
+        {
+          name: 'Customer',
+          fit: 'Unknown',
+          rationale: 'Consolidation policy tier not read here — confirm with the account owner.',
+        },
+      ],
+      isBlocked: false,
+      customerTier: 'Unknown',
+    };
+  }
+
+  /**
+   * Synthesizes a plan preview from the opportunity's own server-computed economics. combinedRpm
+   * (client computed) = combinedRevenue ÷ linehaulMiles, which equals the opportunity's own
+   * combinedRpm; per-load RPMs derive from each sibling's real revenue ÷ miles. clickCard is left
+   * blank here — the routed plan-detail screen re-fetches the real click card from live Alvys.
+   */
+  private synthesizeLivePlan(
+    opp: ConsolidationOpportunity,
+    seed: LtlLoadSummary,
+    corridorCode: string,
+  ): ConsolidationPlanResponse {
+    return {
+      previewId: 'live',
+      corridorCode,
+      parent: seed,
+      siblings: opp.siblings.map((s) => ({
+        loadId: s.loadId,
+        loadNumber: s.loadNumber,
+        customerName: s.customerName,
+        originLabel: `${s.originCity}, ${s.originState}`,
+        destinationLabel: `${s.destinationCity}, ${s.destinationState}`,
+        revenue: s.linehaulAmount,
+        loadedMiles: s.miles,
+        customerTier: 'Unknown',
+        cautions: [],
+      })),
+      combinedRevenue: opp.combinedRevenue,
+      linehaulMiles: opp.parentLinehaulMiles,
+      clickCard: { plainText: '', tripReferenceValue: '', mainLoadIdReferenceValue: '' },
+      blockers: [],
+    };
   }
 
   /**
@@ -242,6 +510,15 @@ export class Consolidate implements OnInit {
   loadCandidates(opts?: { autoSelectFirstSibling?: boolean }): void {
     const seed = this.seedInput().trim();
     if (!seed) return;
+    // A manual seed search is a pilot-corridor query. If a live lane is currently selected, drop
+    // out of live-lane mode and target a real pilot corridor code (the live `LIVE::…` pseudo-code
+    // is not a valid backend corridor).
+    if (this.liveLaneMode() || this.selectedCorridor().startsWith('LIVE::')) {
+      this.liveLaneMode.set(false);
+      this.selectedOpportunity.set(null);
+      const pilot = this.corridors().find((r) => !r.isLiveLane);
+      this.selectedCorridor.set(pilot?.code ?? 'LAREDO_TO_DALLAS');
+    }
     this.loadingCandidates.set(true);
     this.candidateError.set(null);
     this.candidateResponse.set(null);
@@ -295,6 +572,26 @@ export class Consolidate implements OnInit {
     if (!seed) return;
     if (this.selectedSiblingIds().size === 0) return;
 
+    // Live lanes are corridor-agnostic; the backend /plan endpoint is region+corridor gated and
+    // would return blockers for a non-pilot lane. Re-synthesize the plan client-side from the
+    // currently-selected siblings' real Alvys revenue/miles instead — never fabricated.
+    if (this.liveLaneMode()) {
+      const opp = this.selectedOpportunity();
+      if (!opp) return;
+      const selected = new Set(this.selectedSiblingIds());
+      const siblings = opp.siblings.filter((s) => selected.has(s.loadId));
+      const combinedRevenue =
+        (opp.parent.linehaulAmount ?? 0) + siblings.reduce((sum, s) => sum + (s.linehaulAmount ?? 0), 0);
+      this.plan.set(
+        this.synthesizeLivePlan(
+          { ...opp, siblings, combinedRevenue },
+          seed,
+          this.selectedCorridor(),
+        ),
+      );
+      return;
+    }
+
     this.loadingPlan.set(true);
     this.planError.set(null);
     this.plan.set(null);
@@ -325,6 +622,35 @@ export class Consolidate implements OnInit {
     this.recordingAudit.set(true);
     this.auditError.set(null);
     this.auditRecord.set(null);
+
+    // Live lanes are outside the pilot corridor, so the corridor-gated /plan/audit endpoint would
+    // reject them by design. Route them through the ungated /audit endpoint (load NUMBERS, not
+    // ids) that the click-card screen also uses. Still internal-only — nothing writes to Alvys.
+    if (this.liveLaneMode()) {
+      const opp = this.selectedOpportunity();
+      if (!opp) {
+        this.recordingAudit.set(false);
+        return;
+      }
+      this.consolidation
+        .recordLiveAudit({
+          parentLoadNumber: opp.parent.loadNumber,
+          siblingLoadNumbers: opp.siblings.map((s) => s.loadNumber),
+          combinedRevenue: opp.combinedRevenue,
+          combinedRpm: this.combinedRpm(),
+        })
+        .subscribe({
+          next: (record) => {
+            this.auditRecord.set({ id: record.auditId } as ConsolidationAuditRecord);
+            this.recordingAudit.set(false);
+          },
+          error: (err) => {
+            this.auditError.set(err?.error?.error ?? err?.message ?? 'Failed to record audit.');
+            this.recordingAudit.set(false);
+          },
+        });
+      return;
+    }
 
     this.consolidation
       .recordPlanAudit({
@@ -367,6 +693,23 @@ export class Consolidate implements OnInit {
     const seed = this.candidateResponse()?.seed;
     const p = this.plan();
     if (!seed || !p) return;
+
+    // Live lanes reuse the corridor-agnostic /plan/live route (load NUMBERS as query params, the
+    // same path the "Today's consolidations" cards use), carrying the opportunity's projected
+    // uplift across the navigation so plan-detail shows the figure the dispatcher clicked on.
+    if (this.liveLaneMode()) {
+      const opp = this.selectedOpportunity();
+      if (!opp) return;
+      this.router.navigate(['/ltl/consolidate/plan', 'live'], {
+        queryParams: {
+          parent: opp.parent.loadNumber,
+          siblings: opp.siblings.map((s) => s.loadNumber).join(','),
+        },
+        state: { projectedUplift: opp.projectedUplift },
+      });
+      return;
+    }
+
     this.router.navigate(['/ltl/consolidate/plan', p.previewId], {
       queryParams: {
         parent: seed.id,

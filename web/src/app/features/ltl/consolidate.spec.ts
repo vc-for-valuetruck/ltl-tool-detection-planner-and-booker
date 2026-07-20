@@ -1,9 +1,18 @@
-import { Consolidate } from './consolidate';
+import {
+  Consolidate,
+  CorridorPickerRow,
+  buildLiveLaneRows,
+  chooseDefaultSelection,
+} from './consolidate';
 import {
   ConsolidationCandidate,
   ConsolidationCandidateResponse,
+  ConsolidationOpportunitiesResponse,
+  ConsolidationOpportunity,
   ConsolidationPlanResponse,
 } from './consolidation.models';
+import { LtlNav } from './ltl-nav';
+import { By } from '@angular/platform-browser';
 import { ConsolidationService } from './consolidation.service';
 import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
@@ -280,6 +289,7 @@ describe('Consolidate default auto-seed', () => {
           clickCard: { plainText: 'x', tripReferenceValue: 'LTL=X', mainLoadIdReferenceValue: 'X' },
           blockers: [],
         } as unknown as ConsolidationPlanResponse),
+      getOpportunities: () => of(null as any),
       ...overrides,
     } as unknown as ConsolidationService;
   }
@@ -335,5 +345,269 @@ describe('Consolidate default auto-seed', () => {
     c.ngOnInit();
     expect(c.candidateResponse()).not.toBeNull();
     expect(c.corridorReadyNoQueue()).toBeFalse();
+  });
+});
+
+/** Minimal picker-row/opportunity factories for the pure default-selection + lane-build logic. */
+function pilotRow(overrides: Partial<CorridorPickerRow> = {}): CorridorPickerRow {
+  return {
+    code: 'LAREDO_TO_DALLAS',
+    originName: 'Laredo',
+    destinationName: 'Dallas',
+    openLoadCount: 0,
+    loadedCleanly: true,
+    seedLoadId: null,
+    seedLoadNumber: null,
+    isLiveLane: false,
+    outsidePilot: false,
+    opportunity: null,
+    ...overrides,
+  };
+}
+
+function makeOppLoad(id: string, over: Partial<ConsolidationOpportunity['parent']> = {}) {
+  return {
+    loadNumber: `LN-${id}`,
+    loadId: id,
+    customerName: 'Vertiv',
+    originCity: 'Monterrey',
+    originState: 'NL',
+    destinationCity: 'Chicago',
+    destinationState: 'IL',
+    linehaulAmount: 2000,
+    miles: 1000,
+    rpm: 2,
+    weightPounds: 12000,
+    ...over,
+  };
+}
+
+function makeOpportunity(over: Partial<ConsolidationOpportunity> = {}): ConsolidationOpportunity {
+  return {
+    rank: 1,
+    originState: 'NL',
+    destinationState: 'IL',
+    originCity: 'Monterrey',
+    destinationCity: 'Chicago',
+    pickupDate: '2026-07-20',
+    customerName: 'Vertiv',
+    combinedRevenue: 6000,
+    parentLinehaulMiles: 1000,
+    combinedRpm: 6,
+    projectedUplift: 4000,
+    parent: makeOppLoad('P1'),
+    siblings: [makeOppLoad('S1'), makeOppLoad('S2')],
+    ...over,
+  };
+}
+
+describe('chooseDefaultSelection', () => {
+  it('prefers the pilot corridor when it has a live seed', () => {
+    const pilot = [pilotRow({ seedLoadNumber: 'L-100234', openLoadCount: 4 })];
+    const live = buildLiveLaneRows({ opportunities: [makeOpportunity()] } as any, new Set());
+    expect(chooseDefaultSelection(pilot, live)).toBe('LAREDO_TO_DALLAS');
+  });
+
+  it('falls back to the busiest live lane when the pilot corridor is empty', () => {
+    const pilot = [pilotRow({ seedLoadId: null, seedLoadNumber: null, openLoadCount: 0 })];
+    const live = buildLiveLaneRows(
+      {
+        opportunities: [
+          makeOpportunity({ originState: 'NL', destinationState: 'IL', siblings: [makeOppLoad('S1')] }),
+          makeOpportunity({
+            originState: 'TX',
+            destinationState: 'SC',
+            originCity: 'Laredo',
+            destinationCity: 'Greer',
+            siblings: [makeOppLoad('S1'), makeOppLoad('S2'), makeOppLoad('S3')],
+          }),
+        ],
+      } as any,
+      new Set(),
+    );
+    const chosen = chooseDefaultSelection(pilot, live);
+    // The 4-load TX→SC lane is busier than the 2-load NL→IL lane, so it wins.
+    expect(chosen).toContain('LIVE::');
+    expect(chosen).toContain('TX');
+  });
+
+  it('falls back to the first pilot corridor (honest empty state) when nothing is live', () => {
+    const pilot = [pilotRow()];
+    expect(chooseDefaultSelection(pilot, [])).toBe('LAREDO_TO_DALLAS');
+  });
+
+  it('returns null when there are no rows at all', () => {
+    expect(chooseDefaultSelection([], [])).toBeNull();
+  });
+});
+
+describe('buildLiveLaneRows', () => {
+  it('groups by lane, counts distinct loads, and sorts busiest first', () => {
+    const rows = buildLiveLaneRows(
+      {
+        opportunities: [
+          makeOpportunity({ originState: 'NL', destinationState: 'IL', siblings: [makeOppLoad('S1')] }),
+          makeOpportunity({
+            originState: 'TX',
+            destinationState: 'SC',
+            originCity: 'Laredo',
+            destinationCity: 'Greer',
+            siblings: [makeOppLoad('S1'), makeOppLoad('S2'), makeOppLoad('S3')],
+          }),
+        ],
+      } as any,
+      new Set(),
+    );
+    expect(rows.length).toBe(2);
+    // Busiest (parent + 3 siblings = 4) first.
+    expect(rows[0].openLoadCount).toBe(4);
+    expect(rows[1].openLoadCount).toBe(2);
+    expect(rows.every((r) => r.isLiveLane && r.outsidePilot)).toBeTrue();
+  });
+
+  it('folds lanes whose state pair matches a pilot corridor (no duplicate chip)', () => {
+    const rows = buildLiveLaneRows(
+      { opportunities: [makeOpportunity({ originState: 'TX', destinationState: 'TX' })] } as any,
+      new Set(['TX->TX']),
+    );
+    expect(rows.length).toBe(0);
+  });
+
+  it('returns [] for a null/absent sweep', () => {
+    expect(buildLiveLaneRows(null, new Set())).toEqual([]);
+  });
+});
+
+describe('Consolidate live-lane walkthrough', () => {
+  function liveStub(recordLiveAudit?: jasmine.Spy): ConsolidationService {
+    return {
+      getCorridors: () => of([]),
+      getCorridorHealth: () => of([]),
+      getOpportunities: () =>
+        of({
+          opportunities: [makeOpportunity()],
+          totalScanned: 242,
+          totalPairsFound: 1,
+          generatedAt: '2026-07-20T10:00:00Z',
+          dataSource: 'Alvys va336 (live)',
+        } as ConsolidationOpportunitiesResponse),
+      recordLiveAudit:
+        recordLiveAudit ??
+        (() =>
+          of({
+            auditId: 'AUD-1',
+            recordedAt: '2026-07-20T10:05:00Z',
+            recordedBy: 'demo',
+            parentLoadNumber: 'LN-P1',
+            siblingLoadNumbers: ['LN-S1', 'LN-S2'],
+          })),
+    } as unknown as ConsolidationService;
+  }
+
+  function componentWith(stub: ConsolidationService): Consolidate {
+    TestBed.configureTestingModule({
+      imports: [HttpClientTestingModule],
+      providers: [
+        provideRouter([]),
+        { provide: RUNTIME_CONFIG, useValue: TEST_RUNTIME_CONFIG },
+        { provide: ConsolidationService, useValue: stub },
+      ],
+    });
+    return TestBed.runInInjectionContext(() => new Consolidate());
+  }
+
+  it('auto-selects the busiest live lane and synthesizes the full plan from real fields', () => {
+    const c = componentWith(liveStub());
+    c.ngOnInit();
+    expect(c.liveLaneMode()).toBeTrue();
+    expect(c.selectedIsOutsidePilot()).toBeTrue();
+    expect(c.candidateResponse()?.seed?.id).toBe('P1');
+    // Both siblings in plan by default.
+    expect(c.isSelected('S1')).toBeTrue();
+    expect(c.isSelected('S2')).toBeTrue();
+    // Economics come straight from the opportunity's own server-computed totals.
+    expect(c.plan()?.combinedRevenue).toBe(6000);
+    expect(c.combinedRpm()).toBe(6);
+    // Candidate Customer fit is honest 'Unknown' — policy tier is not read client-side.
+    expect(c.candidateResponse()?.candidates[0].customerTier).toBe('Unknown');
+    // Footer facts populated from the sweep.
+    expect(c.totalScanned()).toBe(242);
+    expect(c.generatedAt()).toBe('2026-07-20T10:00:00Z');
+  });
+
+  it('records a live-lane audit through the ungated endpoint (load numbers, not ids)', () => {
+    const spy = jasmine.createSpy('recordLiveAudit').and.returnValue(
+      of({
+        auditId: 'AUD-9',
+        recordedAt: 'now',
+        recordedBy: 'demo',
+        parentLoadNumber: 'LN-P1',
+        siblingLoadNumbers: ['LN-S1', 'LN-S2'],
+      }),
+    );
+    const c = componentWith(liveStub(spy));
+    c.ngOnInit();
+    c.recordAudit();
+    expect(spy).toHaveBeenCalledWith(
+      jasmine.objectContaining({
+        parentLoadNumber: 'LN-P1',
+        siblingLoadNumbers: ['LN-S1', 'LN-S2'],
+      }),
+    );
+    expect(c.auditRecord()?.id).toBe('AUD-9');
+  });
+
+  it('recomputes revenue from the remaining siblings when one is removed', () => {
+    const c = componentWith(liveStub());
+    c.ngOnInit();
+    // Remove S2 (linehaulAmount 2000). Combined = parent 2000 + S1 2000 = 4000.
+    c.toggleSibling({ loadId: 'S2', isBlocked: false } as ConsolidationCandidate);
+    expect(c.isSelected('S2')).toBeFalse();
+    expect(c.plan()?.combinedRevenue).toBe(4000);
+  });
+});
+
+describe('LtlNav active states', () => {
+  function renderNav(active: 'search' | 'consolidate' | null) {
+    TestBed.configureTestingModule({
+      imports: [LtlNav],
+      providers: [provideRouter([])],
+    });
+    const fixture = TestBed.createComponent(LtlNav);
+    fixture.componentInstance.active = active;
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('renders Search as a real navigating link (not a Phase 2 stub) and marks it active', () => {
+    const fixture = renderNav('search');
+    const anchors = fixture.debugElement.queryAll(By.css('a.shell-tab'));
+    const search = anchors.find((a) => a.nativeElement.textContent.trim().startsWith('Search'));
+    expect(search).toBeTruthy();
+    expect(search!.nativeElement.getAttribute('href')).toContain('/ltl');
+    expect(search!.nativeElement.classList).toContain('active');
+    // Search must NOT carry a Phase 2 badge anymore.
+    expect(search!.nativeElement.querySelector('.phase-badge')).toBeNull();
+  });
+
+  it('marks Consolidate active on consolidate routes and leaves Search inactive', () => {
+    const fixture = renderNav('consolidate');
+    const anchors = fixture.debugElement.queryAll(By.css('a.shell-tab'));
+    const consolidate = anchors.find((a) =>
+      a.nativeElement.textContent.trim().startsWith('Consolidate'),
+    );
+    const search = anchors.find((a) => a.nativeElement.textContent.trim().startsWith('Search'));
+    expect(consolidate!.nativeElement.classList).toContain('active');
+    expect(search!.nativeElement.classList).not.toContain('active');
+  });
+
+  it('keeps Billing / Exceptions / Tenders as non-navigating Phase 2 stubs', () => {
+    const fixture = renderNav('search');
+    const stubs = fixture.debugElement.queryAll(By.css('span.shell-tab-stub'));
+    const labels = stubs.map((s) => s.nativeElement.textContent.trim().split(/\s+/)[0]);
+    expect(labels).toContain('Billing');
+    expect(labels).toContain('Exceptions');
+    expect(labels).toContain('Tenders');
+    expect(stubs.every((s) => s.nativeElement.querySelector('.phase-badge'))).toBeTrue();
   });
 });
