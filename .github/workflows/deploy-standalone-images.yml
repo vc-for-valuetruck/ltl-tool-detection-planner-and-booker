@@ -21,6 +21,17 @@ on:
       - 'web/**'
       - '.github/workflows/deploy-standalone-images.yml'
   workflow_dispatch:
+    inputs:
+      optimization_flags:
+        description: >-
+          Toggle the LTL optimization feature flags (solver + agent commands) as
+          Kudu app settings on the API App Service. Reversible without a redeploy
+          by re-running with this set to "off".
+        type: choice
+        options:
+          - 'on'
+          - 'off'
+        default: 'on'
 
 permissions:
   contents: read
@@ -102,6 +113,8 @@ jobs:
           ACR_USER: ${{ secrets.ACR_USERNAME }}
           ACR_PASS: ${{ secrets.ACR_PASSWORD }}
           ACR_LOGIN: ${{ secrets.ACR_LOGIN_SERVER }}
+          # workflow_dispatch input; empty on push (defaults to "on" below).
+          OPTIMIZATION_FLAGS: ${{ github.event.inputs.optimization_flags }}
         run: |
           # Use SCM basic auth to hit the Kudu REST API and update WEBSITES_PORT/DOCKER_* env
           # vars. Docker image name is set via DOCKER_CUSTOM_IMAGE_NAME setting.
@@ -109,8 +122,29 @@ jobs:
           AUTH="Basic $(printf '$%s:%s' "$APP" "$SCM_PASS" | base64 -w0)"
           echo "Setting $APP image to $IMG"
 
+          # LTL optimization feature flags are merged into the same Kudu settings dict.
+          # These are plain app settings (reversible without a redeploy by re-running
+          # this workflow with optimization_flags=off). Push events carry no input, so
+          # default to "on".
+          OPT="${OPTIMIZATION_FLAGS:-on}"
+          if [ "$OPT" = "on" ]; then
+            SOLVER_ENABLED=true
+            AGENT_ENABLED=true
+          else
+            SOLVER_ENABLED=false
+            AGENT_ENABLED=false
+          fi
+          # TrailerFit stays disabled in the standalone RG regardless of the toggle:
+          # its OR-Tools sidecar is a separate App Service, and Kudu SCM basic auth
+          # cannot create App Services (no ARM/OIDC in this stack). With no sidecar the
+          # TrailerFit verdict is Null — surfaced honestly as "verify at dock", never
+          # coerced to a pass/fail. Re-enable only once the sidecar is hostable here.
+          TRAILERFIT_ENABLED=false
+          echo "optimization_flags=$OPT -> Solver=$SOLVER_ENABLED AgentCommands=$AGENT_ENABLED TrailerFit=$TRAILERFIT_ENABLED"
+
           # Update the image via the ARM proxy exposed on the SCM host — the
-          # /api/settings endpoint on Kudu takes a settings dict.
+          # /api/settings endpoint on Kudu takes a settings dict. Writeback and
+          # Alvys__InternalApi settings are intentionally NOT touched here.
           curl -sf -X POST \
             -H "Authorization: $AUTH" \
             -H "Content-Type: application/json" \
@@ -119,7 +153,10 @@ jobs:
               \"DOCKER_CUSTOM_IMAGE_NAME\": \"$IMG\",
               \"DOCKER_REGISTRY_SERVER_URL\": \"https://${ACR_LOGIN}\",
               \"DOCKER_REGISTRY_SERVER_USERNAME\": \"${ACR_USER}\",
-              \"DOCKER_REGISTRY_SERVER_PASSWORD\": \"${ACR_PASS}\"
+              \"DOCKER_REGISTRY_SERVER_PASSWORD\": \"${ACR_PASS}\",
+              \"Ltl__Optimization__Solver__Enabled\": \"$SOLVER_ENABLED\",
+              \"Ltl__Optimization__AgentCommands__Enabled\": \"$AGENT_ENABLED\",
+              \"Ltl__Optimization__TrailerFit__Enabled\": \"$TRAILERFIT_ENABLED\"
             }" || echo "::warning::Kudu settings POST failed — will rely on 'latest' tag pull"
 
       - name: Update Web App Service container config
