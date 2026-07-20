@@ -46,10 +46,8 @@
           <div class="trailer-viz">
             <a
               class="trailer-slot trailer-slot-parent trailer-slot-link"
-              [href]="alvysLoadUrl(p)"
-              target="_blank"
-              rel="noopener"
-              [attr.title]="'Open ' + (p.loadNumber ?? p.id) + ' in Alvys'"
+              [routerLink]="internalLoadUrl(p)"
+              [attr.title]="'View ' + (p.loadNumber ?? p.id) + ' detail'"
               data-testid="trailer-slot-link"
             >
               <strong>{{ p.loadNumber ?? p.id }} · {{ p.customerName ?? '—' }}</strong>
@@ -58,16 +56,14 @@
                 {{ p.weightLbs ? (formatNumber(p.weightLbs) + ' lb') : '— lb' }} ·
                 <span class="missing-pallets">-- pallets</span>
               </span>
-              <span class="trailer-slot-tag">PARENT · nose-load <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
+              <span class="trailer-slot-tag">PARENT · nose-load <span class="trailer-slot-openhint" aria-hidden="true">→ detail</span></span>
             </a>
 
             @for (s of siblings(); track s.id; let i = $index) {
               <a
                 class="trailer-slot trailer-slot-sibling trailer-slot-link"
-                [href]="alvysLoadUrl(s)"
-                target="_blank"
-                rel="noopener"
-                [attr.title]="'Open ' + (s.loadNumber ?? s.id) + ' in Alvys'"
+                [routerLink]="internalLoadUrl(s)"
+                [attr.title]="'View ' + (s.loadNumber ?? s.id) + ' detail'"
                 data-testid="trailer-slot-link"
               >
                 <strong>{{ s.loadNumber ?? s.id }} · {{ s.customerName ?? '—' }}</strong>
@@ -76,7 +72,7 @@
                   {{ s.weightLbs ? (formatNumber(s.weightLbs) + ' lb') : '— lb' }} ·
                   <span class="missing-pallets">-- pallets</span>
                 </span>
-                <span class="trailer-slot-tag">SIBLING · {{ loadPosition(i) }} <span class="trailer-slot-openhint" aria-hidden="true">↗ Alvys</span></span>
+                <span class="trailer-slot-tag">SIBLING · {{ loadPosition(i) }} <span class="trailer-slot-openhint" aria-hidden="true">→ detail</span></span>
               </a>
             }
 
