@@ -62,7 +62,7 @@ internal sealed class TolerantDecimalConverter : JsonConverter<decimal?>
             case JsonTokenType.StartObject:
                 return ReadFromObject(ref reader);
             default:
-                reader.Skip();
+                SafeSkip(ref reader);
                 return null;
         }
     }
@@ -71,7 +71,8 @@ internal sealed class TolerantDecimalConverter : JsonConverter<decimal?>
     /// Walks a Money/Weight/Volume/Mileage wrapper object and returns the first meaningful
     /// decimal we can extract. Prefers <c>Amount</c> (money), then <c>Value</c>
     /// (weight/volume), then nested <c>Distance.Value</c> (mileage). Unknown properties are
-    /// skipped so we don't drop into deserializer recursion.
+    /// skipped via <see cref="SafeSkip"/> because the streaming JSON reader over an HTTP
+    /// response body has <c>isFinalBlock=false</c> and would throw on <see cref="Utf8JsonReader.Skip"/>.
     /// </summary>
     private static decimal? ReadFromObject(ref Utf8JsonReader reader)
     {
@@ -111,13 +112,13 @@ internal sealed class TolerantDecimalConverter : JsonConverter<decimal?>
                     }
                     else
                     {
-                        reader.Skip();
+                        SafeSkip(ref reader);
                     }
                 }
             }
             else
             {
-                reader.Skip();
+                SafeSkip(ref reader);
             }
         }
 
@@ -137,8 +138,33 @@ internal sealed class TolerantDecimalConverter : JsonConverter<decimal?>
                     return d;
                 return null;
             default:
-                reader.Skip();
+                SafeSkip(ref reader);
                 return null;
+        }
+    }
+
+    /// <summary>
+    /// Streaming-safe token skip. On a partial-block reader (typical for HTTP response
+    /// bodies deserialized via ReadFromJsonAsync), <see cref="Utf8JsonReader.Skip"/> throws
+    /// <c>InvalidOperationException: Cannot skip tokens on partial JSON</c>. Use
+    /// <see cref="Utf8JsonReader.TrySkip"/> and fall back to hand-walking start/end tokens
+    /// so an unknown nested object/array in a wrapper (e.g. <c>{Amount, Currency, Meta:{...}}</c>)
+    /// doesn't crash the whole load-search deserialization.
+    /// </summary>
+    private static void SafeSkip(ref Utf8JsonReader reader)
+    {
+        if (reader.TrySkip()) return;
+
+        // Manual walk: only StartObject/StartArray have nested content. For scalars, TrySkip
+        // would only fail on a truncated buffer — not applicable to a whole-body Alvys read.
+        if (reader.TokenType != JsonTokenType.StartObject &&
+            reader.TokenType != JsonTokenType.StartArray) return;
+
+        var depth = 1;
+        while (depth > 0 && reader.Read())
+        {
+            if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray) depth++;
+            else if (reader.TokenType is JsonTokenType.EndObject or JsonTokenType.EndArray) depth--;
         }
     }
 
