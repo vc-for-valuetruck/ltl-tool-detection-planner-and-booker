@@ -1,6 +1,5 @@
 using System.Text;
 using LtlTool.Api.Features.Ltl.YardArtifacts;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace LtlTool.Api.Tests.Ltl;
@@ -19,7 +18,8 @@ public sealed class YardArtifactServiceTests
     {
         store = new FakeStore();
         return new YardArtifactService(
-            store, new FakeFileStore(), Options.Create(options ?? new YardArtifactOptions()),
+            store, new FakeFileStore(),
+            Microsoft.Extensions.Options.Options.Create(options ?? new YardArtifactOptions()),
             LtlTestFactory.Clock());
     }
 
