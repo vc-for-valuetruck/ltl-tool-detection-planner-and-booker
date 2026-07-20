@@ -61,6 +61,9 @@ public sealed class LtlOptions
     /// <summary>Match scoring weights/thresholds.</summary>
     public LtlMatchOptions Match { get; set; } = new();
 
+    /// <summary>Delivery-ETA prediction settings (Phase 7.3). Bound from <c>Ltl:Eta</c>.</summary>
+    public EtaOptions Eta { get; set; } = new();
+
     /// <summary>
     /// Gross margin percent (Revenue − Carrier payable, over Revenue) at/below which a load is
     /// flagged as a margin risk. Only evaluated when both revenue and carrier payable are known —
@@ -184,6 +187,28 @@ public sealed class AccessorialAiOptions
     /// </summary>
     public string? ApiKey { get; set; }
 }
+/// <summary>
+/// Settings for the delivery-ETA predictor (Phase 7.3). The ETA is a simple, honest estimate:
+/// remaining loaded miles (PCMiler-sourced via Alvys) divided by an assumed average line-haul
+/// speed, added to the actual pickup time. It is never presented as a routing-API ETA and always
+/// carries a "derived from PCMiler miles via Alvys" provenance label.
+/// </summary>
+public sealed class EtaOptions
+{
+    /// <summary>
+    /// Assumed average line-haul speed (mph) including a simple rest/duty allowance. Deliberately
+    /// conservative (below highway cruise) so the ETA does not run early and mask a predicted-late
+    /// arrival. Configurable per environment.
+    /// </summary>
+    public decimal AverageSpeedMph { get; set; } = 47m;
+
+    /// <summary>
+    /// Grace window (minutes) past the scheduled delivery window before a predicted arrival is
+    /// flagged "predicted late" — absorbs normal appointment slack so the exception isn't noisy.
+    /// </summary>
+    public int LateGraceMinutes { get; set; } = 30;
+}
+
 public sealed class LtlMatchOptions
 {
     public double EquipmentWeight { get; set; } = 30;

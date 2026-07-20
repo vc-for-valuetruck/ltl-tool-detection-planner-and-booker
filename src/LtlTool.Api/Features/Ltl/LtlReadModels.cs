@@ -189,6 +189,20 @@ public sealed class LtlLoadSummary
     public DateTimeOffset? ActualPickupAt { get; init; }
     public DateTimeOffset? ActualDeliveryAt { get; init; }
 
+    /// <summary>
+    /// Predicted delivery instant for an in-transit load (Phase 7.3). Derived from PCMiler loaded
+    /// miles via Alvys ÷ a configured average line-haul speed, anchored at actual pickup. Null when
+    /// the load is not in transit or carries no mileage to estimate from — never guessed. See
+    /// <see cref="EtaBasis"/> for the exact derivation shown to the user.
+    /// </summary>
+    public DateTimeOffset? PredictedDeliveryAt { get; init; }
+
+    /// <summary>True when <see cref="PredictedDeliveryAt"/> is past the scheduled delivery window (+grace).</summary>
+    public bool PredictedLate { get; init; }
+
+    /// <summary>Provenance/rationale for the ETA, so the UI never presents it as a routing-API promise.</summary>
+    public string? EtaBasis { get; init; }
+
     public IReadOnlyList<string> Equipment { get; init; } = [];
     public decimal? WeightLbs { get; init; }
     public decimal? Volume { get; init; }

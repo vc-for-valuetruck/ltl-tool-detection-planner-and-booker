@@ -39,6 +39,7 @@
               <th>Customer</th>
               <th>Lane</th>
               <th>Pickup</th>
+              <th>ETA</th>
               <th>Exceptions</th>
             </tr>
           </thead>
@@ -54,6 +55,18 @@
                 <td>{{ load.customerName ?? '—' }}</td>
                 <td>{{ load.origin?.label ?? '—' }} → {{ load.destination?.label ?? '—' }}</td>
                 <td>{{ load.scheduledPickupAt ? (load.scheduledPickupAt | date: 'MMM d') : '—' }}</td>
+                <td>
+                  @if (load.predictedDeliveryAt) {
+                    <div class="eta-cell" [title]="load.etaBasis ?? ''">
+                      <span data-testid="exceptions-eta">{{ load.predictedDeliveryAt | date: 'MMM d, h:mm a' }}</span>
+                      @if (load.predictedLate) {
+                        <span class="chip chip-warn" data-testid="exceptions-eta-late">Predicted late</span>
+                      }
+                    </div>
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
                 <td>
                   <div class="chip-row">
                     @for (ex of load.exceptions; track ex.code) {

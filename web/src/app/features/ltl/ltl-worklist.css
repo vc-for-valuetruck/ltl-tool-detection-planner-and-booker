@@ -172,6 +172,13 @@ table.grid td {
   color: var(--text-muted);
 }
 
+.eta-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .state {
   padding: 40px;
   text-align: center;

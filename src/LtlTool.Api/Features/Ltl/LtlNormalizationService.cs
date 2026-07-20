@@ -10,9 +10,15 @@ namespace LtlTool.Api.Features.Ltl;
 /// <see cref="MissingDataFlag"/> rather than coercing it to a default.
 /// </summary>
 public sealed class LtlNormalizationService(
-    IOptions<LtlOptions> options, BillingReadinessService billing, WorkflowStageService workflow)
+    IOptions<LtlOptions> options,
+    BillingReadinessService billing,
+    WorkflowStageService workflow,
+    TimeProvider timeProvider)
 {
     private readonly LtlOptions _options = options.Value;
+
+    /// <summary>Exception code for a predicted-late arrival (Phase 7.3). Heads-up, not a billing block.</summary>
+    public const string PredictedLateExceptionCode = "PredictedLate";
 
     /// <summary>Statuses that mean capacity is committed (covered → delivered).</summary>
     private static readonly HashSet<string> AssignedStatuses = new(StringComparer.OrdinalIgnoreCase)
@@ -114,9 +120,32 @@ public sealed class LtlNormalizationService(
 
         var assignment = DeriveAssignment(load.Status);
         var status = string.IsNullOrWhiteSpace(load.Status) ? "Unknown" : load.Status;
+        var actualPickup = load.ActualPickupAt ?? load.PickedUpAt;
         var actualDelivery = load.ActualDeliveryAt ?? load.DeliveredAt;
         var visibilityContext = visibility ?? VisibilityContext.NotEvaluated;
         var delivered = actualDelivery is not null || BillingReadinessService.IsDeliveredStatus(load.Status);
+
+        // Phase 7.3: predicted delivery ETA for in-transit loads. A predicted-late arrival is
+        // surfaced as a non-billing-blocking exception so it shows on the Exceptions worklist
+        // BEFORE an actual-late event, and feeds the T8 notification trigger.
+        var eta = EtaEstimator.Estimate(
+            timeProvider.GetUtcNow(), actualPickup, actualDelivery, scheduledDelivery, delivered,
+            loadedMiles, mileage, _options.Eta);
+        if (eta.PredictedLate && eta.PredictedDeliveryAt is not null)
+        {
+            exceptions =
+            [
+                .. exceptions,
+                new LtlExceptionFlag
+                {
+                    Code = PredictedLateExceptionCode,
+                    Message =
+                        $"Predicted late: ETA {eta.PredictedDeliveryAt:g} is past the "
+                        + $"{scheduledDelivery:g} delivery window. {eta.Basis}",
+                    BlocksBilling = false,
+                },
+            ];
+        }
 
         var workflowState = workflow.Evaluate(
             assignment, status, billingResult, exceptions, missing, visibilityContext,
@@ -136,8 +165,11 @@ public sealed class LtlNormalizationService(
             Destination = destination,
             ScheduledPickupAt = scheduledPickup,
             ScheduledDeliveryAt = scheduledDelivery,
-            ActualPickupAt = load.ActualPickupAt ?? load.PickedUpAt,
+            ActualPickupAt = actualPickup,
             ActualDeliveryAt = actualDelivery,
+            PredictedDeliveryAt = eta.PredictedDeliveryAt,
+            PredictedLate = eta.PredictedLate,
+            EtaBasis = eta.Basis,
             Equipment = equipment,
             WeightLbs = load.Weight is > 0 ? load.Weight : null,
             Volume = load.Volume is > 0 ? load.Volume : null,
