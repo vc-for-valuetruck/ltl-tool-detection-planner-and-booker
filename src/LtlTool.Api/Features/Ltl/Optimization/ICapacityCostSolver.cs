@@ -22,18 +22,31 @@ public interface ICapacityCostSolver
     Task<CapacityCostResult> SolveAsync(CapacityCostRequest request, CancellationToken ct = default);
 }
 
-/// <summary>A load offered to the solver, with its Alvys-derived capacity draw and economics. Nulls are honestly-missing.</summary>
+/// <summary>
+/// A load offered to the solver, with its Alvys-derived capacity draw and economics. Nulls are
+/// honestly-missing. <see cref="Origin"/>/<see cref="Destination"/> are optional Alvys-derived
+/// stop locations used to build the pickup→delivery routing arcs — when absent the distance
+/// provider falls back to a clearly-labeled estimate rather than inventing coordinates.
+/// <see cref="Mandatory"/> marks a load the solver may not drop (e.g. the consolidation parent).
+/// </summary>
 public sealed record CapacityCostCandidate(
     string LoadRef,
     decimal? WeightLbs,
     int? Pallets,
     decimal? Revenue,
-    decimal? Miles);
+    decimal? Miles,
+    GeoPoint? Origin = null,
+    GeoPoint? Destination = null,
+    bool Mandatory = false);
 
-/// <summary>Inputs to a capacity/cost solve: the candidates and the capacity envelope they must fit within.</summary>
+/// <summary>
+/// Inputs to a capacity/cost solve: the candidates and the capacity envelope they must fit within.
+/// <see cref="Depot"/> is the optional trailer origin the route starts from; null when unknown.
+/// </summary>
 public sealed record CapacityCostRequest(
     TrailerCapacitySpec Trailer,
-    IReadOnlyList<CapacityCostCandidate> Candidates);
+    IReadOnlyList<CapacityCostCandidate> Candidates,
+    GeoPoint? Depot = null);
 
 /// <summary>The chosen combination of load refs plus the objective value the solver assigned to it.</summary>
 public sealed record CapacityCostPlan(IReadOnlyList<string> SelectedLoadRefs, decimal ObjectiveValue);

@@ -95,10 +95,12 @@ public static class LtlServiceCollectionExtensions
         {
             services.AddSingleton<ITrailerFitService, NullTrailerFitService>();
         }
-        if (!optimization.Solver.Enabled)
-            services.AddSingleton<ICapacityCostSolver, NullCapacityCostSolver>();
-        if (!optimization.AgentCommands.Enabled)
-            services.AddSingleton<IStopSequencer, NullStopSequencer>();
+
+        // Capacity/cost solver + stop sequencer (Phase 2 M3). Both are gated behind
+        // Ltl:Optimization:Solver:Enabled and register their Null… fallbacks when off. Wiring lives
+        // in OptimizationServiceCollectionExtensions to keep this shared composition root stable
+        // while parallel Phase 2 branches edit it.
+        services.AddLtlCapacityCostOptimization(configuration);
 
         // Consolidation planner (Phase 1 pilot: Laredo → Dallas, read-only, click-card output).
         // Customer LTL policy: reads Alvys customer notes for LTL_TIER/LTL_ALLOW markers,

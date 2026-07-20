@@ -24,6 +24,12 @@ public sealed record ConsolidationOpportunity
     public required decimal ProjectedUplift { get; init; }
     public required ConsolidationOpportunityLoad Parent { get; init; }
     public required IReadOnlyList<ConsolidationOpportunityLoad> Siblings { get; init; }
+
+    /// <summary>
+    /// OR-Tools capacity/cost annotation. Null when <c>Ltl:Optimization:Solver:Enabled</c> is off or
+    /// the solver could not produce a plan — in which case the heuristic ranking stands unchanged.
+    /// </summary>
+    public ConsolidationOptimizationAnnotation? Optimization { get; init; }
 }
 
 public sealed record ConsolidationOpportunityLoad
@@ -291,6 +297,20 @@ public sealed class ConsolidationPlanResponse
     /// When non-empty, the SPA must not offer the copy-card action.
     /// </summary>
     public IReadOnlyList<string> Blockers { get; init; } = [];
+
+    /// <summary>
+    /// Sibling delivery waypoints in the driven order the click card uses (parent origin anchored
+    /// separately). Order matches <see cref="Siblings"/>. Stored so the future write path can
+    /// reproduce the same sequence.
+    /// </summary>
+    public IReadOnlyList<string> StopSequence { get; init; } = [];
+
+    /// <summary>
+    /// True when the OR-Tools stop sequencer actually reordered the siblings. False when input
+    /// order was preserved — the honest default when the solver is off or no stop coordinates are
+    /// available (Alvys exposes city/state only today).
+    /// </summary>
+    public bool StopsOptimized { get; init; }
 }
 
 /// <summary>

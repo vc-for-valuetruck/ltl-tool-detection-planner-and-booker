@@ -1,5 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys;
+using LtlTool.Api.Features.Ltl.Optimization;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Features.Ltl.Consolidation;
 
@@ -7,12 +9,23 @@ namespace LtlTool.Api.Features.Ltl.Consolidation;
 /// Finds high-confidence same-customer / same-day / same-corridor consolidation opportunities
 /// directly from live Alvys load-search data. No values are imputed: loads with missing
 /// locations, pickup dates, linehaul, mileage, customer id, or load number are excluded.
+///
+/// <para>
+/// The deterministic GROUP BY heuristic generates candidate opportunities. When
+/// <c>Ltl:Optimization:Solver:Enabled</c> is on, the OR-Tools <see cref="ICapacityCostSolver"/>
+/// then annotates each opportunity with which siblings actually fit a standard trailer and
+/// re-ranks the queue by captured uplift. With the flag off (the default) the heuristic ranking
+/// stands unchanged, so the demo path is never affected.
+/// </para>
 /// </summary>
 public sealed class ConsolidationOpportunityService(
     IAlvysClient alvys,
     TimeProvider clock,
+    ICapacityCostSolver solver,
+    IOptions<CapacityCostSolverOptions> solverOptions,
     ILogger<ConsolidationOpportunityService> logger)
 {
+    private readonly CapacityCostSolverOptions _solverOptions = solverOptions.Value;
     private const int PageSize = 100;
     private const int PagesToFetch = 3;
     private const string DataSource = "Alvys va336 (live)";
@@ -92,12 +105,22 @@ public sealed class ConsolidationOpportunityService(
             return n * (n - 1) / 2;
         });
 
-        var opportunities = groups
+        var ranked = groups
             .Select(BuildOpportunity)
             .Where(o => o.ParentLinehaulMiles > 0 && o.Siblings.Count > 0)
             .OrderByDescending(o => o.ProjectedUplift)
             .ThenByDescending(o => o.CombinedRevenue)
             .Take(effectiveLimit)
+            .ToList();
+
+        // Solver refinement: heuristic groups above are the candidate generation; when the flag is
+        // on, the capacity/cost solver annotates each opportunity and re-ranks by captured uplift.
+        if (solver.IsEnabled)
+        {
+            ranked = await AnnotateAndRerankAsync(ranked, ct);
+        }
+
+        var opportunities = ranked
             .Select((o, index) => o with { Rank = index + 1 })
             .ToList();
 
@@ -141,6 +164,75 @@ public sealed class ConsolidationOpportunityService(
             Siblings = siblings.Select(ToDto).ToList(),
         };
     }
+
+    /// <summary>
+    /// Runs the capacity/cost solver on each heuristic opportunity, attaches the annotation, and
+    /// re-orders by captured uplift (falling back to the heuristic uplift when the solver produced
+    /// no plan). Bounded work: the input is already capped at the requested limit.
+    /// </summary>
+    private async Task<List<ConsolidationOpportunity>> AnnotateAndRerankAsync(
+        List<ConsolidationOpportunity> opportunities, CancellationToken ct)
+    {
+        var trailer = new TrailerCapacitySpec(
+            _solverOptions.DefaultTrailerWeightLbs,
+            _solverOptions.DefaultTrailerPallets,
+            MaxVolume: null);
+        var usedAssumedTrailer = true; // opportunity ranking always uses the standard-trailer envelope
+
+        var annotated = new List<ConsolidationOpportunity>(opportunities.Count);
+        foreach (var opp in opportunities)
+        {
+            var candidates = new List<CapacityCostCandidate>
+            {
+                ToCandidate(opp.Parent, mandatory: true),
+            };
+            candidates.AddRange(opp.Siblings.Select(s => ToCandidate(s, mandatory: false)));
+
+            var result = await solver.SolveAsync(new CapacityCostRequest(trailer, candidates), ct);
+            if (!result.Solved || result.Plan is null)
+            {
+                annotated.Add(opp);
+                continue;
+            }
+
+            var selectedRefs = result.Plan.SelectedLoadRefs.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var selectedSiblings = opp.Siblings
+                .Where(s => selectedRefs.Contains(s.LoadNumber))
+                .ToList();
+            var droppedSiblings = opp.Siblings
+                .Where(s => !selectedRefs.Contains(s.LoadNumber))
+                .ToList();
+
+            annotated.Add(opp with
+            {
+                Optimization = new ConsolidationOptimizationAnnotation
+                {
+                    SelectedSiblingLoadNumbers = selectedSiblings.Select(s => s.LoadNumber).ToList(),
+                    DroppedSiblingLoadNumbers = droppedSiblings.Select(s => s.LoadNumber).ToList(),
+                    CapturedUplift = selectedSiblings.Sum(s => s.LinehaulAmount),
+                    ObjectiveValue = result.Plan.ObjectiveValue,
+                    Rationale = result.Rationale,
+                    UsedAssumedTrailer = usedAssumedTrailer,
+                },
+            });
+        }
+
+        return annotated
+            .OrderByDescending(o => o.Optimization?.CapturedUplift ?? o.ProjectedUplift)
+            .ThenByDescending(o => o.CombinedRevenue)
+            .ToList();
+    }
+
+    private static CapacityCostCandidate ToCandidate(ConsolidationOpportunityLoad load, bool mandatory) =>
+        new(
+            LoadRef: load.LoadNumber,
+            WeightLbs: load.WeightPounds,
+            Pallets: null,
+            Revenue: load.LinehaulAmount,
+            Miles: load.Miles,
+            Origin: new GeoPoint(load.OriginCity, load.OriginState),
+            Destination: new GeoPoint(load.DestinationCity, load.DestinationState),
+            Mandatory: mandatory);
 
     private static EligibleLoad? TryBuildEligibleLoad(AlvysLoad load)
     {

@@ -29,7 +29,8 @@ public sealed class ConsolidationPlanService(
     IOptions<LtlOptions> ltlOptions,
     TimeProvider clock,
     ICustomerLtlPolicyReader policyReader,
-    ITrailerFitService trailerFit)
+    ITrailerFitService trailerFit,
+    IStopSequencer stopSequencer)
 {
     private readonly LtlLoadService _loads = loads;
     private readonly ConsolidationOptions _opts = options.Value;
@@ -37,6 +38,7 @@ public sealed class ConsolidationPlanService(
     private readonly TimeProvider _clock = clock;
     private readonly ICustomerLtlPolicyReader _policyReader = policyReader;
     private readonly ITrailerFitService _trailerFit = trailerFit;
+    private readonly IStopSequencer _stopSequencer = stopSequencer;
 
     /// <summary>
     /// Builds a plan preview. Returns 400-shaped errors as <see cref="InvalidOperationException"/>
@@ -156,6 +158,13 @@ public sealed class ConsolidationPlanService(
             });
         }
 
+        // Stop sequencing (Phase 2 M3): order the sibling delivery waypoints for the click card.
+        // With Ltl:Optimization:Solver:Enabled off, the NullStopSequencer preserves input order;
+        // with it on, the OR-Tools sequencer reorders when stop coordinates are available (today
+        // Alvys exposes city/state only, so the order is preserved and honestly reported as such).
+        var (siblingOrder, stopsOptimized) = await SequenceSiblingsAsync(parent, siblings, ct);
+        siblings = siblingOrder;
+
         // Parent must itself sit on the corridor.
         if (!IsInAllowedRegion(parent.Origin) || !IsInAllowedRegion(parent.Destination))
         {
@@ -229,6 +238,8 @@ public sealed class ConsolidationPlanService(
             ClickCard = clickCard,
             Blockers = blockers,
             TrailerFit = trailerFit,
+            StopSequence = siblings.Select(s => s.LoadNumber ?? s.LoadId).ToList(),
+            StopsOptimized = stopsOptimized,
         };
     }
 
@@ -276,6 +287,41 @@ public sealed class ConsolidationPlanService(
             CapacityExceeded = result.CapacityExceeded,
             WeightUnknown = result.WeightUnknown,
         };
+    }
+
+    /// <summary>
+    /// Orders the sibling delivery waypoints via <see cref="IStopSequencer"/>, anchored at the
+    /// parent origin. Returns the reordered siblings and whether the sequencer actually reordered
+    /// them (false when the input order was preserved — the honest default without stop coordinates).
+    /// </summary>
+    private async Task<(List<ConsolidationPlanSibling> Ordered, bool Optimized)> SequenceSiblingsAsync(
+        LtlLoadSummary parent,
+        List<ConsolidationPlanSibling> siblings,
+        CancellationToken ct)
+    {
+        if (siblings.Count < 2) return (siblings, false);
+
+        var stops = new List<StopToSequence>
+        {
+            new(parent.Id, parent.Destination?.City, parent.Destination?.State, null, null),
+        };
+        stops.AddRange(siblings.Select(s =>
+        {
+            var city = s.DestinationLabel?.Split(',')[0].Trim();
+            return new StopToSequence(s.LoadId, city, null, null, null);
+        }));
+
+        var result = await _stopSequencer.SequenceAsync(new StopSequenceRequest(stops), ct);
+        if (!result.Optimized) return (siblings, false);
+
+        var byId = siblings.ToDictionary(s => s.LoadId, StringComparer.OrdinalIgnoreCase);
+        var ordered = result.OrderedStopRefs
+            .Where(r => byId.ContainsKey(r)) // drop the parent anchor / any unknown ref
+            .Select(r => byId[r])
+            .ToList();
+
+        // Guard against a sequencer dropping a stop: fall back to input order if counts differ.
+        return ordered.Count == siblings.Count ? (ordered, true) : (siblings, false);
     }
 
     private static decimal? ComputeCombinedRevenue(
