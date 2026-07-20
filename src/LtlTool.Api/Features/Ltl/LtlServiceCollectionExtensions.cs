@@ -4,6 +4,7 @@ using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Features.Ltl;
 
@@ -65,8 +66,35 @@ public static class LtlServiceCollectionExtensions
             .GetSection($"{LtlOptions.SectionName}:{nameof(LtlOptions.Optimization)}")
             .Get<OptimizationOptions>() ?? new OptimizationOptions();
 
-        if (!optimization.TrailerFit.Enabled)
+        if (optimization.TrailerFit.Enabled)
+        {
+            // Real trailer-fit engine: binds its own options and a named HttpClient to the packing
+            // sidecar. The BaseUrl/timeout live in Ltl:Optimization:TrailerFit. The service degrades
+            // to an Unknown verdict on any sidecar failure, so a fresh clone with the flag on but no
+            // reachable sidecar still runs — it just reports "verify at dock".
+            services
+                .AddOptions<TrailerFitOptions>()
+                .Bind(configuration.GetSection(TrailerFitOptions.SectionName));
+
+            services.AddHttpClient<ITrailerFitClient, HttpTrailerFitClient>((sp, http) =>
+            {
+                var opts = sp.GetRequiredService<IOptions<TrailerFitOptions>>().Value;
+                if (!string.IsNullOrWhiteSpace(opts.BaseUrl))
+                {
+                    var baseUrl = opts.BaseUrl.EndsWith('/') ? opts.BaseUrl : opts.BaseUrl + "/";
+                    http.BaseAddress = new Uri(baseUrl);
+                }
+                // Generous transport ceiling; the per-request timeout is enforced via a linked
+                // CancellationToken inside the service so a hang degrades rather than throws.
+                http.Timeout = TimeSpan.FromSeconds(Math.Max(2, opts.TimeoutSeconds + 5));
+            });
+
+            services.AddScoped<ITrailerFitService, HttpTrailerFitService>();
+        }
+        else
+        {
             services.AddSingleton<ITrailerFitService, NullTrailerFitService>();
+        }
         if (!optimization.Solver.Enabled)
             services.AddSingleton<ICapacityCostSolver, NullCapacityCostSolver>();
         if (!optimization.AgentCommands.Enabled)

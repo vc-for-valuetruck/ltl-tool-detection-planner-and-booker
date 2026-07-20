@@ -4,6 +4,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { LtlService } from './ltl.service';
 import { LtlLoadSummary } from './ltl.models';
+import { ConsolidationService } from './consolidation.service';
+import { ConsolidationTrailerFit } from './consolidation.models';
 import { LtlNav } from './ltl-nav';
 
 type GapTone = 'amber' | 'blue' | 'green';
@@ -30,6 +32,7 @@ export class PlanDetail implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly ltl = inject(LtlService);
+  private readonly consolidation = inject(ConsolidationService);
 
   constructor() {
     // Router state is only available on the in-flight navigation; read it in the constructor
@@ -46,6 +49,19 @@ export class PlanDetail implements OnInit {
   readonly missingContext = signal(false);
   readonly parent = signal<LtlLoadSummary | null>(null);
   readonly siblings = signal<LtlLoadSummary[]>([]);
+
+  /**
+   * Server-computed trailer-fit verdict (issue #76). Null until the plan preview resolves, or when
+   * the trailer-fit engine is disabled server-side (NullTrailerFitService) — in which case the UI
+   * falls back to the honest "verify at dock" copy rather than implying a fit was checked.
+   */
+  readonly trailerFit = signal<ConsolidationTrailerFit | null>(null);
+
+  /** True when the fit verdict is a hard fail: packer rejected OR combined capacity exceeded. */
+  readonly trailerFitFails = computed(() => this.trailerFit()?.verdict === 'DoesNotFit');
+
+  /** True when the fit verdict came back clean. */
+  readonly trailerFitOk = computed(() => this.trailerFit()?.verdict === 'Fits');
 
   readonly allLoads = computed(() => {
     const parent = this.parent();
@@ -156,12 +172,32 @@ export class PlanDetail implements OnInit {
         this.parent.set(parent);
         this.siblings.set(siblings);
         this.loading.set(false);
+        this.loadTrailerFit(parent, siblings);
       },
       error: (err) => {
         this.error.set(err?.error?.error ?? err?.message ?? 'Failed to load plan detail from Alvys.');
         this.loading.set(false);
       },
     });
+  }
+
+  /**
+   * Best-effort fetch of the server-computed trailer-fit verdict (issue #76). The plan preview is
+   * the only place the fit is evaluated — the SPA never computes it. Failures are swallowed on
+   * purpose: the page already rendered from the live loads, so a plan-preview hiccup must not blank
+   * the screen — it simply leaves {@link trailerFit} null and the "verify at dock" fallback stands.
+   */
+  private loadTrailerFit(parent: LtlLoadSummary, siblings: LtlLoadSummary[]): void {
+    const parentLoadId = parent.id;
+    const siblingLoadIds = siblings.map((s) => s.id).filter(Boolean);
+    if (!parentLoadId || siblingLoadIds.length === 0) return;
+
+    this.consolidation
+      .buildPlan({ parentLoadId, siblingLoadIds })
+      .subscribe({
+        next: (plan) => this.trailerFit.set(plan.trailerFit ?? null),
+        error: () => this.trailerFit.set(null),
+      });
   }
 
   openClickCard(): void {
@@ -202,6 +238,27 @@ export class PlanDetail implements OnInit {
   formatNumber(value: number | null | undefined): string {
     if (value === null || value === undefined) return '—';
     return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+
+  /** 0–1 utilization ratio → whole-percent string; "—" when unknown (never coerced to 0%). */
+  formatPercent(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '—';
+    return `${Math.round(value * 100)}%`;
+  }
+
+  formatLinearFeet(value: number | null | undefined): string {
+    if (value === null || value === undefined) return '—';
+    return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ft`;
+  }
+
+  /**
+   * Weight line for the fit panel. When any load lacks a weight the combined figure is a floor,
+   * so it renders "≥ N lb" rather than implying a known total.
+   */
+  formatFitWeight(fit: ConsolidationTrailerFit): string {
+    if (fit.totalWeightLbs === null || fit.totalWeightLbs === undefined) return '—';
+    const prefix = fit.weightUnknown ? '≥ ' : '';
+    return `${prefix}${this.formatNumber(fit.totalWeightLbs)} lb`;
   }
 
   private hasNonUsState(load: LtlLoadSummary): boolean {

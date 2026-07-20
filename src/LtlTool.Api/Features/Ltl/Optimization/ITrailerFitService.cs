@@ -43,11 +43,56 @@ public enum TrailerFitVerdict
     DoesNotFit,
 }
 
-/// <summary>Result of a trailer-fit evaluation, including a plain-language rationale for the UI.</summary>
+/// <summary>
+/// Result of a trailer-fit evaluation, including a plain-language rationale for the UI and the
+/// packer/capacity metrics that back the verdict. Metric fields are nullable: they stay null when
+/// the fit engine did not run (feature disabled) or degraded (sidecar unreachable/timed out), so the
+/// UI never shows a fabricated linear-feet or utilization number. Weight/capacity fields are pure
+/// arithmetic over Alvys-supplied values, so they may be populated even when the packer degraded —
+/// a combined weight that already exceeds the trailer maximum is a real "does not fit".
+/// </summary>
 public sealed record TrailerFitResult(
     TrailerFitVerdict Verdict,
     string Rationale,
-    DateTimeOffset EvaluatedAt);
+    DateTimeOffset EvaluatedAt)
+{
+    /// <summary>
+    /// True when the verdict was computed from <i>derived/assumed</i> dimensions (aggregate
+    /// pallets/weight/volume expanded into standard 48×40 pallets) rather than real per-item
+    /// dims — which are not available from Alvys today. The UI labels these "estimated fit".
+    /// </summary>
+    public bool EstimatedFit { get; init; }
+
+    /// <summary>Linear feet of trailer floor the plan occupies (packer KPI). Null when the packer did not run.</summary>
+    public decimal? LinearFeet { get; init; }
+
+    /// <summary>Weight utilization (0–1): combined weight ÷ trailer max weight. Null when weight is unknown.</summary>
+    public decimal? WeightUtilization { get; init; }
+
+    /// <summary>Cube/floor utilization (0–1) from the packer (stacked-cube portion of the trailer). Null when the packer did not run.</summary>
+    public decimal? CubeUtilization { get; init; }
+
+    /// <summary>Combined known weight (lbs) across the loads. A floor when <see cref="WeightUnknown"/> is true.</summary>
+    public decimal? TotalWeightLbs { get; init; }
+
+    /// <summary>Trailer max payload (lbs) the plan was checked against.</summary>
+    public decimal? TrailerMaxWeightLbs { get; init; }
+
+    /// <summary>Combined pallet count across the loads, when derivable. Null when no load carried a pallet/volume signal.</summary>
+    public int? TotalPallets { get; init; }
+
+    /// <summary>Trailer pallet positions the plan was checked against.</summary>
+    public int? TrailerMaxPallets { get; init; }
+
+    /// <summary>True when the combined weight or pallet count exceeds the trailer capacity (arithmetic over Alvys values).</summary>
+    public bool CapacityExceeded { get; init; }
+
+    /// <summary>
+    /// True when one or more loads had no weight on file. <see cref="TotalWeightLbs"/> is then a
+    /// lower bound and the UI shows "≥ N lb" rather than an exact total.
+    /// </summary>
+    public bool WeightUnknown { get; init; }
+}
 
 /// <summary>
 /// No-op <see cref="ITrailerFitService"/> registered when <c>Ltl:Optimization:TrailerFit:Enabled = false</c>

@@ -277,11 +277,66 @@ public sealed class ConsolidationPlanResponse
     public required ConsolidationClickCard ClickCard { get; init; }
 
     /// <summary>
+    /// Trailer-fit verdict for the combined load (parent + corridor-valid siblings). Present only
+    /// when the trailer-fit engine is enabled; null when the <c>NullTrailerFitService</c> is active
+    /// so the SPA shows "verify at dock" rather than implying a fit was checked. Never carries a
+    /// fabricated number — an unknown verdict surfaces as <see cref="ConsolidationTrailerFit.Verdict"/>
+    /// = <c>Unknown</c>.
+    /// </summary>
+    public ConsolidationTrailerFit? TrailerFit { get; init; }
+
+    /// <summary>
     /// Blockers that make this plan illegal even as a preview: the parent isn't a load, a
     /// sibling isn't on the corridor, a sibling belongs to a Never-consolidate customer.
     /// When non-empty, the SPA must not offer the copy-card action.
     /// </summary>
     public IReadOnlyList<string> Blockers { get; init; } = [];
+}
+
+/// <summary>
+/// SPA-facing projection of a trailer-fit evaluation for a consolidation plan. Mirrors the fields
+/// the plan-detail page renders (issue #76): a coarse verdict, whether the numbers came from assumed
+/// dimensions, the linear-feet / utilization the packer reported, and the weight/pallet totals versus
+/// the trailer capacity. Every numeric field is nullable and stays null when the value is genuinely
+/// unknown — never coerced to zero.
+/// </summary>
+public sealed class ConsolidationTrailerFit
+{
+    /// <summary>Coarse verdict: <c>Unknown</c> / <c>Fits</c> / <c>DoesNotFit</c>.</summary>
+    public required string Verdict { get; init; }
+
+    /// <summary>Plain-language rationale for the UI (safe to render directly).</summary>
+    public required string Rationale { get; init; }
+
+    /// <summary>True when the verdict was computed from assumed dimensions ("estimated fit").</summary>
+    public bool EstimatedFit { get; init; }
+
+    /// <summary>Linear feet of trailer floor occupied (packer KPI). Null when the packer did not run.</summary>
+    public decimal? LinearFeet { get; init; }
+
+    /// <summary>Weight utilization 0–1 (combined weight ÷ trailer max). Null when weight is unknown.</summary>
+    public decimal? WeightUtilization { get; init; }
+
+    /// <summary>Cube/floor utilization 0–1 from the packer. Null when the packer did not run.</summary>
+    public decimal? CubeUtilization { get; init; }
+
+    /// <summary>Combined known weight (lbs) — a floor when <see cref="WeightUnknown"/> is true.</summary>
+    public decimal? TotalWeightLbs { get; init; }
+
+    /// <summary>Trailer max payload (lbs) the plan was checked against.</summary>
+    public decimal? TrailerMaxWeightLbs { get; init; }
+
+    /// <summary>Combined pallet count when derivable; null otherwise.</summary>
+    public int? TotalPallets { get; init; }
+
+    /// <summary>Trailer pallet positions the plan was checked against.</summary>
+    public int? TrailerMaxPallets { get; init; }
+
+    /// <summary>True when combined weight/pallets exceed the trailer capacity.</summary>
+    public bool CapacityExceeded { get; init; }
+
+    /// <summary>True when one or more loads had no weight — the UI shows "≥ N lb".</summary>
+    public bool WeightUnknown { get; init; }
 }
 
 /// <summary>

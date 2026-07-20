@@ -89,7 +89,36 @@ export interface ConsolidationPlanResponse {
   /** Combined driver RPM = combinedDriverTripValue / driverLoadedMiles. */
   combinedRevenuePerMile?: number;
   clickCard: ConsolidationClickCard;
+  /**
+   * Trailer-fit verdict for the combined load. Present only when the trailer-fit engine is
+   * enabled server-side; `undefined` when the NullTrailerFitService is active so the SPA shows
+   * "verify at dock" rather than implying a fit was checked.
+   */
+  trailerFit?: ConsolidationTrailerFit;
   blockers: string[];
+}
+
+/**
+ * SPA mirror of the C# ConsolidationTrailerFit DTO. Every numeric field is optional and stays
+ * absent when the value is genuinely unknown — never coerced to zero.
+ */
+export interface ConsolidationTrailerFit {
+  /** Coarse verdict: 'Unknown' | 'Fits' | 'DoesNotFit'. */
+  verdict: 'Unknown' | 'Fits' | 'DoesNotFit';
+  rationale: string;
+  /** True when the verdict was computed from assumed dimensions ("estimated fit"). */
+  estimatedFit: boolean;
+  linearFeet?: number;
+  weightUtilization?: number;
+  cubeUtilization?: number;
+  totalWeightLbs?: number;
+  trailerMaxWeightLbs?: number;
+  totalPallets?: number;
+  trailerMaxPallets?: number;
+  /** True when combined weight/pallets exceed the trailer capacity. */
+  capacityExceeded: boolean;
+  /** True when one or more loads had no weight — the UI shows "≥ N lb". */
+  weightUnknown: boolean;
 }
 
 export interface ConsolidationAuditRecord {
