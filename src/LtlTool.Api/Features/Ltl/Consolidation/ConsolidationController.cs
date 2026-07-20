@@ -26,6 +26,13 @@ public sealed class ConsolidationController(
     private readonly LtlLoadService _loads = loads;
 
     /// <summary>
+    /// Upper bound on origin × destination lane probes the corridor-health walk issues per
+    /// corridor. Keeps the two-sided nearby-cities cross-product bounded on every UI page-load;
+    /// the default pilot config (≈8 origin × ≈9 destination cities) sits comfortably under it.
+    /// </summary>
+    private const int MaxLaneProbes = 100;
+
+    /// <summary>
     /// Lists the consolidation corridors the planner recognises today, joined with each
     /// corridor's origin and destination warehouse metadata. Read-only, honest projection of
     /// static config — not a place to declare arbitrary new corridors at runtime. Any UI or
@@ -82,14 +89,15 @@ public sealed class ConsolidationController(
     /// seed id.
     ///
     /// <para>
-    /// <b>Under-counts by design.</b> This runs ONE LTL search per corridor using the first
-    /// <see cref="WarehouseSummary.NearbyCities"/> entry (the canonical yard name) on either
-    /// side. Loads with origin/destination cities elsewhere in the NearbyCities list won't be
-    /// counted here even though they'd be legal siblings. Over-fetching (running the full
-    /// nearby-cities cross-product per corridor) would balloon Alvys reads on every UI page-
-    /// load. The under-count is honest — the corridor picker doesn't promise "exact"; it
-    /// promises "corridor is alive today". The full candidate walk still happens when the
-    /// dispatcher picks a corridor and enters a seed.
+    /// <b>Bounded two-sided walk.</b> This probes the origin nearby-cities × destination
+    /// nearby-cities cross-product (each a tiny PageSize=1 read) up to
+    /// <see cref="MaxLaneProbes"/> lane probes per corridor, then stops and reports the count as
+    /// truncated. The two-sided walk is what lets the pilot queue auto-populate against the live
+    /// tenant, where in-spirit corridor freight sits on non-canonical city pairs (e.g. Santa
+    /// Catarina → Irving, not "Laredo" → "Dallas"). The probe cap keeps Alvys reads bounded on
+    /// every UI page-load; when it trips, the count is honestly flagged truncated rather than
+    /// silently under-reported. The full candidate walk still happens when the dispatcher picks a
+    /// corridor and enters a seed.
     /// </para>
     /// </summary>
     [HttpGet("corridors/health")]
@@ -129,46 +137,64 @@ public sealed class ConsolidationController(
                 continue;
             }
 
-            // Walk every origin nearby-city against the canonical destination city (each a tiny
-            // PageSize=1 read) rather than only the yard's own name. This is what makes the pilot
-            // queue auto-populate reliably: the seed hint is found whenever ANY legal origin city
-            // (e.g. Encinal, not just "Laredo") has a live parent to the destination — the common
-            // case in the live tenant. We stay one-dimensional (origin cities only, against the
-            // canonical destination) to keep reads bounded; the full nearby-cities cross-product
-            // still happens once the dispatcher seeds a load and we walk siblings.
+            // Walk origin nearby-cities × destination nearby-cities (each a tiny PageSize=1 read)
+            // rather than only the canonical yard-name pair. This is what makes the pilot queue
+            // auto-populate reliably: the seed hint is found whenever ANY legal origin/destination
+            // pair (e.g. Santa Catarina → Irving, not just "Laredo" → "Dallas") has a live parent
+            // — the common case in the live tenant. The walk is bounded by MaxLaneProbes so the
+            // cross-product can never balloon Alvys reads on a page-load; a tripped cap is
+            // reported honestly as truncated below.
+            var originCities = origin.NearbyCities.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
+            var destinationCities = destination.NearbyCities.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
+
             var totalCount = 0;
             var anyTruncated = false;
             var successfulReads = 0;
+            var probes = 0;
             LtlLoadSummary? seed = null;
-            foreach (var oCity in origin.NearbyCities.Where(c => !string.IsNullOrWhiteSpace(c)))
+            foreach (var oCity in originCities)
             {
-                LtlSearchResponse response;
-                try
+                foreach (var dCity in destinationCities)
                 {
-                    response = await _loads.SearchAsync(new LtlSearchQuery
+                    if (probes >= MaxLaneProbes)
                     {
-                        OriginCity = oCity,
-                        DestinationCity = destinationCity,
-                        Page = 0,
-                        // PageSize=1 keeps Alvys payloads tiny — we only need Total + a seed hint.
-                        PageSize = 1,
-                    }, ct);
-                }
-                catch (Exception)
-                {
-                    // One city's read failing must not take the picker down; skip it and let the
-                    // rest of the walk contribute. Only if EVERY city read fails do we report the
-                    // corridor as "unknown" below.
-                    continue;
+                        // Bounded sweep: stop probing beyond the cap and flag the count truncated
+                        // so the picker never implies it scanned the full cross-product.
+                        anyTruncated = true;
+                        break;
+                    }
+                    probes++;
+
+                    LtlSearchResponse response;
+                    try
+                    {
+                        response = await _loads.SearchAsync(new LtlSearchQuery
+                        {
+                            OriginCity = oCity,
+                            DestinationCity = dCity,
+                            Page = 0,
+                            // PageSize=1 keeps Alvys payloads tiny — we only need Total + a seed hint.
+                            PageSize = 1,
+                        }, ct);
+                    }
+                    catch (Exception)
+                    {
+                        // One lane's read failing must not take the picker down; skip it and let the
+                        // rest of the walk contribute. Only if EVERY read fails do we report the
+                        // corridor as "unknown" below.
+                        continue;
+                    }
+
+                    successfulReads++;
+                    totalCount += response.Total;
+                    anyTruncated |= response.Truncated;
+                    // First open load found becomes the default seed hint so the UI can populate the
+                    // pilot queue on tab-load without app-settings. Honest: stays null when every lane
+                    // is empty. Never fabricated.
+                    seed ??= response.Items.FirstOrDefault();
                 }
 
-                successfulReads++;
-                totalCount += response.Total;
-                anyTruncated |= response.Truncated;
-                // First open load found becomes the default seed hint so the UI can populate the
-                // pilot queue on tab-load without app-settings. Honest: stays null when every lane
-                // is empty. Never fabricated.
-                seed ??= response.Items.FirstOrDefault();
+                if (probes >= MaxLaneProbes) break;
             }
 
             if (successfulReads == 0)

@@ -77,6 +77,43 @@ public class ConsolidationControllerHealthTests
     }
 
     [Fact]
+    public async Task GetCorridorHealth_two_sided_walk_matches_non_canonical_origin_and_destination()
+    {
+        // The live pilot's in-spirit freight sits on non-canonical city pairs: Monterrey-area
+        // origins that cross at Laredo (Santa Catarina) delivering to Dallas-metro cities that
+        // are not literally "Dallas" (Irving). The one-sided walk (origin cities × canonical
+        // "Dallas" only) never found these, so the queue looked empty. The two-sided walk must
+        // surface the seed via the Santa Catarina → Irving lane.
+        var client = new FakeAlvysClient();
+        client.Loads.Add(BuildLoad("L-VERTIV", "Santa Catarina", "NL", "Irving", "TX"));
+
+        var opts = new ConsolidationOptions
+        {
+            Warehouses =
+            [
+                new() { Code = "LAREDO", Name = "Laredo yard", State = "TX", NearbyCities = ["Laredo", "Santa Catarina"] },
+                new() { Code = "DALLAS", Name = "Dallas 154-door yard", State = "TX", NearbyCities = ["Dallas", "Irving"] },
+            ],
+            Corridors =
+            [
+                new() { Code = "LAREDO_TO_DALLAS", OriginWarehouseCode = "LAREDO", DestinationWarehouseCode = "DALLAS", PickupWindowDays = 2, DeliveryWindowDays = 3 },
+            ],
+        };
+
+        var controller = BuildController(client, opts);
+        var result = await controller.GetCorridorHealth(default);
+        var healths = Assert.IsAssignableFrom<IReadOnlyList<CorridorHealth>>(
+            ((OkObjectResult)result.Result!).Value);
+
+        var only = Assert.Single(healths);
+        Assert.Equal(1, only.OpenLoadCount);
+        // Seed found via the non-canonical Santa Catarina → Irving lane — neither city is the
+        // yard's own name, so only the two-sided cross-product walk reaches it.
+        Assert.Equal("L-VERTIV", only.SeedLoadId);
+        Assert.Equal("L-VERTIV", only.SeedLoadNumber);
+    }
+
+    [Fact]
     public async Task GetCorridorHealth_returns_zero_when_no_matching_loads()
     {
         var client = new FakeAlvysClient();
