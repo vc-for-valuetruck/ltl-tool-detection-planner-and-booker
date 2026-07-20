@@ -47,7 +47,7 @@ public sealed class NotificationChannelTests
     {
         var channel = new TeamsNotificationChannel(
             new HttpClient(),
-            Options.Create(new NotificationOptions()),
+            Microsoft.Extensions.Options.Options.Create(new NotificationOptions()),
             NullLogger<TeamsNotificationChannel>.Instance);
 
         Assert.False(channel.IsConfigured);
@@ -58,7 +58,7 @@ public sealed class NotificationChannelTests
     [Fact]
     public async Task Email_channel_reports_not_configured_when_disabled()
     {
-        var channel = new EmailNotificationChannel(Options.Create(new NotificationOptions()));
+        var channel = new EmailNotificationChannel(Microsoft.Extensions.Options.Options.Create(new NotificationOptions()));
 
         Assert.False(channel.IsConfigured);
         var delivery = await channel.SendAsync(Event(), Recipients(), CancellationToken.None);
@@ -77,7 +77,7 @@ public sealed class NotificationChannelTests
                 FromAddress = "ops@example.com",
             },
         };
-        var channel = new EmailNotificationChannel(Options.Create(options));
+        var channel = new EmailNotificationChannel(Microsoft.Extensions.Options.Options.Create(options));
 
         Assert.True(channel.IsConfigured);
         var delivery = await channel.SendAsync(Event(), Recipients(), CancellationToken.None);

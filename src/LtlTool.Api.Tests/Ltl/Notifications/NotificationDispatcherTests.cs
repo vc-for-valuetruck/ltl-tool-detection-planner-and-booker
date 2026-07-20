@@ -37,7 +37,7 @@ public sealed class NotificationDispatcherTests
         return new NotificationDispatcher(
             chans,
             store,
-            Options.Create(options ?? new NotificationOptions()),
+            Microsoft.Extensions.Options.Options.Create(options ?? new NotificationOptions()),
             new FixedTimeProvider(Now));
     }
 
