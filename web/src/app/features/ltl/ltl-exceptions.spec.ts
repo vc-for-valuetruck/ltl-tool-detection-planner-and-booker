@@ -1,7 +1,8 @@
 import { LtlExceptions } from './ltl-exceptions';
 import { LtlService } from './ltl.service';
-import { LtlLoadSummary, LtlExceptionFlag } from './ltl.models';
+import { LtlLoadSummary, LtlExceptionFlag, LtlLateDelivery } from './ltl.models';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
 function ex(code: string, blocksBilling: boolean): LtlExceptionFlag {
@@ -50,5 +51,52 @@ describe('LtlExceptions', () => {
     expect(c['error']()).toBe('boom');
     expect(c['loading']()).toBeFalse();
     expect(c['hasLoads']()).toBeFalse();
+  });
+
+  describe('late-delivery rendering', () => {
+    const honestMessage =
+      'Late delivery — delivery window ended Jul 20, 2026 5:00 PM UTC-05:00, ' +
+      'no arrival recorded (per Alvys stop status)';
+
+    function lateLoad(): LtlLoadSummary {
+      const late: LtlLateDelivery = {
+        stopId: 'stop-1004253',
+        destinationCity: 'Laredo',
+        destinationState: 'TX',
+        windowEnd: '2026-07-20T22:00:00Z',
+        windowBasis: 'delivery window',
+        hoursOverdue: 1.9,
+        message: honestMessage,
+      };
+      return {
+        id: 'L-1004253',
+        loadNumber: '1004253',
+        // The server folds the honest wording into the exception flag's message; the chip renders it.
+        exceptions: [{ code: 'LateDelivery', message: honestMessage, blocksBilling: false }],
+        lateDelivery: late,
+        workflow: { stageLabel: 'Bill' },
+      } as unknown as LtlLoadSummary;
+    }
+
+    it('renders the honest late-delivery chip with hours overdue and a drill-through link', () => {
+      TestBed.configureTestingModule({
+        providers: [
+          provideRouter([]),
+          { provide: LtlService, useValue: { exceptions: () => of([lateLoad()]) } },
+        ],
+      });
+      const fixture = TestBed.createComponent(LtlExceptions);
+      fixture.detectChanges();
+      const el: HTMLElement = fixture.nativeElement;
+
+      const chip = el.querySelector('[data-testid="exceptions-late-delivery"]');
+      expect(chip).not.toBeNull();
+      expect(chip!.textContent).toContain('no arrival recorded (per Alvys stop status)');
+      expect(chip!.textContent).toContain('1.9h overdue');
+
+      const link = el.querySelector('[data-testid="exceptions-load-link"]') as HTMLAnchorElement;
+      expect(link).not.toBeNull();
+      expect(link.getAttribute('href')).toBe('/ltl/loads/1004253');
+    });
   });
 });

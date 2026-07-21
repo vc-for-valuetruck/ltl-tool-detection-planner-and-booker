@@ -203,6 +203,15 @@ public sealed class LtlLoadSummary
     /// <summary>Provenance/rationale for the ETA, so the UI never presents it as a routing-API promise.</summary>
     public string? EtaBasis { get; init; }
 
+    /// <summary>
+    /// Actual-late delivery signal for an in-transit trip: the delivery stop's window/appointment has
+    /// passed with no arrival recorded on the Alvys stop. Null when the delivery is on time, already
+    /// arrived, or carries no usable window. Distinct from <see cref="PredictedLate"/> (a
+    /// forward-looking ETA estimate) — this is a past-fact derived from live Alvys stop status, never
+    /// a projection. See <see cref="LtlLateDelivery"/>.
+    /// </summary>
+    public LtlLateDelivery? LateDelivery { get; init; }
+
     public IReadOnlyList<string> Equipment { get; init; } = [];
     public decimal? WeightLbs { get; init; }
     public decimal? Volume { get; init; }
@@ -330,6 +339,33 @@ public sealed class LtlEdiEnrichment
 
     /// <summary>Human-readable derivation behind <see cref="PalletEstimate"/> for the "est." tooltip.</summary>
     public string? PalletBasis { get; init; }
+}
+
+/// <summary>
+/// An actual-late delivery, derived only from live Alvys trip-stop status: the delivery stop's
+/// appointment date or window end has passed and the stop carries no recorded arrival. Every field
+/// comes straight from the Alvys stop — nothing is projected. Feeds the Exceptions worklist chip and
+/// the T8 exception notification (deduped on load + stop + window end).
+/// </summary>
+public sealed class LtlLateDelivery
+{
+    /// <summary>Alvys delivery-stop id — the stop identity half of the notification dedupe key.</summary>
+    public required string StopId { get; init; }
+
+    public string? DestinationCity { get; init; }
+    public string? DestinationState { get; init; }
+
+    /// <summary>The passed window boundary (delivery-stop appointment date or window end).</summary>
+    public required DateTimeOffset WindowEnd { get; init; }
+
+    /// <summary>Whether <see cref="WindowEnd"/> came from an appointment or a delivery window.</summary>
+    public required string WindowBasis { get; init; }
+
+    /// <summary>Whole/decimal hours the delivery is overdue as of the evaluation instant.</summary>
+    public required double HoursOverdue { get; init; }
+
+    /// <summary>Honest, fixed operator-facing wording shown on the Exceptions worklist.</summary>
+    public required string Message { get; init; }
 }
 
 /// <summary>An operational exception on a load (revenue-protection / data-quality signal).</summary>

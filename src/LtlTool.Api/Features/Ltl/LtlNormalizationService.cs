@@ -20,6 +20,9 @@ public sealed class LtlNormalizationService(
     /// <summary>Exception code for a predicted-late arrival (Phase 7.3). Heads-up, not a billing block.</summary>
     public const string PredictedLateExceptionCode = "PredictedLate";
 
+    /// <summary>Exception code for an actual-late delivery (window passed, no arrival recorded). Not a billing block.</summary>
+    public const string LateDeliveryExceptionCode = "LateDelivery";
+
     /// <summary>Statuses that mean capacity is committed (covered → delivered).</summary>
     private static readonly HashSet<string> AssignedStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -58,7 +61,8 @@ public sealed class LtlNormalizationService(
         decimal? carrierPayable = null,
         decimal? driverTripRate = null,
         decimal? loadedMiles = null,
-        LtlEdiEnrichment? ediEnrichment = null)
+        LtlEdiEnrichment? ediEnrichment = null,
+        LtlLateDelivery? lateDelivery = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -148,6 +152,23 @@ public sealed class LtlNormalizationService(
             ];
         }
 
+        // Actual-late delivery (trip-stop derived, passed in by the caller — the load projection
+        // carries no stop arrival status). A past fact, not a projection; surfaced as a
+        // non-billing-blocking exception and fed to the T8 notification trigger.
+        if (lateDelivery is not null)
+        {
+            exceptions =
+            [
+                .. exceptions,
+                new LtlExceptionFlag
+                {
+                    Code = LateDeliveryExceptionCode,
+                    Message = lateDelivery.Message,
+                    BlocksBilling = false,
+                },
+            ];
+        }
+
         var workflowState = workflow.Evaluate(
             assignment, status, billingResult, exceptions, missing, visibilityContext,
             delivered, hasRevenue: revenue is not null);
@@ -171,6 +192,7 @@ public sealed class LtlNormalizationService(
             PredictedDeliveryAt = eta.PredictedDeliveryAt,
             PredictedLate = eta.PredictedLate,
             EtaBasis = eta.Basis,
+            LateDelivery = lateDelivery,
             Equipment = equipment,
             WeightLbs = load.Weight is > 0 ? load.Weight : null,
             Volume = load.Volume is > 0 ? load.Volume : null,

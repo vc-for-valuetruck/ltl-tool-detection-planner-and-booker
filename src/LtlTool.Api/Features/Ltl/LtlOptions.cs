@@ -65,6 +65,14 @@ public sealed class LtlOptions
     /// </summary>
     public int LaneRateMinSamples { get; set; } = 3;
 
+    /// <summary>
+    /// Grace window (minutes) past a delivery stop's appointment/window end before an in-transit
+    /// trip with no recorded arrival is flagged as an actual-late delivery. Absorbs normal check-in
+    /// slack so the exception does not flap right at the window boundary. Distinct from
+    /// <see cref="EtaOptions.LateGraceMinutes"/>, which governs the forward-looking predicted-late ETA.
+    /// </summary>
+    public int LateDeliveryGraceMinutes { get; set; } = 30;
+
     /// <summary>Match scoring weights/thresholds.</summary>
     public LtlMatchOptions Match { get; set; } = new();
 

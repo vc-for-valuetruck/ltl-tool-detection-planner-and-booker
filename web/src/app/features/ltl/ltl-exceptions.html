@@ -48,7 +48,12 @@
               <tr data-testid="exceptions-row">
                 <td>
                   <div class="load-cell">
-                    <strong>{{ load.loadNumber ?? load.id }}</strong>
+                    <a
+                      [routerLink]="['/ltl/loads', load.loadNumber ?? load.id]"
+                      data-testid="exceptions-load-link"
+                    >
+                      <strong>{{ load.loadNumber ?? load.id }}</strong>
+                    </a>
                     <span class="load-tag">{{ load.workflow.stageLabel }}</span>
                   </div>
                 </td>
@@ -73,8 +78,13 @@
                       <span
                         [class]="ex.blocksBilling ? 'chip chip-danger' : 'chip chip-warn'"
                         [title]="ex.message"
+                        [attr.data-testid]="
+                          ex.code === 'LateDelivery' ? 'exceptions-late-delivery' : null
+                        "
                       >
-                        {{ ex.message }}@if (ex.blocksBilling) { · blocks billing }
+                        {{ ex.message }}@if (ex.code === 'LateDelivery' && load.lateDelivery) {
+                          · {{ load.lateDelivery.hoursOverdue }}h overdue }@if (ex.blocksBilling) {
+                          · blocks billing }
                       </span>
                     } @empty {
                       <span class="muted">—</span>
