@@ -20,6 +20,7 @@ public sealed class MatchService(
     IAlvysDriverPredictionProvider prediction, IOptions<LtlOptions> options)
 {
     private readonly LtlOptions _options = options.Value;
+    private readonly LtlMatchOptions _match = options.Value.Match;
 
     /// <summary>
     /// Ranks fleet candidates for <paramref name="load"/>, best first. <paramref name="top"/>
@@ -87,7 +88,7 @@ public sealed class MatchService(
     /// <summary>
     /// One bounded active-trip sweep for a whole candidate set: finds each candidate's current
     /// committed trip (by truck/trailer/driver id) and, for up to
-    /// <see cref="LtlOptions.MaxWindowFeasibilityTripFetches"/> distinct trips, fetches its stops to
+    /// <see cref="LtlMatchOptions.MaxWindowFeasibilityTripFetches"/> distinct trips, fetches its stops to
     /// learn when it clears. Returns a not-evaluated context when the load has no pickup instant.
     /// </summary>
     public async Task<TripCommitmentContext> FetchWindowFeasibilityAsync(
@@ -100,7 +101,7 @@ public sealed class MatchService(
         {
             Page = 0,
             PageSize = _options.AlvysPageSize,
-            Status = _options.ActiveTripStatuses,
+            Status = _match.ActiveTripStatuses,
         };
         var response = await alvys.SearchTripsAsync(request, ct);
         var trips = response.Items ?? [];
@@ -121,7 +122,7 @@ public sealed class MatchService(
             .Where(kv => candidateIds.Contains(kv.Key))
             .Select(kv => kv.Value)
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(_options.MaxWindowFeasibilityTripFetches)
+            .Take(_match.MaxWindowFeasibilityTripFetches)
             .ToList();
 
         var clearsAt = new Dictionary<string, DateTimeOffset?>(StringComparer.OrdinalIgnoreCase);
