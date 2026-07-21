@@ -21,8 +21,7 @@ public sealed class LtlControllerTests
         var options = LtlTestFactory.Options();
         var normalizer = LtlTestFactory.Normalizer();
         var loadService = new LtlLoadService(client, normalizer, LtlTestFactory.Visibility(), LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(), options, LtlTestFactory.Clock());
-        var matchService = new MatchService(
-            client, LtlTestFactory.Scorer(), LtlTestFactory.EquipmentEvents(), options);
+        var matchService = LtlTestFactory.Matcher(client);
         var validation = new AssignmentValidationService(options, LtlTestFactory.Clock());
         var controller = new LtlController(
             loadService, matchService, validation, store ?? new InMemoryAssignmentAuditStore(),

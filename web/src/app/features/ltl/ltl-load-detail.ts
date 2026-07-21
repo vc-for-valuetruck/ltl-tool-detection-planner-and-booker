@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { LtlService } from './ltl.service';
-import { LtlLoadSummary, LtlPlace } from './ltl.models';
+import { LtlLoadSummary, LtlPlace, MatchFactor, MatchResult } from './ltl.models';
 import { LtlNav } from './ltl-nav';
 import { YardArtifactFileView, YardArtifactView } from './yard-artifacts.models';
 
@@ -33,6 +33,12 @@ export class LtlLoadDetail implements OnInit {
   /** Yard artifacts (Phase 8.2) attached to this load number. Internal dock data, never Alvys. */
   protected readonly artifacts = signal<YardArtifactView[]>([]);
 
+  /** Ranked, explainable driver/truck/trailer matches (Phase 2). Read-only against Alvys. */
+  protected readonly matches = signal<MatchResult[]>([]);
+  protected readonly matchesLoading = signal(false);
+  protected readonly matchesError = signal<string | null>(null);
+  protected readonly copiedMatchKey = signal<string | null>(null);
+
   /** Alvys home — NOT a per-load deep link (none exists publicly). Dispatcher searches by number. */
   protected readonly alvysHomeUrl = 'https://app.alvys.com/';
 
@@ -57,6 +63,7 @@ export class LtlLoadDetail implements OnInit {
         this.load.set(load);
         this.loading.set(false);
         this.fetchArtifacts(load.loadNumber ?? ref);
+        this.fetchMatches(load.loadNumber ?? load.id ?? ref);
       },
       error: (err) => {
         this.error.set(err?.error?.error ?? err?.message ?? "Couldn't reach Alvys.");
@@ -72,6 +79,97 @@ export class LtlLoadDetail implements OnInit {
       // Yard artifacts are supplementary; a failure here must never blank out the load detail.
       error: () => this.artifacts.set([]),
     });
+  }
+
+  private fetchMatches(idOrNumber: string): void {
+    if (!idOrNumber) return;
+    this.matchesLoading.set(true);
+    this.matchesError.set(null);
+    this.ltl.getMatches(idOrNumber).subscribe({
+      next: (matches) => {
+        this.matches.set(matches);
+        this.matchesLoading.set(false);
+      },
+      // Matches are decision support, not the primary detail; a failure here shows an inline
+      // error in the matches card rather than blanking the whole load view.
+      error: (err) => {
+        this.matchesError.set(err?.error?.error ?? err?.message ?? "Couldn't reach Alvys.");
+        this.matchesLoading.set(false);
+      },
+    });
+  }
+
+  protected matchKey(match: MatchResult, index: number): string {
+    return `${match.driverId ?? ''}|${match.truckId ?? ''}|${match.trailerId ?? ''}|${index}`;
+  }
+
+  protected matchLabelClass(label: string): string {
+    if (label === 'Excellent' || label === 'Good') return 'chip chip-good';
+    if (label === 'Possible') return 'chip chip-neutral';
+    if (label === 'NotRecommended') return 'chip chip-danger';
+    return 'chip chip-warn';
+  }
+
+  protected factorRowClass(status: string): string {
+    if (status === 'Strong') return 'factor-row factor-strong';
+    if (status === 'Weak') return 'factor-row factor-weak';
+    if (status === 'Unavailable') return 'factor-row factor-unavailable';
+    return 'factor-row factor-neutral';
+  }
+
+  /** "12 / 15 pts" for a scored factor; "not scored" for an Unavailable one (MaxPoints 0). */
+  protected factorContribution(factor: MatchFactor): string {
+    if (factor.status === 'Unavailable' || factor.maxPoints <= 0) return 'not scored';
+    const earned = Math.round(factor.points * 10) / 10;
+    return `${earned} / ${factor.maxPoints} pts`;
+  }
+
+  /** Human-readable breakdown for the copy-to-clipboard button — audit-friendly, plain text. */
+  protected matchClipboardText(match: MatchResult): string {
+    const lines: string[] = [];
+    const who = match.driverName ?? match.driverId ?? 'Unnamed driver';
+    lines.push(`${match.labelText} (${match.score}/100) — ${who}`);
+    if (match.truckNumber) lines.push(`Truck ${match.truckNumber}`);
+    if (match.trailerNumber) lines.push(`Trailer ${match.trailerNumber}`);
+    lines.push(match.summary);
+    lines.push('');
+    lines.push('Factors:');
+    for (const f of match.factors) {
+      const contribution = this.factorContribution(f);
+      const raw = f.rawValue ? ` [${f.rawValue}]` : '';
+      lines.push(`- ${f.name} (${f.status}, ${contribution})${raw}: ${f.detail}`);
+    }
+    if (match.disqualifiers.length) {
+      lines.push('');
+      lines.push('Disqualifiers:');
+      for (const d of match.disqualifiers) lines.push(`- ${d}`);
+    }
+    if (match.warnings?.length) {
+      lines.push('');
+      lines.push('Warnings:');
+      for (const w of match.warnings) lines.push(`- ${w}`);
+    }
+    if (match.predictionBasis) {
+      lines.push('');
+      lines.push(`Ranking basis: ${match.predictionBasis}`);
+    }
+    return lines.join('\n');
+  }
+
+  protected copyMatch(match: MatchResult, index: number): void {
+    const key = this.matchKey(match, index);
+    const text = this.matchClipboardText(match);
+    const done = () => {
+      this.copiedMatchKey.set(key);
+      setTimeout(() => {
+        if (this.copiedMatchKey() === key) this.copiedMatchKey.set(null);
+      }, 2000);
+    };
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else {
+      done();
+    }
   }
 
   protected fileUrl(artifactId: string, file: YardArtifactFileView): string {

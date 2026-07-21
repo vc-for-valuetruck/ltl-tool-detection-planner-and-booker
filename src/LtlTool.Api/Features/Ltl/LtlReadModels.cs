@@ -571,6 +571,22 @@ public sealed class MatchResult
     /// over capacity, terminated driver). Empty when no hard rule fired.
     /// </summary>
     public IReadOnlyList<string> Disqualifiers { get; init; } = [];
+
+    /// <summary>
+    /// Non-blocking, overridable cautions surfaced alongside the recommendation (e.g. a co-driver
+    /// in a team pairing is inactive/terminated, or the candidate's current trip does not clear
+    /// before pickup). Distinct from <see cref="Disqualifiers"/>, which cap the label; warnings
+    /// inform the dispatcher but do not by themselves force Not Recommended. Empty when none.
+    /// </summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    /// <summary>
+    /// How this ranking was derived. <c>"AlvysPredictionUnavailable"</c> means Alvys' beta
+    /// best-driver prediction was not available and the tool fell back to its own deterministic
+    /// factor-based ranking (never silently substituted). Null on direct scorer calls that do not
+    /// consult the prediction provider (e.g. single-candidate assignment validation).
+    /// </summary>
+    public string? PredictionBasis { get; init; }
 }
 
 /// <summary>Status of a single match factor's contribution.</summary>
@@ -588,7 +604,23 @@ public sealed class MatchFactor
 {
     public required string Name { get; init; }
     public required MatchFactorStatus Status { get; init; }
+
+    /// <summary>One-sentence, human-readable rationale for this factor's status.</summary>
     public required string Detail { get; init; }
+
+    /// <summary>
+    /// The raw measured input behind this factor (e.g. "8,000 lb / 40,000 lb capacity",
+    /// "TX vs TX", "delivers 2026-07-01 08:00"). Null when there was no underlying value to show
+    /// (unavailable factors). Never a fabricated value.
+    /// </summary>
+    public string? RawValue { get; init; }
+
+    /// <summary>
+    /// The factor's configured maximum weight, for explainability display ("12 / 15 pts"). This is
+    /// informational and, unlike <see cref="MaxPoints"/>, is reported even for an unavailable factor
+    /// so the drawer can show "weight 15 — not scored". It does <b>not</b> enter the denominator.
+    /// </summary>
+    public double Weight { get; init; }
 
     /// <summary>Points earned by this factor (0 when unavailable).</summary>
     public double Points { get; init; }

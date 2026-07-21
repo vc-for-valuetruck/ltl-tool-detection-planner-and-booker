@@ -109,6 +109,107 @@
   color: var(--text-secondary);
 }
 
+/* Recommended matches (Phase 2): explainable per-factor breakdown + copy-to-clipboard. */
+.match-card {
+  padding: 12px 0;
+  border-top: 1px solid var(--card-border);
+}
+
+.match-card:first-of-type {
+  border-top: none;
+}
+
+.match-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.match-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.match-score {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.match-who {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.match-equip {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.match-summary {
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.copy-btn {
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.copy-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+.factor-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.factor-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.factor-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--card-border);
+  color: var(--text-primary);
+  vertical-align: top;
+}
+
+.factor-row.factor-unavailable td {
+  color: var(--text-muted);
+}
+
+.factor-row.factor-strong td:first-child {
+  border-left: 3px solid var(--success, #1a7f37);
+}
+
+.factor-row.factor-weak td:first-child {
+  border-left: 3px solid var(--danger, #b42318);
+}
+
 /* Yard artifacts (Phase 8.2): dock-inspection status, verified dims, photo gallery, PDF download. */
 .yard-artifact {
   padding: 12px 0;

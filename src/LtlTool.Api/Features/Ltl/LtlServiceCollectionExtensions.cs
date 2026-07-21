@@ -40,7 +40,17 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<LtlNormalizationService>();
         services.AddScoped<TenderEnrichmentService>();
         services.AddScoped<MatchScoringService>();
+        services.AddScoped<WindowFeasibilityAnalyzer>();
         services.AddScoped<MatchService>();
+
+        // Phase 2 match-depth: short-lived memoization of per-load-window equipment-event batches.
+        services.AddMemoryCache();
+        services.AddSingleton<EquipmentEventCache>();
+
+        // Alvys beta best-driver prediction (ROADMAP Phase 2). Not exposed by the read-only Public
+        // API today, so the Null provider is registered and ranking falls back to the deterministic
+        // factor scorer, clearly labeled. Swap for a real provider when the contract is confirmed.
+        services.AddSingleton<IAlvysDriverPredictionProvider, NullAlvysDriverPredictionProvider>();
         services.AddScoped<LtlLoadService>();
         services.AddScoped<CapacitySnapshotService>();
         services.AddScoped<Arrivals.LaredoArrivalsService>();
