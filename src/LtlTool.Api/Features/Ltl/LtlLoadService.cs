@@ -193,26 +193,33 @@ public sealed class LtlLoadService(
         if (loadNumbers.Count == 0) return trips;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var page = 0;
         var pageSize = _options.AlvysPageSize;
-        var fetched = 0;
 
-        while (true)
+        // Alvys caps a single LoadNumbers filter (see LoadSearchRequest.MaxLoadNumbers), so chunk
+        // the load set into batches rather than sending one oversized filter the server would
+        // reject or silently truncate — otherwise loads past the cap never get a trip, and their
+        // trip-stop exceptions (late DELIVERY, stuck-at-stop) never surface.
+        foreach (var chunk in loadNumbers.Chunk(LoadSearchRequest.MaxLoadNumbers))
         {
-            var response = await alvys.SearchTripsAsync(
-                new TripSearchRequest { Page = page, PageSize = pageSize, LoadNumbers = loadNumbers }, ct);
-            if (response.Items.Count == 0) break;
+            var page = 0;
+            var fetched = 0;
 
-            foreach (var trip in response.Items)
+            while (true)
             {
-                if (string.IsNullOrWhiteSpace(trip.LoadNumber) || !seen.Add(trip.LoadNumber!)) continue;
-                trips.Add(trip);
-            }
+                var response = await alvys.SearchTripsAsync(
+                    new TripSearchRequest { Page = page, PageSize = pageSize, LoadNumbers = [.. chunk] }, ct);
+                if (response.Items.Count == 0) break;
 
-            fetched += response.Items.Count;
-            if (fetched >= response.Total || response.Items.Count < pageSize) break;
-            if (fetched >= _options.MaxLoadsScanned) break;
-            page++;
+                foreach (var trip in response.Items)
+                {
+                    if (string.IsNullOrWhiteSpace(trip.LoadNumber) || !seen.Add(trip.LoadNumber!)) continue;
+                    trips.Add(trip);
+                }
+
+                fetched += response.Items.Count;
+                if (fetched >= response.Total || response.Items.Count < pageSize) break;
+                page++;
+            }
         }
 
         return trips;
@@ -329,7 +336,23 @@ public sealed class LtlLoadService(
     /// </summary>
     public async Task<IReadOnlyList<LtlLoadSummary>> ExceptionsAsync(CancellationToken ct)
     {
-        var (loads, _) = await SweepAsync(new LoadSearchRequest { PageSize = _options.AlvysPageSize }, ct);
+        // General sweep across all statuses — where billing/status/visibility exceptions live.
+        var (generalLoads, _) = await SweepAsync(
+            new LoadSearchRequest { PageSize = _options.AlvysPageSize }, ct);
+
+        // The general sweep is bounded and ordered by Alvys recency, so genuinely-late in-transit
+        // loads that haven't been touched recently can fall outside its window — their trips never
+        // get fetched and the trip-stop detectors (late DELIVERY, stuck-at-stop) never run. Sweep
+        // the dispatched-but-not-delivered statuses explicitly and union so that population is
+        // reliably scanned. Read-only; both sweeps are individually bounded.
+        var (activeLoads, _) = await SweepAsync(
+            new LoadSearchRequest
+            {
+                PageSize = _options.AlvysPageSize,
+                Status = LoadSearchRequest.ActiveTransitStatuses,
+            }, ct);
+
+        var loads = UnionLoadsByNumber(generalLoads, activeLoads);
 
         // One trip sweep feeds three exception signals: trip economics (loaded miles → the
         // predicted-delivery ETA, so a predicted-late arrival surfaces before it actually goes late),
@@ -556,6 +579,27 @@ public sealed class LtlLoadService(
         }
 
         return (loads, truncated);
+    }
+
+    /// <summary>
+    /// Concatenates two swept load sets, keeping the first occurrence per load number (loads with
+    /// no load number are all kept). Order is preserved: the primary set first, then any loads the
+    /// secondary set adds. Used to union the general and active-transit exception sweeps.
+    /// </summary>
+    private static List<AlvysLoad> UnionLoadsByNumber(
+        IReadOnlyList<AlvysLoad> primary, IReadOnlyList<AlvysLoad> secondary)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var union = new List<AlvysLoad>(primary.Count + secondary.Count);
+
+        foreach (var load in primary.Concat(secondary))
+        {
+            if (!string.IsNullOrWhiteSpace(load.LoadNumber) && !seen.Add(load.LoadNumber!))
+                continue;
+            union.Add(load);
+        }
+
+        return union;
     }
 
     private static LoadSearchRequest CloneSeed(LoadSearchRequest seed, int page, int pageSize) => new()
