@@ -7,6 +7,56 @@ Newest at top. When a decision is superseded, mark it and link forward.
 
 ---
 
+## 2026-07-21 · Public API now exposes document/invoice writes + webhooks
+
+**Source.** Alvys shipped contracted Public-API write endpoints for documents and invoices, plus an
+outbound webhook system, verified against the Alvys API docs / MCP on 2026-07-21. This **partially
+supersedes** the blanket "the Public API is read-only for the LTL tool" statement from the 2026-07-17
+Reuben sync — for documents/invoices only.
+
+### What changed
+
+The Public API (OAuth2 **client-credentials** transport — the same `AlvysHttpWriteClient` /
+`IAlvysTokenProvider` seam the 2026-07-17 decision deliberately kept "for any future Public-API write
+operations Alvys releases") now supports:
+
+| Endpoint | Purpose | Notes |
+| --- | --- | --- |
+| `POST /api/p/v{version}/loads/{loadNumber}/document` | Attach one document to a load | multipart; `DocumentType` from a fixed list; pdf/jpeg/png; ≤10 MB enforced (docs cite 25 MB in places — we take the conservative bound). 404 if the load has no trips. Returns `{id, AttachmentPath, AttachmentType, ParentId, ParentType}`. |
+| `POST /api/p/v{version}/trips/{tripId}/document` | Attach one document to a trip | Broader `DocumentType` list; gif also allowed; ≤25 MB. |
+| `POST /api/p/v{version}/invoices/carrier-invoice` | Attach a carrier invoice to a trip | multipart `File`+`TripId`(+`CarrierInvoiceNumber`,`PaymentType`). **`PaymentType` accepts any string and silently defaults unmatched values to 30-day terms** — we validate against a config whitelist and refuse an unmatched value rather than let Alvys silently pick terms. Flag-gated separately (`Alvys:Writeback:EnableCarrierInvoice`). |
+
+### What did NOT change
+
+The **internal API remains the only path** for the Phase 5 consolidation writes — Waypoint creation,
+`dispatch_miles` zeroing, the `LTL` / `Main Load Id` reference writes, and `trip-assign`. Those are
+still observed-not-contracted and still go through `IAlvysInternalWriteClient` with an active user's
+Auth0 session token. This decision does not touch that boundary.
+
+### Safety posture (unchanged gates)
+
+These document/invoice writes reuse **every existing writeback gate**: recognised non-production
+environment + non-production `SandboxBaseUrl` for sandbox execution (production architecturally
+rejected), the durable outbox with no secrets, idempotency keying, and the `AlvysOperationRecorder`
+audit trail. The upload transport authenticates with the **Public-API client-credentials bearer token**
+— never an internal session token (regression-tested). File bytes are streamed straight to Alvys and
+never persisted to the outbox, logged, or included in the idempotency hash/preview. Enabling a document
+write against a **production** tenant still requires a signed-off row in
+[`ltl-tool.md`](./ltl-tool.md).
+
+### Webhooks (inbound)
+
+Alvys emits `load.status.changed` (status transitions) and `load.changed` (every meaningful write;
+`data.load` carries the full current load snapshot). At-least-once delivery (max 4 attempts), deduped on
+`X-Alvys-Event-Id`. A subscription **auto-disables after 10 consecutive failed events**, so our receiver
+verifies + persists + acks fast (2xx) and processes asynchronously. Signature is HMAC-SHA256 over
+`timestamp + body` in the `X-Alvys-Signature: t=...,v1=...` header; stale timestamps (>5 min) are
+rejected as replay protection. The receiver is anonymous (Alvys has no email identity) but fails closed
+without a configured signing secret. We do **not** auto-create the subscription from code — the manual
+`POST /webhooks` registration step is documented in [`ALVYS_INTEGRATION.md`](./ALVYS_INTEGRATION.md).
+
+---
+
 ## 2026-07-17 (evening) · Empirical findings from live MCP calls
 
 **Source.** Three tool calls executed via the Perplexity Alvys MCP connector against the live

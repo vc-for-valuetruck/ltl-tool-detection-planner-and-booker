@@ -8,6 +8,7 @@ import {
   AlvysOperationRequest,
   AlvysOperationResponse,
   AlvysReadinessStatus,
+  AlvysWebhookAdminView,
   AlvysWriteOperationDescriptor,
 } from './alvys-ops.models';
 
@@ -19,7 +20,8 @@ import {
 @Injectable({ providedIn: 'root' })
 export class AlvysOpsService {
   private readonly http = inject(HttpClient);
-  private readonly base = `${inject(RUNTIME_CONFIG).apiBaseUrl}/alvys/ops`;
+  private readonly apiBaseUrl = inject(RUNTIME_CONFIG).apiBaseUrl;
+  private readonly base = `${this.apiBaseUrl}/alvys/ops`;
 
   status(): Observable<AlvysReadinessStatus> {
     return this.http.get<AlvysReadinessStatus>(`${this.base}/status`);
@@ -69,5 +71,58 @@ export class AlvysOpsService {
   /** Opt-in bounded read probe that records a "last successful read" time. Never a mutation. */
   probe(): Observable<AlvysReadinessStatus> {
     return this.http.post<AlvysReadinessStatus>(`${this.base}/sync/probe`, {});
+  }
+
+  /**
+   * Uploads a single billing document to a load via the Public-API multipart endpoint. The file bytes
+   * go straight into a multipart body — never into JSON, never persisted client-side beyond the request.
+   * Honours the configured writeback mode server-side; the response record states whether it was pushed
+   * to the sandbox or recorded internally only, plus any post-write reconciliation outcome.
+   */
+  uploadLoadDocument(
+    loadNumber: string,
+    documentType: string,
+    file: File,
+    reason?: string,
+    idempotencyKey?: string,
+  ): Observable<AlvysOperationResponse> {
+    const form = new FormData();
+    form.append('File', file, file.name);
+    form.append('LoadNumber', loadNumber);
+    form.append('DocumentType', documentType);
+    if (reason) form.append('Reason', reason);
+    return this.http.post<AlvysOperationResponse>(
+      `${this.base}/upload-load-document`,
+      form,
+      idempotencyKey ? { headers: new HttpHeaders({ 'Idempotency-Key': idempotencyKey }) } : {},
+    );
+  }
+
+  /** Uploads a single document to a trip via the Public-API multipart endpoint. See {@link uploadLoadDocument}. */
+  uploadTripDocument(
+    tripId: string,
+    documentType: string,
+    file: File,
+    reason?: string,
+    idempotencyKey?: string,
+  ): Observable<AlvysOperationResponse> {
+    const form = new FormData();
+    form.append('File', file, file.name);
+    form.append('TripId', tripId);
+    form.append('DocumentType', documentType);
+    if (reason) form.append('Reason', reason);
+    return this.http.post<AlvysOperationResponse>(
+      `${this.base}/upload-trip-document`,
+      form,
+      idempotencyKey ? { headers: new HttpHeaders({ 'Idempotency-Key': idempotencyKey }) } : {},
+    );
+  }
+
+  /** The read-only webhook admin snapshot: recent received events + receiver configuration state. */
+  webhookEvents(max?: number): Observable<AlvysWebhookAdminView> {
+    const url = max
+      ? `${this.apiBaseUrl}/alvys/webhooks/events?max=${max}`
+      : `${this.apiBaseUrl}/alvys/webhooks/events`;
+    return this.http.get<AlvysWebhookAdminView>(url);
   }
 }

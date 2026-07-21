@@ -76,6 +76,27 @@ public sealed class AlvysWriteOptions
     public string SandboxBaseUrl { get; set; } = "";
 
     /// <summary>
+    /// Separate arm switch for the carrier-invoice attach operation. Defaults to <c>false</c>: an
+    /// unmatched <c>PaymentType</c> silently defaults to 30-day terms in Alvys, so this write must be
+    /// enabled deliberately in addition to sandbox mode. Turning sandbox mode on is never enough on
+    /// its own for carrier-invoice.
+    /// </summary>
+    public bool EnableCarrierInvoice { get; set; } = false;
+
+    /// <summary>
+    /// Whitelist of <c>PaymentType</c> values that may be sent on a carrier-invoice attach. Alvys
+    /// accepts any string and silently falls back to 30-day terms for unknown values, so a value that
+    /// is not on this list is rejected before dispatch. Empty by default (any PaymentType is refused
+    /// until an operator declares the accepted set).
+    /// </summary>
+    public string[] AllowedCarrierInvoicePaymentTypes { get; set; } = [];
+
+    /// <summary>True when a carrier-invoice PaymentType is on the operator-declared whitelist.</summary>
+    public bool IsAllowedPaymentType(string? paymentType) =>
+        !string.IsNullOrWhiteSpace(paymentType)
+        && AllowedCarrierInvoicePaymentTypes.Contains(paymentType.Trim(), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// True when the configured environment is a recognised non-production sandbox.
     /// </summary>
     public bool IsRecognisedSandboxEnvironment =>

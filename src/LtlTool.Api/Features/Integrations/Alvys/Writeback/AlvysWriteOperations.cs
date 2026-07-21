@@ -18,6 +18,86 @@ public static class AlvysNoteTypes
 }
 
 /// <summary>
+/// The Alvys-documented <c>DocumentType</c> values accepted by the load-document upload endpoint
+/// (<c>POST /api/p/v{version}/loads/{loadNumber}/document</c>). Only these values are accepted;
+/// any other value is rejected before a live upload is built, so a caller can never push a
+/// document type Alvys does not recognise. Comparison is case-insensitive but the canonical
+/// spelling is sent to Alvys.
+/// </summary>
+public static class AlvysLoadDocumentTypes
+{
+    public static readonly IReadOnlyList<string> All =
+    [
+        "Customer Rate and Load Confirmation",
+        "Customer Load Confirmation",
+        "Customer Rate Confirmation",
+        "Signed Customer Rate Confirmation",
+        "Proof of Delivery",
+        "Proof of Pickup",
+        "Bill of Lading",
+        "Shipping Labels",
+    ];
+
+    public static bool IsValid(string? value) =>
+        All.Contains(value?.Trim(), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Returns the canonical spelling for a case-insensitive match, or null when unknown.</summary>
+    public static string? Canonical(string? value) =>
+        All.FirstOrDefault(v => string.Equals(v, value?.Trim(), StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>
+/// The Alvys-documented <c>DocumentType</c> values accepted by the trip-document upload endpoint
+/// (<c>POST /api/p/v{version}/trips/{tripId}/document</c>). Broader than the load list (adds
+/// carrier/manifest/scale-ticket types). Same safety boundary applies.
+/// </summary>
+public static class AlvysTripDocumentTypes
+{
+    public static readonly IReadOnlyList<string> All =
+    [
+        "Proof of Delivery",
+        "Bill of Lading",
+        "Carrier Rate Confirmation",
+        "Load Manifest",
+        "Trip Report",
+        "Temp. Log",
+        "Proof of Pickup",
+        "Scale Ticket",
+        "Notice of Assignment",
+        "NOA",
+        "Shipping Labels",
+    ];
+
+    public static bool IsValid(string? value) =>
+        All.Contains(value?.Trim(), StringComparer.OrdinalIgnoreCase);
+
+    public static string? Canonical(string? value) =>
+        All.FirstOrDefault(v => string.Equals(v, value?.Trim(), StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>
+/// MIME + size constraints for Alvys document uploads. The load endpoint accepts PDF/JPEG/PNG up to
+/// 10 MB (the docs cite 25 MB in places; we enforce the conservative 10 MB). The trip endpoint also
+/// accepts GIF and permits up to 25 MB. Enforced server-side so an over-large or wrong-type file is
+/// rejected before any bytes reach Alvys.
+/// </summary>
+public static class AlvysDocumentUploadLimits
+{
+    public const long LoadMaxBytes = 10L * 1024 * 1024;
+    public const long TripMaxBytes = 25L * 1024 * 1024;
+
+    public static readonly IReadOnlyList<string> LoadContentTypes =
+        ["application/pdf", "image/jpeg", "image/png"];
+
+    public static readonly IReadOnlyList<string> TripContentTypes =
+        ["application/pdf", "image/jpeg", "image/png", "image/gif"];
+
+    public static bool IsAllowedContentType(IReadOnlyList<string> allowed, string? contentType) =>
+        !string.IsNullOrWhiteSpace(contentType)
+        && allowed.Contains(contentType.Split(';')[0].Trim(), StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
 /// The allowlist of load fields writable via the Alvys load-update (PATCH) endpoint. Today only
 /// <c>OrderNumber</c> is writable (≤30 chars). The list is the safety boundary: any other field
 /// is rejected before a live PATCH is built, so an over-broad caller can never mutate fields Alvys
@@ -61,6 +141,15 @@ public enum AlvysWriteOperationKind
     TripDispatch,
     /// <summary>Update a carrier's operational status (optimistic-concurrency / ETag gated).</summary>
     CarrierStatusUpdate,
+
+    // --- Billing document writes (Public API — contracted 2026-07-21; decision #11) --------------
+
+    /// <summary>Upload a single billing document (POD/BOL/rate-con/etc.) to a load (Public API).</summary>
+    UploadLoadDocument,
+    /// <summary>Upload a single billing document to a trip (Public API).</summary>
+    UploadTripDocument,
+    /// <summary>Attach a carrier invoice document to a trip (Public API, separately flag-gated).</summary>
+    CreateCarrierInvoice,
 
     // --- Phase-2 consolidation writes (internal API — observed, not contracted; decision #10) ---
 
@@ -250,6 +339,49 @@ public static class AlvysWriteOperationRegistry
                 "concurrency (ETag) protection.",
             WorkflowStage = "Assign",
             RequiresEtag = true,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+
+        // --- Billing document writes (Public API surface, contracted 2026-07-21) -----------------
+        new()
+        {
+            Code = "upload-load-document",
+            Kind = AlvysWriteOperationKind.UploadLoadDocument,
+            Title = "Upload load document",
+            Description =
+                "Upload a single billing document (Proof of Delivery, Bill of Lading, rate " +
+                "confirmation, etc.) to a load via the contracted Alvys Public-API multipart " +
+                "endpoint. Closes the missing-POD/BOL loop.",
+            WorkflowStage = "Bill",
+            RequiresEtag = false,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+        new()
+        {
+            Code = "upload-trip-document",
+            Kind = AlvysWriteOperationKind.UploadTripDocument,
+            Title = "Upload trip document",
+            Description =
+                "Upload a single billing/operational document to a trip via the contracted Alvys " +
+                "Public-API multipart endpoint.",
+            WorkflowStage = "Bill",
+            RequiresEtag = false,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+        new()
+        {
+            Code = "create-carrier-invoice",
+            Kind = AlvysWriteOperationKind.CreateCarrierInvoice,
+            Title = "Attach carrier invoice",
+            Description =
+                "Attach a carrier invoice document to a trip via the contracted Alvys Public-API " +
+                "multipart endpoint. Separately flag-gated (Alvys:Writeback:EnableCarrierInvoice) " +
+                "because an unmatched PaymentType silently defaults to 30-day terms in Alvys.",
+            WorkflowStage = "Bill",
+            RequiresEtag = false,
             LiveSupport = AlvysLiveSupport.Supported,
             RequiredToEnable = null,
         },

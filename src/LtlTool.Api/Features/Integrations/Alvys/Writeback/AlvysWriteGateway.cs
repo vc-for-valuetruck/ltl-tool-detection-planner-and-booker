@@ -71,7 +71,7 @@ public sealed class AlvysWriteGateway(
             };
         }
 
-        var issues = Validate(op, request);
+        var issues = Validate(op, request, _write);
         if (issues.Count > 0)
         {
             return new AlvysOperationOutcome
@@ -236,7 +236,7 @@ public sealed class AlvysWriteGateway(
 
     /// <summary>Per-operation required-input validation. Pure; no upstream calls.</summary>
     private static List<AlvysOperationIssue> Validate(
-        AlvysWriteOperationDescriptor op, AlvysOperationRequest request)
+        AlvysWriteOperationDescriptor op, AlvysOperationRequest request, AlvysWriteOptions write)
     {
         var issues = new List<AlvysOperationIssue>();
 
@@ -346,6 +346,43 @@ public sealed class AlvysWriteGateway(
                     "A status value is required (e.g. Active, Inactive).");
                 break;
 
+            case AlvysWriteOperationKind.UploadLoadDocument:
+                Require(!string.IsNullOrWhiteSpace(request.LoadNumber), "LOAD_NUMBER_REQUIRED",
+                    "A load number is required.");
+                ValidateDocumentUpload(issues, request,
+                    AlvysLoadDocumentTypes.IsValid(request.DocumentType), AlvysLoadDocumentTypes.All,
+                    AlvysDocumentUploadLimits.LoadContentTypes, AlvysDocumentUploadLimits.LoadMaxBytes);
+                break;
+
+            case AlvysWriteOperationKind.UploadTripDocument:
+                Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
+                    "A trip id is required.");
+                ValidateDocumentUpload(issues, request,
+                    AlvysTripDocumentTypes.IsValid(request.DocumentType), AlvysTripDocumentTypes.All,
+                    AlvysDocumentUploadLimits.TripContentTypes, AlvysDocumentUploadLimits.TripMaxBytes);
+                break;
+
+            case AlvysWriteOperationKind.CreateCarrierInvoice:
+                Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
+                    "A trip id is required to attach a carrier invoice.");
+                Require(request.FileBytes is { Length: > 0 }, "FILE_REQUIRED",
+                    "A file is required.");
+                Require(request.FileBytes is null || request.FileBytes.LongLength <= AlvysDocumentUploadLimits.TripMaxBytes,
+                    "FILE_TOO_LARGE",
+                    $"The file exceeds the {AlvysDocumentUploadLimits.TripMaxBytes / (1024 * 1024)}MB limit.");
+                // PaymentType is optional, but if supplied it MUST be on the operator whitelist —
+                // an unmatched value silently defaults to 30-day terms in Alvys, so we refuse it.
+                if (!string.IsNullOrWhiteSpace(request.PaymentType) && !write.IsAllowedPaymentType(request.PaymentType))
+                {
+                    issues.Add(new AlvysOperationIssue
+                    {
+                        Code = "PAYMENT_TYPE_NOT_ALLOWED",
+                        Message = $"PaymentType '{request.PaymentType}' is not on the allowed whitelist " +
+                                  "(Alvys silently defaults unknown values to 30-day terms).",
+                    });
+                }
+                break;
+
             case AlvysWriteOperationKind.AddExtendedStop:
                 Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
                     "A parent trip id is required.");
@@ -387,6 +424,43 @@ public sealed class AlvysWriteGateway(
                 "An ETag/concurrency token is required for this operation.");
 
         return issues;
+    }
+
+    /// <summary>
+    /// Shared validation for a document upload: a non-empty file within the size limit, an allowed
+    /// content type, and a DocumentType on the endpoint's allowlist. Additive to <paramref name="issues"/>.
+    /// </summary>
+    private static void ValidateDocumentUpload(
+        List<AlvysOperationIssue> issues, AlvysOperationRequest request,
+        bool documentTypeValid, IReadOnlyList<string> allowedTypes,
+        IReadOnlyList<string> allowedContentTypes, long maxBytes)
+    {
+        if (request.FileBytes is not { Length: > 0 })
+            issues.Add(new AlvysOperationIssue { Code = "FILE_REQUIRED", Message = "A file is required." });
+        else if (request.FileBytes.LongLength > maxBytes)
+            issues.Add(new AlvysOperationIssue
+            {
+                Code = "FILE_TOO_LARGE",
+                Message = $"The file exceeds the {maxBytes / (1024 * 1024)}MB limit.",
+            });
+
+        if (!AlvysDocumentUploadLimits.IsAllowedContentType(allowedContentTypes, request.ContentType))
+            issues.Add(new AlvysOperationIssue
+            {
+                Code = "CONTENT_TYPE_NOT_ALLOWED",
+                Message = $"Content type '{request.ContentType}' is not allowed. " +
+                          $"Allowed: {string.Join(", ", allowedContentTypes)}.",
+            });
+
+        if (string.IsNullOrWhiteSpace(request.DocumentType))
+            issues.Add(new AlvysOperationIssue { Code = "DOCUMENT_TYPE_REQUIRED", Message = "A DocumentType is required." });
+        else if (!documentTypeValid)
+            issues.Add(new AlvysOperationIssue
+            {
+                Code = "DOCUMENT_TYPE_INVALID",
+                Message = $"DocumentType '{request.DocumentType}' is not valid. " +
+                          $"Must be one of: {string.Join(", ", allowedTypes)}.",
+            });
     }
 
     /// <summary>Builds the concrete preview body for an operation. Pure; no upstream calls.</summary>
@@ -478,6 +552,36 @@ public sealed class AlvysWriteGateway(
                 target = $"PATCH internal trip {request.TripId} references";
                 break;
 
+            case AlvysWriteOperationKind.UploadLoadDocument:
+                // Metadata only — the raw bytes never enter the payload/hash/preview. The multipart
+                // body is assembled by the upload client at dispatch time from FileBytes directly.
+                body["DocumentType"] = AlvysLoadDocumentTypes.Canonical(request.DocumentType) ?? request.DocumentType?.Trim();
+                body["FileName"] = request.FileName;
+                body["ContentType"] = request.ContentType;
+                body["FileSizeBytes"] = request.FileBytes?.LongLength ?? 0L;
+                target = $"POST /loads/{request.LoadNumber}/document (multipart)";
+                break;
+
+            case AlvysWriteOperationKind.UploadTripDocument:
+                body["DocumentType"] = AlvysTripDocumentTypes.Canonical(request.DocumentType) ?? request.DocumentType?.Trim();
+                body["FileName"] = request.FileName;
+                body["ContentType"] = request.ContentType;
+                body["FileSizeBytes"] = request.FileBytes?.LongLength ?? 0L;
+                target = $"POST /trips/{request.TripId}/document (multipart)";
+                break;
+
+            case AlvysWriteOperationKind.CreateCarrierInvoice:
+                body["TripId"] = request.TripId;
+                body["FileName"] = request.FileName;
+                body["ContentType"] = request.ContentType;
+                body["FileSizeBytes"] = request.FileBytes?.LongLength ?? 0L;
+                if (!string.IsNullOrWhiteSpace(request.CarrierInvoiceNumber))
+                    body["CarrierInvoiceNumber"] = request.CarrierInvoiceNumber.Trim();
+                if (!string.IsNullOrWhiteSpace(request.PaymentType))
+                    body["PaymentType"] = request.PaymentType.Trim();
+                target = "POST /invoices/carrier-invoice (multipart)";
+                break;
+
             default:
                 target = op.Title;
                 break;
@@ -513,6 +617,12 @@ public sealed class AlvysWriteGateway(
             if (!_alvys.HasCredentials)
                 blockers.Add("Alvys credentials are not configured.");
         }
+
+        // The carrier-invoice attach carries a silent-default risk (unknown PaymentType → 30-day
+        // terms upstream), so it needs a dedicated arm switch in addition to sandbox mode.
+        if (op.Kind == AlvysWriteOperationKind.CreateCarrierInvoice && !_write.EnableCarrierInvoice)
+            blockers.Add(
+                "The carrier-invoice write is not armed (Alvys:Writeback:EnableCarrierInvoice=false).");
 
         return blockers;
     }

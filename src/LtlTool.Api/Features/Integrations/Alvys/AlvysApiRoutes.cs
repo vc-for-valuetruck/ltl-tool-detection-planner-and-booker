@@ -103,6 +103,27 @@ public static class AlvysApiRoutes
         => BuildLoadSubresourcePath(apiVersion, loadNumber, "notes");
 
     /// <summary>
+    /// Relative path <c>api/p/v{version}/loads/{loadNumber}/document</c> for a multipart
+    /// single-file document upload (POST). <paramref name="loadNumber"/> is URL-encoded.
+    /// </summary>
+    public static string LoadDocumentUpload(string? apiVersion, string loadNumber)
+        => BuildLoadSubresourcePath(apiVersion, loadNumber, "document");
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/trips/{tripId}/document</c> for a multipart
+    /// single-file document upload (POST). <paramref name="tripId"/> is URL-encoded.
+    /// </summary>
+    public static string TripDocumentUpload(string? apiVersion, string tripId)
+        => $"api/p/{NormalizeVersion(apiVersion)}/trips/{Uri.EscapeDataString(tripId)}/document";
+
+    /// <summary>
+    /// Relative path <c>api/p/v{version}/invoices/carrier-invoice</c> for a multipart
+    /// carrier-invoice attach (POST). The trip id travels in the multipart body, not the path.
+    /// </summary>
+    public static string CarrierInvoice(string? apiVersion)
+        => $"api/p/{NormalizeVersion(apiVersion)}/invoices/carrier-invoice";
+
+    /// <summary>
     /// Relative path <c>api/p/v{version}/loads/{loadNumber}/notes</c> for creating a note
     /// (POST). Same path as <see cref="LoadNotes"/>; the verb distinguishes read from write.
     /// </summary>

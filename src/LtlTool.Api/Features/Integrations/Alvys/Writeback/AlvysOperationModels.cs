@@ -86,6 +86,37 @@ public sealed class AlvysOperationRequest
     /// <summary>Optional dispatcher justification captured on the audit trail.</summary>
     public string? Reason { get; set; }
 
+    // --- Billing document upload inputs (Public API) ------------------------------------------
+
+    /// <summary>
+    /// Raw file bytes for a document/invoice upload. Never persisted to the outbox, never logged, and
+    /// never part of the idempotency hash or preview — only the metadata (type, name, size) is.
+    /// </summary>
+    public byte[]? FileBytes { get; set; }
+
+    /// <summary>Original file name for a document/invoice upload.</summary>
+    public string? FileName { get; set; }
+
+    /// <summary>MIME content type of the uploaded file (e.g. <c>application/pdf</c>).</summary>
+    public string? ContentType { get; set; }
+
+    /// <summary>
+    /// Alvys document classification for a load/trip document upload. Validated server-side against
+    /// <see cref="AlvysLoadDocumentTypes"/> / <see cref="AlvysTripDocumentTypes"/>; an unknown value
+    /// is rejected before any bytes reach Alvys.
+    /// </summary>
+    public string? DocumentType { get; set; }
+
+    /// <summary>Optional carrier invoice number (create-carrier-invoice).</summary>
+    public string? CarrierInvoiceNumber { get; set; }
+
+    /// <summary>
+    /// Optional carrier payment terms (create-carrier-invoice). Validated against
+    /// <see cref="AlvysWriteOptions.AllowedCarrierInvoicePaymentTypes"/>; an unmatched value is
+    /// refused rather than silently defaulting to 30-day terms upstream.
+    /// </summary>
+    public string? PaymentType { get; set; }
+
     // --- Internal-API (Phase-2 consolidation) inputs ------------------------------------------
 
     /// <summary>

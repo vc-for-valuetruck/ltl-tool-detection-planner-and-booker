@@ -7,6 +7,7 @@ import {
   AlvysOperationOutcome,
   AlvysOperationRecordView,
   AlvysReadinessStatus,
+  AlvysWebhookAdminView,
 } from './alvys-ops.models';
 
 /**
@@ -42,6 +43,10 @@ export class AlvysOpsPanel {
   protected readonly historyLoading = signal(false);
   protected readonly historyError = signal<string | null>(null);
 
+  protected readonly webhooks = signal<AlvysWebhookAdminView | null>(null);
+  protected readonly webhooksLoading = signal(false);
+  protected readonly webhooksError = signal<string | null>(null);
+
   /** Headline posture for the panel banner. */
   protected readonly posture = computed<'audit' | 'simulation' | 'sandbox' | 'unknown'>(() => {
     const s = this.status();
@@ -54,6 +59,7 @@ export class AlvysOpsPanel {
   constructor() {
     this.load();
     this.loadHistory();
+    this.loadWebhooks();
   }
 
   protected load(): void {
@@ -122,6 +128,33 @@ export class AlvysOpsPanel {
         this.historyLoading.set(false);
       },
     });
+  }
+
+  /** Loads the read-only webhook admin snapshot (recent received events + receiver config). */
+  protected loadWebhooks(): void {
+    this.webhooksLoading.set(true);
+    this.webhooksError.set(null);
+    this.ops.webhookEvents(25).subscribe({
+      next: (view) => {
+        this.webhooks.set(view);
+        this.webhooksLoading.set(false);
+      },
+      error: (err) => {
+        this.webhooksError.set(this.describe('Webhook events', err));
+        this.webhooksLoading.set(false);
+      },
+    });
+  }
+
+  protected webhookStateClass(state: string): string {
+    switch (state) {
+      case 'Processed':
+        return 'badge badge-muted';
+      case 'Failed':
+        return 'badge badge-block';
+      default:
+        return 'badge badge-unsupported';
+    }
   }
 
   protected statusClass(status: AlvysOperationRecordView['status']): string {

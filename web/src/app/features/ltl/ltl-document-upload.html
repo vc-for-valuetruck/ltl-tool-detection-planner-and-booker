@@ -1,0 +1,100 @@
+<div class="doc-upload" data-testid="doc-upload">
+  <div class="doc-upload-head">
+    <h3>Upload document</h3>
+    @if (willPush()) {
+      <span class="pill pill-warn" data-testid="upload-posture" title="Writeback sandbox is configured — this upload is sent to the Alvys sandbox tenant.">
+        Sandbox writeback on
+      </span>
+    } @else {
+      <span class="pill pill-muted" data-testid="upload-posture" title="Writeback is not configured for live execution — this upload is recorded internally only and is not pushed to Alvys.">
+        Recorded internally only
+      </span>
+    }
+  </div>
+
+  <div class="doc-upload-controls">
+    <label class="field">
+      <span>Document type</span>
+      <select
+        data-testid="upload-doctype"
+        [value]="selectedType()"
+        (change)="selectedType.set($any($event.target).value)"
+      >
+        @for (t of documentTypes; track t) {
+          <option [value]="t">{{ t }}</option>
+        }
+      </select>
+    </label>
+
+    <label class="field">
+      <span>File (PDF, JPEG, or PNG · max 10&nbsp;MB)</span>
+      <input
+        type="file"
+        data-testid="upload-file"
+        accept="application/pdf,image/jpeg,image/png"
+        (change)="onFileSelected($event)"
+      />
+    </label>
+
+    <label class="field">
+      <span>Reason (optional, for the audit trail)</span>
+      <input
+        type="text"
+        data-testid="upload-reason"
+        [value]="reason()"
+        (input)="reason.set($any($event.target).value)"
+        maxlength="240"
+      />
+    </label>
+  </div>
+
+  <button
+    type="button"
+    class="upload-btn"
+    data-testid="upload-submit"
+    [disabled]="!canSubmit()"
+    [title]="canSubmit() ? 'Upload this document' : 'Choose a document type and a file first.'"
+    (click)="submit()"
+  >
+    {{ submitting() ? 'Uploading…' : 'Upload document' }}
+  </button>
+
+  @if (error()) {
+    <p class="doc-upload-error" data-testid="upload-error">{{ error() }}</p>
+  }
+
+  @if (result(); as r) {
+    <div class="doc-upload-result" data-testid="upload-result">
+      @if (pushed(r)) {
+        <p class="upload-outcome upload-outcome-pushed" data-testid="upload-outcome">
+          Pushed to Alvys (sandbox).
+        </p>
+      } @else {
+        <p class="upload-outcome upload-outcome-internal" data-testid="upload-outcome">
+          Recorded internally only — not pushed to Alvys.
+        </p>
+      }
+
+      <dl class="upload-meta">
+        @if (r.resultReference) {
+          <dt>Attachment path</dt>
+          <dd data-testid="upload-attachment-path">{{ r.resultReference }}</dd>
+        }
+        <dt>Uploaded at</dt>
+        <dd data-testid="upload-uploaded-at">{{ r.updatedAt | date: 'MMM d, y, h:mm a' }}</dd>
+        <dt>Reconciliation</dt>
+        <dd>
+          <span [class]="reconciliationClass(r.reconciliationState)" data-testid="upload-reconciliation">
+            {{ r.reconciliationState }}
+          </span>
+        </dd>
+      </dl>
+
+      @if (r.reconciliationState === 'Mismatch') {
+        <p class="doc-upload-error" data-testid="upload-reconciliation-detail">
+          {{ r.reconciliationDetail ?? 'The attachment was not confirmed on re-fetch — needs human review.' }}
+        </p>
+      }
+    </div>
+  }
+</div>
