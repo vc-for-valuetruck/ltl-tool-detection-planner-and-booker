@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LtlTool.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260721000001_AddAssignmentAudits")]
-    partial class AddAssignmentAudits
+    [Migration("20260721010000_AddLaneTemplates")]
+    partial class AddLaneTemplates
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -115,73 +115,59 @@ namespace LtlTool.Api.Migrations
                     b.ToTable("AlvysOperations", (string)null);
                 });
 
-            modelBuilder.Entity("LtlTool.Api.Features.Ltl.Assignment.AssignmentAuditRecord", b =>
+            modelBuilder.Entity("LtlTool.Api.Features.Ltl.Consolidation.LaneTemplateRecord", b =>
                 {
                     b.Property<string>("Id")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<string>("AlvysWriteback")
+                    b.Property<int?>("CadenceDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CorridorCode")
                         .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("DriverId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("LoadId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("MatchLabel")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
-                    b.Property<int?>("MatchScore")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.Property<string>("OverrideReason")
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)");
-
-                    b.Property<string>("ReasonType")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<DateTimeOffset>("RecordedAt")
+                    b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<string>("RecordedBy")
+                    b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
-                    b.Property<string>("TrailerId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                    b.Property<string>("CustomerName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
-                    b.Property<string>("TruckId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                    b.Property<string>("DestinationLabel")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
-                    b.Property<string>("WarningsJson")
+                    b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("OriginLabel")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("LoadId");
+                    b.HasIndex("CorridorCode");
 
-                    b.HasIndex("RecordedBy");
+                    b.HasIndex("CustomerName");
 
-                    b.ToTable("AssignmentAudits", (string)null);
+                    b.ToTable("LaneTemplates", (string)null);
                 });
 
             modelBuilder.Entity("LtlTool.Api.Features.Ltl.SavedViews.SavedViewRecord", b =>

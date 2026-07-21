@@ -6,8 +6,10 @@ import { LtlService } from './ltl.service';
 import { LtlLoadSummary, LaneRateContext } from './ltl.models';
 import { ConsolidationService } from './consolidation.service';
 import {
+  ConsolidationAccessorialPreCheck,
   ConsolidationAuditRecord,
   ConsolidationPlanSibling,
+  ConsolidationRpmWarning,
   ConsolidationTrailerFit,
   CustomerConsolidationTier,
   CustomerPolicySource,
@@ -83,6 +85,31 @@ export class PlanDetail implements OnInit {
    * resolves, or when the preview fails (the page still renders from the live loads).
    */
   readonly planSiblings = signal<ConsolidationPlanSibling[]>([]);
+
+  /**
+   * Server-computed red-RPM warning from the plan preview (Phase 4). Always present once the
+   * preview resolves — its status is 'Unavailable' (gray chip) rather than absent when the driver-
+   * RPM inputs were missing, so the chip is always honest. Null only until the preview resolves.
+   */
+  readonly rpmWarning = signal<ConsolidationRpmWarning | null>(null);
+
+  /**
+   * Server-computed driver-math combined RPM from the plan preview (Phase 4): the plan's combined
+   * driver trip value ÷ the parent's driver loaded miles (PR #59 convention), NOT the inflated
+   * customer-billing RPM. Preferred over {@link combinedRpm} for display. Null when the driver-RPM
+   * inputs were missing — never coerced.
+   */
+  readonly serverCombinedRpm = signal<number | null>(null);
+
+  /**
+   * Plan-time accessorial pre-checks from the plan preview (Phase 4): the deterministic
+   * accessorial-review candidates for the parent and each corridor-valid sibling. Evidence-cited,
+   * no dollar amounts. Empty until the preview resolves or when nothing was evaluated.
+   */
+  readonly accessorialPreChecks = signal<ConsolidationAccessorialPreCheck[]>([]);
+
+  /** Corridor code the server resolved for this plan (from the preview). Null until it resolves. */
+  readonly planCorridorCode = signal<string | null>(null);
 
   /**
    * Recent lane-rate context for the parent's origin→destination state pair (Phase 7.4). This is
@@ -217,6 +244,28 @@ export class PlanDetail implements OnInit {
     const miles = this.parentLinehaulMiles();
     return miles && miles > 0 ? this.combinedRevenue() / miles : null;
   });
+
+  /**
+   * The RPM shown in the economics card. Prefers the server's driver-math combined RPM (PR #59:
+   * driver trip value ÷ driver loaded miles) once the preview resolves, since that is the number
+   * the red-RPM floor is checked against. Falls back to the client-side customer-billing
+   * {@link combinedRpm} only before the preview resolves so the card is never blank on first paint.
+   */
+  readonly displayRpm = computed<number | null>(() => {
+    const server = this.serverCombinedRpm();
+    return server != null ? server : this.combinedRpm();
+  });
+
+  /** True when the server flagged the projected driver RPM below the configured floor. */
+  readonly rpmBelowFloor = computed(() => this.rpmWarning()?.status === 'Below');
+
+  /** True when the RPM chip should render in its gray "inputs unavailable" state. */
+  readonly rpmUnavailable = computed(() => this.rpmWarning()?.status === 'Unavailable');
+
+  /** Accessorial pre-checks that actually carry a candidate — evaluated + non-empty. */
+  readonly accessorialPreChecksWithCandidates = computed<ConsolidationAccessorialPreCheck[]>(() =>
+    this.accessorialPreChecks().filter((p) => p.evaluated && p.candidates.length > 0),
+  );
 
   /**
    * "If sold individually" RPM = average of each load's own RPM (its revenue ÷ its own miles).
@@ -359,10 +408,18 @@ export class PlanDetail implements OnInit {
           this.trailerFit.set(plan.trailerFit ?? null);
           this.previewPlanId.set(plan.previewId ?? null);
           this.planSiblings.set(plan.siblings ?? []);
+          this.rpmWarning.set(plan.rpmWarning ?? null);
+          this.serverCombinedRpm.set(plan.combinedRevenuePerMile ?? null);
+          this.accessorialPreChecks.set(plan.accessorialPreChecks ?? []);
+          this.planCorridorCode.set(plan.corridorCode ?? null);
         },
         error: () => {
           this.trailerFit.set(null);
           this.planSiblings.set([]);
+          this.rpmWarning.set(null);
+          this.serverCombinedRpm.set(null);
+          this.accessorialPreChecks.set([]);
+          this.planCorridorCode.set(null);
         },
       });
   }
@@ -423,12 +480,20 @@ export class PlanDetail implements OnInit {
   openClickCard(): void {
     if (this.deliveredExample()) return;
     const qp = this.route.snapshot.queryParamMap;
+
+    // Effectiveness metric (Phase 4): status-only signal that a generated plan reached the
+    // "paste into Alvys" step. Fire-and-forget — no plan body, no PII — and never blocks navigation.
+    const corridorCode = this.planCorridorCode()?.trim();
+    this.consolidation
+      .recordClickCardCopied(corridorCode || 'unknown', this.siblings().length)
+      .subscribe({ next: () => {}, error: () => {} });
+
     this.router.navigate(['/ltl/consolidate/plan', 'live', 'click-card'], {
       queryParams: {
         parent: qp.get('parent'),
         siblings: qp.get('siblings'),
         combinedRevenue: this.combinedRevenue(),
-        combinedRpm: this.combinedRpm(),
+        combinedRpm: this.displayRpm(),
       },
     });
   }
