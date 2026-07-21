@@ -1,4 +1,5 @@
 using LtlTool.Api.Features.Integrations.Alvys.Writeback;
+using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using LtlTool.Api.Features.Ltl.YardArtifacts;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +20,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Durable yard-artifact intake metadata (see <see cref="EfYardArtifactStore"/>). Internal data, never Alvys.</summary>
     public DbSet<YardArtifactRecord> YardArtifacts => Set<YardArtifactRecord>();
+
+    /// <summary>Durable internal assignment-decision audit trail (see <see cref="EfAssignmentAuditStore"/>). Never written back to Alvys.</summary>
+    public DbSet<AssignmentAuditRecord> AssignmentAudits => Set<AssignmentAuditRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -86,6 +90,30 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(e => e.LoadNumber);
             entity.HasIndex(e => e.TruckUnit);
             entity.HasIndex(e => e.TrailerUnit);
+        });
+
+        modelBuilder.Entity<AssignmentAuditRecord>(entity =>
+        {
+            entity.ToTable("AssignmentAudits");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(64);
+            entity.Property(e => e.LoadId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.DriverId).HasMaxLength(128);
+            entity.Property(e => e.TruckId).HasMaxLength(128);
+            entity.Property(e => e.TrailerId).HasMaxLength(128);
+            entity.Property(e => e.MatchLabel).HasMaxLength(64);
+            entity.Property(e => e.Notes).HasMaxLength(4000);
+            // Enum stored as a readable string so the table is legible; legacy/unspecified reads
+            // back as "Unspecified" with the free-text detail preserved.
+            entity.Property(e => e.ReasonType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.OverrideReason).HasMaxLength(1024);
+            entity.Property(e => e.WarningsJson).IsRequired();
+            entity.Property(e => e.RecordedBy).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.AlvysWriteback).IsRequired().HasMaxLength(32);
+
+            // History listing is keyed by load (per-load drawer) and filtered by user (history page).
+            entity.HasIndex(e => e.LoadId);
+            entity.HasIndex(e => e.RecordedBy);
         });
     }
 }
