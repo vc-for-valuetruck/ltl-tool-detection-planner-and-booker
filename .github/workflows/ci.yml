@@ -28,6 +28,26 @@ jobs:
       - run: dotnet build --no-restore -c Release
       - run: dotnet test --no-build -c Release --verbosity normal
 
+  api-surface-contract:
+    # Phase 0 stability guard. Runs only the API-surface contract tests
+    # (Category=ApiSurfaceContract) as a standalone, visibly-named check so an accidental
+    # route/verb rename or deletion of a CLAUDE.md § "Current API surface (preserve)"
+    # endpoint fails CI with an obvious signal instead of hiding inside the broader `api`
+    # job output. Covers both the reflection-over-the-route-table manifest test
+    # (LtlApiSurfaceManifestTests) and the unauthenticated 401-probe test
+    # (LtlApiSurfaceContractTests).
+    name: Verify API Surface Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore
+      - run: dotnet build --no-restore -c Release
+      - name: Assert documented LTL API surface is preserved
+        run: dotnet test --no-build -c Release --verbosity normal --filter "Category=ApiSurfaceContract"
+
   migration-sqlserver:
     name: Verify EF Migrations on SQL Server
     runs-on: ubuntu-latest
