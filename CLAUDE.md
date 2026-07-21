@@ -82,6 +82,8 @@ defensible recommendations, and revenue protection.
 - `POST /api/ltl/loads/{idOrNumber}/assign/validate` — validate before assignment
 - `POST /api/ltl/loads/{idOrNumber}/assign` — record internal audit decision
 - `GET  /api/ltl/loads/{idOrNumber}/assignments` — assignment history
+- `POST /api/ltl/assign/validate-batch` — Phase 3: preflight-validate top-N proposed assignments in one call; per-row blocker/warning counts; records nothing, read-only against Alvys.
+- `GET  /api/ltl/assignments?user={u}&day={yyyy-MM-dd}&reasonType={reason}` — Phase 3: cross-load assignment audit history, newest first, filterable by recording user / UTC day / typed override reason. Read-only; `AlvysWriteback` stays `NotPerformed`.
 - `GET  /api/ltl/billing/worklist` — billing attention list
 - `GET  /api/ltl/exceptions` — exception-bearing loads
 - `GET  /api/ltl/consolidation/candidates?loadId={id}&corridor={code}` — Phase 1 pilot Laredo→Dallas consolidation candidates (read-only)
