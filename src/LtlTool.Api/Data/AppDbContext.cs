@@ -100,7 +100,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(e => e.TrailerUnit);
         });
 
-<<<<<<< HEAD
         modelBuilder.Entity<LaneTemplateRecord>(entity =>
         {
             entity.ToTable("LaneTemplates");
