@@ -282,3 +282,63 @@ describe('LtlService — yard artifacts', () => {
     );
   });
 });
+
+describe('LtlService — assignment history & batch validate', () => {
+  let service: LtlService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: RUNTIME_CONFIG,
+          useValue: { tenantId: '', clientId: '', apiScope: '', apiBaseUrl: '/api' },
+        },
+      ],
+    });
+    service = TestBed.inject(LtlService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('calls GET /api/ltl/assignments with no params when the query is empty', () => {
+    service.assignmentHistory().subscribe();
+
+    const req = http.expectOne('/api/ltl/assignments');
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('passes user, day and reasonType through as query params', () => {
+    service
+      .assignmentHistory({ user: 'bob@valuetruck.com', day: '2026-07-21', reasonType: 'CustomerRequest' })
+      .subscribe();
+
+    const req = http.expectOne(
+      '/api/ltl/assignments?user=bob@valuetruck.com&day=2026-07-21&reasonType=CustomerRequest',
+    );
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('POSTs the batch to /api/ltl/assign/validate-batch and maps the rows', () => {
+    let rowCount = -1;
+    service
+      .validateAssignmentBatch({ items: [{ loadId: 'L1', driverId: 'DR1' }] })
+      .subscribe((r) => (rowCount = r.rows.length));
+
+    const req = http.expectOne('/api/ltl/assign/validate-batch');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.items[0].loadId).toBe('L1');
+    req.flush({
+      rows: [
+        { loadId: 'L1', found: true, blockerCount: 0, warningCount: 1, hasBlockers: false, blockers: [], warnings: [] },
+      ],
+    });
+
+    expect(rowCount).toBe(1);
+  });
+});

@@ -1,0 +1,130 @@
+<app-ltl-nav active="assignments" />
+
+<div class="worklist page-shell">
+  <div class="worklist-head">
+    <h1>Assignment decision history</h1>
+    <span class="worklist-sub">
+      The auditable trail of internal assignment decisions — driver/truck/trailer chosen, match
+      score, the typed override reason and its detail, warnings acknowledged, who decided and when.
+      Read-only; every decision is recorded internally and <strong>not pushed to Alvys</strong>.
+    </span>
+  </div>
+
+  <div class="filter-row">
+    <label class="filter-field">
+      <span class="filter-label">User</span>
+      <input
+        type="text"
+        [ngModel]="user()"
+        (ngModelChange)="user.set($event)"
+        (keyup.enter)="load()"
+        placeholder="e.g. dispatcher@valuetruck.com"
+        data-testid="assignments-filter-user"
+      />
+    </label>
+    <label class="filter-field">
+      <span class="filter-label">Day (UTC)</span>
+      <input
+        type="date"
+        [ngModel]="day()"
+        (ngModelChange)="day.set($event)"
+        data-testid="assignments-filter-day"
+      />
+    </label>
+    <label class="filter-field">
+      <span class="filter-label">Reason</span>
+      <select
+        [ngModel]="reasonType()"
+        (ngModelChange)="reasonType.set($event)"
+        data-testid="assignments-filter-reason"
+      >
+        @for (opt of reasonOptions; track opt.value) {
+          <option [value]="opt.value">{{ opt.label }}</option>
+        }
+      </select>
+    </label>
+    <button type="button" class="badge-filter selected" (click)="load()" data-testid="assignments-apply">
+      Apply
+    </button>
+    <button type="button" class="badge-filter" (click)="clearFilters()" data-testid="assignments-clear">
+      Clear
+    </button>
+    @if (!loading() && !error()) {
+      <span class="filter-count" data-testid="assignments-count">{{ rows().length }} decisions</span>
+    }
+  </div>
+
+  @if (loading()) {
+    <div class="state" data-testid="assignments-loading">Loading assignment history…</div>
+  } @else if (error()) {
+    <div class="state state-error" data-testid="assignments-error">
+      <strong>Couldn't load assignment history.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="load()">Retry</button>
+    </div>
+  } @else if (!hasRows()) {
+    <div class="state" data-testid="assignments-empty">
+      No assignment decisions match these filters.
+    </div>
+  } @else {
+    <div class="card">
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>Load</th>
+              <th>Equipment</th>
+              <th>Match</th>
+              <th>Reason</th>
+              <th>Detail</th>
+              <th>Warnings</th>
+              <th>Recorded by</th>
+              <th>When</th>
+              <th>Alvys</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of rows(); track row.id) {
+              <tr data-testid="assignments-row">
+                <td><strong>{{ row.loadId }}</strong></td>
+                <td>{{ equipment(row) }}</td>
+                <td>
+                  @if (row.matchLabel) {
+                    <span class="chip chip-neutral">{{ row.matchLabel }}</span>
+                    @if (row.matchScore !== null) {
+                      <span class="muted"> {{ row.matchScore }}</span>
+                    }
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
+                <td><span class="chip chip-neutral" data-testid="assignments-reason">{{ reasonLabel(row.reasonType) }}</span></td>
+                <td>
+                  @if (row.overrideReason) {
+                    {{ row.overrideReason }}
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
+                <td>
+                  @if (row.warnings.length > 0) {
+                    <span class="chip chip-warn" data-testid="assignments-warn-count">{{ row.warnings.length }}</span>
+                  } @else {
+                    <span class="muted">0</span>
+                  }
+                </td>
+                <td>{{ row.recordedBy }}</td>
+                <td>{{ formatTimestamp(row.recordedAt) }}</td>
+                <td><span class="chip chip-neutral" data-testid="assignments-writeback">Not pushed to Alvys</span></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="worklist-footer" data-testid="assignments-footer">
+      Source: Internal audit store · Read-only · Not written back to Alvys
+    </div>
+  }
+</div>

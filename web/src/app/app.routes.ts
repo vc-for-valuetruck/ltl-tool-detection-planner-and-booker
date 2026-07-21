@@ -39,6 +39,11 @@ export const routes: Routes = [
     loadComponent: () => import('./features/ltl/ltl-reporting').then((m) => m.LtlReporting),
   },
   {
+    path: 'ltl/assignments',
+    loadComponent: () =>
+      import('./features/ltl/ltl-assignments').then((m) => m.LtlAssignments),
+  },
+  {
     path: 'ltl/consolidate',
     loadComponent: () => import('./features/ltl/consolidate').then((m) => m.Consolidate),
   },

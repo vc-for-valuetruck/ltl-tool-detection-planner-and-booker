@@ -41,6 +41,9 @@ import { RouterLink } from '@angular/router';
         <a routerLink="/ltl/reporting" class="shell-tab" [class.active]="active === 'reporting'" role="tab">
           Reporting
         </a>
+        <a routerLink="/ltl/assignments" class="shell-tab" [class.active]="active === 'assignments'" role="tab">
+          Assignments
+        </a>
       </div>
     </nav>
   `,
@@ -114,5 +117,6 @@ export class LtlNav {
     | 'tenders'
     | 'notifications'
     | 'reporting'
+    | 'assignments'
     | null = null;
 }

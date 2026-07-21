@@ -5,6 +5,9 @@ import { RUNTIME_CONFIG } from '../../runtime-config';
 import {
   AccessorialReviewContext,
   AssignmentAudit,
+  AssignmentAuditQuery,
+  AssignmentBatchValidateRequest,
+  AssignmentBatchValidateResponse,
   AssignmentRequest,
   AssignmentValidationResult,
   BillingBadge,
@@ -176,6 +179,30 @@ export class LtlService {
   assignments(idOrNumber: string): Observable<AssignmentAudit[]> {
     return this.http.get<AssignmentAudit[]>(
       `${this.base}/loads/${encodeURIComponent(idOrNumber)}/assignments`,
+    );
+  }
+
+  /**
+   * Cross-load assignment-decision history for the /ltl/assignments page, filtered by recording
+   * user, UTC day and/or typed override reason. Read-only; every row stays `NotPerformed` against
+   * Alvys.
+   */
+  assignmentHistory(query: AssignmentAuditQuery = {}): Observable<AssignmentAudit[]> {
+    let params = new HttpParams();
+    if (query.user) params = params.set('user', query.user);
+    if (query.day) params = params.set('day', query.day);
+    if (query.reasonType) params = params.set('reasonType', query.reasonType);
+    if (query.max) params = params.set('max', String(query.max));
+    return this.http.get<AssignmentAudit[]>(`${this.base}/assignments`, { params });
+  }
+
+  /** Preflight batch validate: dry-runs validation across many proposed assignments. Records nothing. */
+  validateAssignmentBatch(
+    request: AssignmentBatchValidateRequest,
+  ): Observable<AssignmentBatchValidateResponse> {
+    return this.http.post<AssignmentBatchValidateResponse>(
+      `${this.base}/assign/validate-batch`,
+      request,
     );
   }
 

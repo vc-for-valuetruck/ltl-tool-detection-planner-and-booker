@@ -38,6 +38,29 @@
   margin-right: 4px;
 }
 
+.filter-field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-field > .filter-label {
+  margin-right: 0;
+}
+
+.filter-field input,
+.filter-field select {
+  appearance: auto;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm, 6px);
+  padding: 5px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  min-width: 180px;
+}
+
 .badge-filter {
   appearance: none;
   border: 1px solid var(--card-border);
