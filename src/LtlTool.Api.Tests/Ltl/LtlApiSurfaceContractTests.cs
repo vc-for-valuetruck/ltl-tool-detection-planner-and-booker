@@ -29,6 +29,8 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/loads/100/matches?top=3")]
     [InlineData("/api/ltl/loads/100/billing-readiness")]
     [InlineData("/api/ltl/loads/100/assignments")]
+    [InlineData("/api/ltl/assignments")]
+    [InlineData("/api/ltl/assignments?user=dispatcher@valuetruck.com&reasonType=CustomerRequest")]
     [InlineData("/api/ltl/billing/worklist")]
     [InlineData("/api/ltl/billing/worklist?badge=ReadyToBill")]
     [InlineData("/api/ltl/exceptions")]
@@ -57,6 +59,7 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [Theory]
     [InlineData("/api/ltl/loads/100/assign/validate")]
     [InlineData("/api/ltl/loads/100/assign")]
+    [InlineData("/api/ltl/assign/validate-batch")]
     [InlineData("/api/ltl/consolidation/plan")]
     [InlineData("/api/ltl/consolidation/plan/audit")]
     public async Task Ltl_post_routes_are_mapped_and_protected(string route)
