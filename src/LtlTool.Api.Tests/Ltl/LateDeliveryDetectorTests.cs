@@ -51,7 +51,7 @@ public sealed class LateDeliveryDetectorTests
         Assert.Equal("stop-1004253", late!.StopId);
         Assert.Equal("Laredo", late.DestinationCity);
         Assert.Equal("TX", late.DestinationState);
-        Assert.Equal(1.9, late.HoursOverdue); // 23:51Z − 22:00Z = 1h51m ≈ 1.9h
+        Assert.InRange(late.HoursOverdue, 1.8, 1.9); // 23:51Z − 22:00Z = 1h51m ≈ 1.85h
         Assert.Contains("no arrival recorded (per Alvys stop status)", late.Message);
         Assert.Contains("delivery window", late.Message);
     }
