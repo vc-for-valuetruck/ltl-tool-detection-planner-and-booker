@@ -1,6 +1,11 @@
 name: Deploy LTL Tool UAT
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
     inputs:
       image_tag:
