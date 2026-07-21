@@ -102,6 +102,32 @@ public sealed class LoadSearchRequest
     ];
 
     /// <summary>
+    /// True when the request already carries at least one of the conditional filters
+    /// Alvys requires (Status/OrderNumbers/LoadNumbers/PONumbers/CustomerId/UpdatedBy).
+    /// A request with none is rejected server-side (returns 0), so a bare paged sweep
+    /// must have <see cref="Status"/> defaulted before it is sent.
+    /// </summary>
+    public bool HasConditionalFilter =>
+        Status is { Count: > 0 }
+        || OrderNumbers is { Count: > 0 }
+        || LoadNumbers is { Count: > 0 }
+        || PONumbers is { Count: > 0 }
+        || !string.IsNullOrWhiteSpace(CustomerId)
+        || !string.IsNullOrWhiteSpace(UpdatedBy);
+
+    /// <summary>
+    /// Ensures the request satisfies Alvys' conditional-filter requirement. When no
+    /// conditional filter is set, defaults <see cref="Status"/> to <see cref="AllStatuses"/>
+    /// so a bare paged sweep returns loads instead of an empty result. A request that
+    /// already carries a filter (e.g. a LoadNumbers lookup) is left untouched.
+    /// </summary>
+    public void EnsureConditionalFilter()
+    {
+        if (!HasConditionalFilter)
+            Status = AllStatuses;
+    }
+
+    /// <summary>
     /// Light client-side guard before the request reaches Alvys. Only the locally
     /// enforceable rules are checked here — <c>PageSize &gt; 0</c> and the
     /// <c>LoadNumbers &lt;= 150</c> cap. Alvys still enforces the conditional-filter

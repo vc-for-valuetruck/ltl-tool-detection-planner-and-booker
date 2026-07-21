@@ -55,6 +55,9 @@ public sealed class AlvysClient(
     public async Task<AlvysLoadsResponse> SearchLoadsAsync(
         LoadSearchRequest request, CancellationToken ct = default)
     {
+        // A bare paged sweep carries no conditional filter; Alvys rejects that with an
+        // empty result, so default Status to the full list (matches the DTO contract).
+        request.EnsureConditionalFilter();
         request.Validate();
         var path = AlvysApiRoutes.LoadsSearch(_options.ApiVersion);
         return await PostSearchAsync<LoadSearchRequest, AlvysLoadsResponse>(path, request, ct)
