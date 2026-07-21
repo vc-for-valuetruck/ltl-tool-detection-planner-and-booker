@@ -22,6 +22,14 @@ public sealed class AlvysOperationRecordView
     public string? LastError { get; init; }
     public required int AttemptCount { get; init; }
     public required string CorrelationId { get; init; }
+
+    /// <summary>Post-write reconciliation state (uploads); NotApplicable for non-reconciled ops.</summary>
+    public required AlvysReconciliationState ReconciliationState { get; init; }
+    public string? ReconciliationDetail { get; init; }
+
+    /// <summary>Non-secret upstream result reference (e.g. an uploaded attachment path), when present.</summary>
+    public string? ResultReference { get; init; }
+
     public required DateTimeOffset CreatedAt { get; init; }
     public required DateTimeOffset UpdatedAt { get; init; }
 
@@ -42,6 +50,9 @@ public sealed class AlvysOperationRecordView
         LastError = r.LastError,
         AttemptCount = r.AttemptCount,
         CorrelationId = r.CorrelationId,
+        ReconciliationState = r.ReconciliationState,
+        ReconciliationDetail = r.ReconciliationDetail,
+        ResultReference = r.ResultReference,
         CreatedAt = r.CreatedAt,
         UpdatedAt = r.UpdatedAt,
     };
@@ -73,4 +84,36 @@ public sealed class AlvysOperationConflict
 
     /// <summary>The id of the existing record the key already belongs to.</summary>
     public required string ExistingRecordId { get; init; }
+}
+
+/// <summary>
+/// Multipart form for a load/trip document upload. Carries exactly one file plus the target id and
+/// document classification. The raw file is never persisted to the outbox — only its metadata.
+/// </summary>
+public sealed class AlvysDocumentUploadForm
+{
+    /// <summary>The single document file (pdf/jpeg/png; trip also allows gif).</summary>
+    public required IFormFile File { get; init; }
+
+    /// <summary>Target load number (upload-load-document).</summary>
+    public string? LoadNumber { get; init; }
+
+    /// <summary>Target trip id (upload-trip-document).</summary>
+    public string? TripId { get; init; }
+
+    /// <summary>Alvys document classification; validated against the endpoint allowlist.</summary>
+    public string? DocumentType { get; init; }
+
+    /// <summary>Optional dispatcher justification captured on the audit trail.</summary>
+    public string? Reason { get; init; }
+}
+
+/// <summary>Multipart form for a carrier-invoice attach: a file, the target trip, and optional invoice metadata.</summary>
+public sealed class AlvysCarrierInvoiceForm
+{
+    public required IFormFile File { get; init; }
+    public required string TripId { get; init; }
+    public string? CarrierInvoiceNumber { get; init; }
+    public string? PaymentType { get; init; }
+    public string? Reason { get; init; }
 }

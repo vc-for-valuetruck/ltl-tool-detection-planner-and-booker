@@ -1,0 +1,131 @@
+.doc-upload {
+  margin-top: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border, #d9dee6);
+  border-radius: 8px;
+  background: var(--surface-muted, #f7f9fc);
+}
+
+.doc-upload-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.doc-upload-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.doc-upload-controls {
+  display: grid;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.field span {
+  color: var(--text-muted, #5a6472);
+}
+
+.field select,
+.field input[type='text'] {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border, #d9dee6);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.upload-btn {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--accent, #2f6fed);
+  border-radius: 6px;
+  background: var(--accent, #2f6fed);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.upload-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.doc-upload-error {
+  margin: 0.6rem 0 0;
+  color: var(--danger, #b3261e);
+  font-size: 0.82rem;
+}
+
+.doc-upload-result {
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--border, #d9dee6);
+}
+
+.upload-outcome {
+  margin: 0 0 0.4rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.upload-outcome-pushed {
+  color: var(--ok, #15803d);
+}
+
+.upload-outcome-internal {
+  color: var(--text-muted, #5a6472);
+}
+
+.upload-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 0.75rem;
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.upload-meta dt {
+  color: var(--text-muted, #5a6472);
+}
+
+.upload-meta dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.pill-ok {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.pill-warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.pill-danger {
+  background: #fee2e2;
+  color: #b3261e;
+}
+
+.pill-muted {
+  background: #eef1f5;
+  color: #5a6472;
+}

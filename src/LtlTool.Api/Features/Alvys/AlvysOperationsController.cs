@@ -93,7 +93,12 @@ public sealed class AlvysOperationsController(
         }
 
         var result = await recorder.RecordExecuteAsync(CurrentUser(), operation, request, ct);
+        return MapExecuteResult(result, request.IdempotencyKey);
+    }
 
+    /// <summary>Maps a recorder execute result to the HTTP contract shared by JSON and upload executes.</summary>
+    private ActionResult<AlvysOperationResponse> MapExecuteResult(AlvysRecordResult result, string? idempotencyKey)
+    {
         if (result.Disposition == AlvysRecordDisposition.Conflict)
         {
             return Conflict(new AlvysOperationConflict
@@ -101,7 +106,7 @@ public sealed class AlvysOperationsController(
                 Message =
                     "This idempotency key was already used for a different payload. Reuse the original " +
                     "payload or choose a new idempotency key.",
-                IdempotencyKey = request.IdempotencyKey!.Trim(),
+                IdempotencyKey = idempotencyKey!.Trim(),
                 ExistingRecordId = result.ConflictingRecordId!,
             });
         }
@@ -116,6 +121,149 @@ public sealed class AlvysOperationsController(
             AlvysOperationDisposition.InternalFailed => StatusCode(StatusCodes.Status502BadGateway, response),
             _ => Ok(response),
         };
+    }
+
+    /// <summary>
+    /// Uploads a single billing document to a load via the Public-API multipart endpoint. The file is
+    /// read from the multipart body; its bytes are never persisted to the outbox, logged, or hashed —
+    /// only the metadata (type, name, size) is. An unknown DocumentType or oversized/wrong-type file
+    /// is rejected with 400 before anything is recorded. Honours the same writeback gates as the JSON
+    /// execute path; 422 when blocked, 502 when the sandbox upload fails.
+    /// </summary>
+    [HttpPost("upload-load-document")]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status502BadGateway)]
+    [RequestSizeLimit(AlvysDocumentUploadLimits.LoadMaxBytes + 1024 * 1024)]
+    public async Task<ActionResult<AlvysOperationResponse>> UploadLoadDocument(
+        [FromForm] AlvysDocumentUploadForm form, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(form.LoadNumber))
+            return BadRequest("A loadNumber is required.");
+        if (!AlvysLoadDocumentTypes.IsValid(form.DocumentType))
+            return BadRequest(
+                $"DocumentType is required and must be one of: {string.Join(", ", AlvysLoadDocumentTypes.All)}.");
+        if (!ValidateFile(form.File, AlvysDocumentUploadLimits.LoadContentTypes,
+                AlvysDocumentUploadLimits.LoadMaxBytes, out var fileError))
+            return BadRequest(fileError);
+
+        var request = await BuildUploadRequestAsync(form, ct);
+        request.LoadNumber = form.LoadNumber.Trim();
+        var result = await recorder.RecordExecuteAsync(CurrentUser(), "upload-load-document", request, ct);
+        return MapExecuteResult(result, request.IdempotencyKey);
+    }
+
+    /// <summary>Uploads a single document to a trip via the Public-API multipart endpoint. See <see cref="UploadLoadDocument"/>.</summary>
+    [HttpPost("upload-trip-document")]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status502BadGateway)]
+    [RequestSizeLimit(AlvysDocumentUploadLimits.TripMaxBytes + 1024 * 1024)]
+    public async Task<ActionResult<AlvysOperationResponse>> UploadTripDocument(
+        [FromForm] AlvysDocumentUploadForm form, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(form.TripId))
+            return BadRequest("A tripId is required.");
+        if (!AlvysTripDocumentTypes.IsValid(form.DocumentType))
+            return BadRequest(
+                $"DocumentType is required and must be one of: {string.Join(", ", AlvysTripDocumentTypes.All)}.");
+        if (!ValidateFile(form.File, AlvysDocumentUploadLimits.TripContentTypes,
+                AlvysDocumentUploadLimits.TripMaxBytes, out var fileError))
+            return BadRequest(fileError);
+
+        var request = await BuildUploadRequestAsync(form, ct);
+        request.TripId = form.TripId.Trim();
+        var result = await recorder.RecordExecuteAsync(CurrentUser(), "upload-trip-document", request, ct);
+        return MapExecuteResult(result, request.IdempotencyKey);
+    }
+
+    /// <summary>
+    /// Attaches a carrier invoice document to a trip via the Public-API multipart endpoint. Separately
+    /// flag-gated (Alvys:Writeback:EnableCarrierInvoice); an unmatched PaymentType is refused (Alvys
+    /// silently defaults unknown values to 30-day terms). See <see cref="UploadLoadDocument"/>.
+    /// </summary>
+    [HttpPost("create-carrier-invoice")]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(typeof(AlvysOperationResponse), StatusCodes.Status502BadGateway)]
+    [RequestSizeLimit(AlvysDocumentUploadLimits.TripMaxBytes + 1024 * 1024)]
+    public async Task<ActionResult<AlvysOperationResponse>> CreateCarrierInvoice(
+        [FromForm] AlvysCarrierInvoiceForm form, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(form.TripId))
+            return BadRequest("A tripId is required.");
+        if (!ValidateFile(form.File, AlvysDocumentUploadLimits.TripContentTypes,
+                AlvysDocumentUploadLimits.TripMaxBytes, out var fileError))
+            return BadRequest(fileError);
+
+        var request = new AlvysOperationRequest
+        {
+            TripId = form.TripId.Trim(),
+            CarrierInvoiceNumber = string.IsNullOrWhiteSpace(form.CarrierInvoiceNumber) ? null : form.CarrierInvoiceNumber.Trim(),
+            PaymentType = string.IsNullOrWhiteSpace(form.PaymentType) ? null : form.PaymentType.Trim(),
+            Reason = string.IsNullOrWhiteSpace(form.Reason) ? null : form.Reason.Trim(),
+        };
+        await PopulateFileAsync(request, form.File, ct);
+        ApplyIdempotencyHeader(request);
+        var result = await recorder.RecordExecuteAsync(CurrentUser(), "create-carrier-invoice", request, ct);
+        return MapExecuteResult(result, request.IdempotencyKey);
+    }
+
+    /// <summary>Builds a document-upload request from the shared form, reading the file bytes in memory.</summary>
+    private async Task<AlvysOperationRequest> BuildUploadRequestAsync(AlvysDocumentUploadForm form, CancellationToken ct)
+    {
+        var request = new AlvysOperationRequest
+        {
+            DocumentType = form.DocumentType?.Trim(),
+            Reason = string.IsNullOrWhiteSpace(form.Reason) ? null : form.Reason.Trim(),
+        };
+        await PopulateFileAsync(request, form.File, ct);
+        ApplyIdempotencyHeader(request);
+        return request;
+    }
+
+    private static async Task PopulateFileAsync(AlvysOperationRequest request, IFormFile file, CancellationToken ct)
+    {
+        using var ms = new MemoryStream();
+        await file.CopyToAsync(ms, ct);
+        request.FileBytes = ms.ToArray();
+        request.FileName = file.FileName;
+        request.ContentType = file.ContentType;
+    }
+
+    private void ApplyIdempotencyHeader(AlvysOperationRequest request)
+    {
+        if (Request.Headers.TryGetValue(IdempotencyKeyHeader, out var header)
+            && !string.IsNullOrWhiteSpace(header))
+        {
+            request.IdempotencyKey = header.ToString();
+        }
+    }
+
+    /// <summary>Boundary guard: a present, in-size, allowed-content-type file. Returns false + a message otherwise.</summary>
+    private static bool ValidateFile(
+        IFormFile? file, IReadOnlyList<string> allowedContentTypes, long maxBytes, out string error)
+    {
+        if (file is null || file.Length == 0)
+        {
+            error = "A non-empty file is required.";
+            return false;
+        }
+        if (file.Length > maxBytes)
+        {
+            error = $"The file exceeds the {maxBytes / (1024 * 1024)}MB limit.";
+            return false;
+        }
+        if (!AlvysDocumentUploadLimits.IsAllowedContentType(allowedContentTypes, file.ContentType))
+        {
+            error = $"Content type '{file.ContentType}' is not allowed. Allowed: {string.Join(", ", allowedContentTypes)}.";
+            return false;
+        }
+        error = string.Empty;
+        return true;
     }
 
     /// <summary>The current owner's operation history (audit/outbox), newest first.</summary>

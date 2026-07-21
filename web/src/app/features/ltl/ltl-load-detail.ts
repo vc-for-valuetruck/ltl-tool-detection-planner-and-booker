@@ -4,6 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { LtlService } from './ltl.service';
 import { LtlLoadSummary, LtlPlace, MatchFactor, MatchResult } from './ltl.models';
 import { LtlNav } from './ltl-nav';
+import { LtlDocumentUpload } from './ltl-document-upload';
 import { YardArtifactFileView, YardArtifactView } from './yard-artifacts.models';
 
 /**
@@ -17,7 +18,7 @@ import { YardArtifactFileView, YardArtifactView } from './yard-artifacts.models'
 @Component({
   selector: 'app-ltl-load-detail',
   standalone: true,
-  imports: [DatePipe, RouterLink, LtlNav],
+  imports: [DatePipe, RouterLink, LtlNav, LtlDocumentUpload],
   templateUrl: './ltl-load-detail.html',
   styleUrls: ['./ltl-worklist.css', './ltl-load-detail.css'],
 })

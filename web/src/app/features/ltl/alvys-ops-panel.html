@@ -158,5 +158,57 @@
         </table>
       }
     </div>
+
+    <!-- Inbound Alvys webhook receiver: recent deliveries + receiver configuration (read-only). -->
+    <div class="ops-webhooks" data-testid="ops-webhooks">
+      <div class="ops-history-head">
+        <h5>Inbound webhooks</h5>
+        <button type="button" class="link" (click)="loadWebhooks()" [disabled]="webhooksLoading()">
+          {{ webhooksLoading() ? 'Refreshing…' : 'Refresh' }}
+        </button>
+      </div>
+
+      @if (webhooksError(); as err) {
+        <div class="assign-error">{{ err }}</div>
+      } @else if (webhooks(); as w) {
+        @if (w.secretConfigured) {
+          <div class="posture posture-sandbox" data-testid="webhook-config">
+            Receiver configured &mdash; verifies HMAC signatures, {{ w.toleranceSeconds }}s tolerance;
+            auto-disables after {{ w.autoDisableThreshold }} consecutive failed events.
+          </div>
+        } @else {
+          <div class="posture posture-audit" data-testid="webhook-config">
+            No signing secret configured &mdash; the receiver fails closed (503) and accepts no events.
+          </div>
+        }
+        <p class="muted">{{ w.totalReceived }} event(s) received to date.</p>
+
+        @if (w.events.length === 0) {
+          <p class="muted">No webhook deliveries recorded yet.</p>
+        } @else {
+          <table class="ops-table">
+            <thead>
+              <tr><th>Received</th><th>Event</th><th>Load</th><th>State</th></tr>
+            </thead>
+            <tbody>
+              @for (e of w.events; track e.eventId) {
+                <tr>
+                  <td>{{ e.receivedAt | date: 'short' }}</td>
+                  <td>
+                    {{ e.eventType }}
+                    @if (e.attempt) { <span class="badge badge-muted">try {{ e.attempt }}</span> }
+                  </td>
+                  <td>{{ e.loadNumber ?? '—' }}</td>
+                  <td>
+                    <span [class]="webhookStateClass(e.processingState)">{{ e.processingState }}</span>
+                    @if (e.processingError) { <div class="muted required">{{ e.processingError }}</div> }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      }
+    </div>
   }
 </div>

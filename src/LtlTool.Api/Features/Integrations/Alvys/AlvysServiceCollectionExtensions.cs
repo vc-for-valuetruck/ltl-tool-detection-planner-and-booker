@@ -1,3 +1,4 @@
+using LtlTool.Api.Features.Integrations.Alvys.Webhooks;
 using LtlTool.Api.Features.Integrations.Alvys.Writeback;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -31,6 +32,18 @@ public static class AlvysServiceCollectionExtensions
         services
             .AddOptions<AlvysInternalApiOptions>()
             .Bind(configuration.GetSection(AlvysInternalApiOptions.SectionName));
+        // Inbound webhook receiver. Bound from "Alvys:Webhooks"; the signing secret lives server-side
+        // (config / Key Vault) and is never exposed to the SPA. When blank the receiver fails closed.
+        services
+            .AddOptions<AlvysWebhookOptions>()
+            .Bind(configuration.GetSection(AlvysWebhookOptions.SectionName));
+        services.AddSingleton<IAlvysWebhookSignatureVerifier, AlvysWebhookSignatureVerifier>();
+        services.AddScoped<IAlvysWebhookStore, EfAlvysWebhookStore>();
+        // The processing queue is a singleton (it outlives any request scope); the processor drains it
+        // off-thread and opens a fresh DbContext scope per event.
+        services.AddSingleton<IAlvysWebhookProcessingQueue, AlvysWebhookProcessingQueue>();
+        services.AddHostedService<AlvysWebhookProcessor>();
+
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IAlvysSyncTracker, InMemoryAlvysSyncTracker>();
         services.AddScoped<IAlvysWriteGateway, AlvysWriteGateway>();
@@ -41,6 +54,11 @@ public static class AlvysServiceCollectionExtensions
         services.AddScoped<IAlvysOperationStore, EfAlvysOperationStore>();
         services.AddScoped<IAlvysOperationRecorder, AlvysOperationRecorder>();
         services.AddScoped<IAlvysWriteClient, AlvysHttpWriteClient>();
+
+        // Public-API billing-document upload path (multipart) + post-write reconciliation. Uploads
+        // authenticate with the client-credentials Public-API token, never an internal session token.
+        services.AddScoped<IAlvysDocumentUploadClient, AlvysHttpDocumentUploadClient>();
+        services.AddScoped<IAlvysUploadReconciler, AlvysUploadReconciler>();
 
         // Internal-API write path: per-acting-user session-token provider + write client. The token
         // provider is a singleton so a session token is cached across scoped requests for the same

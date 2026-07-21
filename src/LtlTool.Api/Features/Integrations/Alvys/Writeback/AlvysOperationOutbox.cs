@@ -45,6 +45,29 @@ public enum AlvysOperationRecordStatus
 }
 
 /// <summary>
+/// Post-write reconciliation state for an operation that mutates Alvys. A successful HTTP call is not
+/// proof the change landed, so uploads re-fetch the affected resource and compare. Mismatches are
+/// surfaced (never coerced to "confirmed") and never auto-retried.
+/// </summary>
+public enum AlvysReconciliationState
+{
+    /// <summary>Reconciliation does not apply (no live write happened, or the op is not reconciled).</summary>
+    NotApplicable,
+
+    /// <summary>A live write happened but reconciliation has not (yet) confirmed it upstream.</summary>
+    Pending,
+
+    /// <summary>The written resource was re-fetched and the expected change was found.</summary>
+    Confirmed,
+
+    /// <summary>
+    /// The write returned success but the re-fetch did not show the expected change (or the re-fetch
+    /// itself failed). Surfaced for human review; never auto-retried.
+    /// </summary>
+    Mismatch,
+}
+
+/// <summary>
 /// A durable outbox/audit row for an Alvys write-oriented operation request. This is the persistence
 /// foundation that lets future Alvys sandbox execution be queued, audited, retried and de-duplicated
 /// safely once a documented mutating endpoint exists. In this phase nothing is ever sent to Alvys, so
@@ -104,6 +127,21 @@ public sealed class AlvysOperationRecord
 
     /// <summary>Correlation id grouping this record with the request/response that produced it.</summary>
     public required string CorrelationId { get; set; }
+
+    /// <summary>
+    /// Post-write reconciliation state. <see cref="AlvysReconciliationState.NotApplicable"/> for
+    /// records that never performed a live write; set to Confirmed/Mismatch after an upload re-fetch.
+    /// </summary>
+    public AlvysReconciliationState ReconciliationState { get; set; } = AlvysReconciliationState.NotApplicable;
+
+    /// <summary>Human-readable reconciliation detail (e.g. the matched attachment id, or why it failed).</summary>
+    public string? ReconciliationDetail { get; set; }
+
+    /// <summary>
+    /// A non-secret reference to the upstream result (e.g. the returned AttachmentPath) surfaced to
+    /// the dispatcher UI on success. Never contains auth material.
+    /// </summary>
+    public string? ResultReference { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
@@ -252,6 +290,9 @@ public sealed class InMemoryAlvysOperationStore : IAlvysOperationStore
         LastError = r.LastError,
         AttemptCount = r.AttemptCount,
         CorrelationId = r.CorrelationId,
+        ReconciliationState = r.ReconciliationState,
+        ReconciliationDetail = r.ReconciliationDetail,
+        ResultReference = r.ResultReference,
         CreatedAt = r.CreatedAt,
         UpdatedAt = r.UpdatedAt,
     };

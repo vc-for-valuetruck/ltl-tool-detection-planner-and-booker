@@ -108,6 +108,9 @@
       @if (l.billing.missingFields.length) {
         <p class="detail-note">Missing: {{ l.billing.missingFields.join(', ') }}</p>
       }
+      @if (l.billing.badges.includes('MissingPod')) {
+        <app-ltl-document-upload [loadNumber]="l.loadNumber ?? l.id" data-testid="missing-pod-upload" />
+      }
     </div>
 
     <div class="card detail-card" data-testid="accessorial-review">

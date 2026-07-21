@@ -619,7 +619,7 @@ All under `src/LtlTool.Api/Features/Integrations/Alvys/Writeback/` (+ the
 | --- | --- | --- |
 | `Disabled` (default) | `AuditOnly` | Payload is built/recorded for audit only; never sent. Safe default for a fresh clone, CI and production. |
 | `Simulation` | `Simulated` | Dry-run: payload built and validated for preview; never sent. |
-| `Sandbox` | `SandboxExecuted` / `SandboxFailed` | Eligible for non-production sandbox execution when fully configured (recognised sandbox environment + non-production sandbox base URL + credentials). All eight operations below are wired to real Alvys endpoints; a non-2xx/transport response surfaces as `SandboxFailed` (HTTP 502), never a false success. |
+| `Sandbox` | `SandboxExecuted` / `SandboxFailed` | Eligible for non-production sandbox execution when fully configured (recognised sandbox environment + non-production sandbox base URL + credentials). All operations below are wired to real Alvys endpoints; a non-2xx/transport response surfaces as `SandboxFailed` (HTTP 502), never a false success. |
 
 `Sandbox` is refused unless `Environment` is one of `sandbox`/`uat`/`staging`/`test` and
 `SandboxBaseUrl` is set to a non-production host (it explicitly rejects `integrations.alvys.com`),
@@ -629,7 +629,7 @@ change, and today's sandbox client cannot reach `integrations.alvys.com` even if
 
 ### Operations (catalogue)
 
-All eight operations are `Supported` for sandbox execution — each is wired to a real Alvys
+All operations are `Supported` for sandbox execution — each is wired to a real Alvys
 endpoint confirmed against the Alvys API docs (`AlvysWriteClient.ResolveEndpoint`), not invented.
 Live execution still requires `Mode=Sandbox` fully configured; until then every attempt resolves
 to `AuditOnly`/`Simulated`.
@@ -644,9 +644,24 @@ to `AuditOnly`/`Simulated`.
 | `trip-assign` | Assign | no | Supported | `POST trips/{tripId}/assign` — carrier required, driver/truck/trailer optional |
 | `trip-dispatch` | Assign | no | Supported | `POST trips/{tripId}/dispatch` — trip must already be covered |
 | `carrier-status-update` | Assign | yes | Supported | `PATCH carriers/{carrierId}/status` |
+| `upload-load-document` | Bill | no | Supported | `POST /api/p/v{version}/loads/{loadNumber}/document` (multipart; one file; `DocumentType` from the allowed load list; pdf/jpeg/png; ≤10 MB) |
+| `upload-trip-document` | Assign/Bill | no | Supported | `POST /api/p/v{version}/trips/{tripId}/document` (multipart; broader trip `DocumentType` list; pdf/jpeg/png/gif; ≤25 MB) |
+| `create-carrier-invoice` | Bill | no | Supported | `POST /api/p/v{version}/invoices/carrier-invoice` (multipart `File`+`TripId`+`CarrierInvoiceNumber`+`PaymentType`; flag-gated by `Alvys:Writeback:EnableCarrierInvoice`) |
 
 ETag-gated operations (`tender-accept`, `load-update`, `carrier-status-update`) are **blocked** at
 validation time without an ETag, so a concurrent change can never be silently clobbered.
+
+The three 2026-07-21 document/invoice operations are **Public-API multipart uploads** sent with the
+read client's server-side client-credentials token (not the internal-API session token). The file
+bytes are streamed as multipart form-data and are **never** written to the outbox, logged, or folded
+into the idempotency hash — only metadata (load/trip id, document type, file name, size) is recorded.
+`PaymentType` is validated against a config whitelist and an unmatched value is **refused** (Alvys
+silently defaults an unknown payment type to 30-day terms, so we fail closed rather than let that
+happen). `DocumentType` is validated server-side against the allowed list per endpoint — an unknown
+type returns **400**, never a fabricated attachment. After a successful upload the write is
+**reconciled** by re-listing the resource's documents (`ListLoadDocumentsAsync`) and confirming the
+returned attachment id/type; a mismatch is surfaced for human review (`reconciliationState=Mismatch`),
+never silently passed and never auto-retried.
 
 ### Internal endpoints
 
@@ -660,6 +675,8 @@ validation time without an ETag, so a concurrent change can never be silently cl
 | `POST /api/alvys/ops/{operation}/dry-run` | Builds + validates the payload and returns the preview. 404 for an unknown operation. Never sent. |
 | `POST /api/alvys/ops/{operation}/execute` | Honours the configured mode: audit-only/simulated when `Mode` isn't `Sandbox`, otherwise a real sandbox call. 404 unknown, 422 when validation blocks, 502 when the sandbox call fails. |
 | `POST /api/alvys/ops/sync/probe` | Opt-in bounded **read** (`users/search`, page size 1) that records a "last successful read" time. A read, never a mutation. |
+| `POST /api/alvys/ops/upload-load-document` | Multipart upload of one document to a load. Fields: `File`, `LoadNumber`, `DocumentType`, optional `Reason`; optional `Idempotency-Key` header. 400 on unknown document type / bad file; honours the configured mode like `execute`. |
+| `POST /api/alvys/ops/upload-trip-document` | As above, for a trip (`TripId` instead of `LoadNumber`, broader document-type list). |
 
 ### Configuration
 
@@ -668,6 +685,9 @@ validation time without an ETag, so a concurrent change can never be silently cl
 | `Alvys:Writeback:Mode` | `ALVYS_WRITEBACK_MODE` | `Disabled` | `Disabled`/`Simulation`/`Sandbox`. |
 | `Alvys:Writeback:Environment` | `ALVYS_WRITEBACK_ENVIRONMENT` | _(empty)_ | Must be `sandbox`/`uat`/`staging`/`test` for sandbox mode. |
 | `Alvys:Writeback:SandboxBaseUrl` | `ALVYS_WRITEBACK_SANDBOX_BASE_URL` | _(empty)_ | Non-production sandbox host. Rejects the production host. |
+| `Alvys:Writeback:EnableCarrierInvoice` | `ALVYS_WRITEBACK_ENABLE_CARRIER_INVOICE` | `false` | Extra flag gate for `create-carrier-invoice` on top of the mode gate. |
+| `Alvys:Writeback:CarrierInvoicePaymentTypes` | _(config only)_ | _(empty)_ | Whitelist of accepted `PaymentType` values; an unmatched value is refused (Alvys silently defaults unknown types to 30-day terms). |
+| `Alvys:Webhooks:Secret` | `ALVYS_WEBHOOKS_SECRET` | _(empty)_ | HMAC-SHA256 signing secret for the inbound webhook receiver. Server-side only; never surfaced to the SPA. Empty ⇒ receiver fails closed (503). |
 
 Writeback reuses the same server-side OAuth credentials as the read client (never surfaced to the
 SPA) but a distinct sandbox base URL so sandbox traffic is physically separated from the read
@@ -691,6 +711,52 @@ operator configuration, not more code:
 
 Until that's in place the boundary stays audit/simulation-only. See `docs/ltl-tool.md` for what's
 additionally required before any operation may target a **production** Alvys tenant.
+
+## Inbound webhooks (Alvys)
+
+Alvys can push load lifecycle events to the LTL tool so the read models learn a load changed
+without waiting for the next bounded sweep. The receiver is defensive by construction.
+
+**Endpoint.** `POST /api/alvys/webhooks/receiver` (`AlvysWebhookController.Receive`) is
+**anonymous** — Alvys is a machine caller with no `AllowedEmailDomain` identity — but every request
+must carry a valid HMAC signature, so anonymous does not mean unauthenticated. It is deliberately
+**not** behind the `AllowedEmailDomain` policy that guards the rest of the API.
+
+**Verification (`AlvysWebhookSignatureVerifier`).**
+
+- `X-Alvys-Signature` is `t=<unix-seconds>,v1=<hex>` where `v1` is HMAC-SHA256 over
+  `"{timestamp}.{rawBody}"` keyed by `Alvys:Webhooks:Secret`. Comparison is constant-time.
+- A timestamp older/newer than `Alvys:Webhooks:ToleranceSeconds` (default 300s = 5 min) is
+  rejected as stale, defeating replay.
+- **Fail-closed:** if no secret is configured the receiver returns **503** and accepts nothing —
+  it never processes an unverified event.
+
+**Fast-ack + dedupe.** The receiver verifies, then persists the raw event keyed on
+`X-Alvys-Event-Id` (unique index — at-least-once delivery is made idempotent; a duplicate id is a
+no-op ack), enqueues the id for background processing (`AlvysWebhookProcessingQueue`), and returns
+**200** immediately. Processing (`AlvysWebhookProcessor`, a hosted `BackgroundService`) never blocks
+the ack, because Alvys auto-disables a subscription after ~10 consecutive failed deliveries
+(`AutoDisableThreshold`, surfaced on the admin panel as an operational reminder).
+
+**Events consumed.** `load.status.changed` / `load.changed`, whose `data.load` is a full load
+snapshot; processing updates load freshness / the event log. Missing/misshapen payloads are recorded
+as a processing failure — never coerced to a good state.
+
+**Admin surface.** `GET /api/alvys/webhooks/events?max={n}` returns the recent received events
+(newest first) + receiver configuration (`SecretConfigured`, `ToleranceSeconds`, `AutoDisableThreshold`,
+lifetime count) for the read-only "Inbound webhooks" panel in the `/ltl` Assign/Bill drawer. This
+endpoint **is** behind `AllowedEmailDomain`; only the `/receiver` path is anonymous.
+
+**Manual subscription registration (not automated).** The tool does **not** create the webhook
+subscription in Alvys from code — subscription management is an operator step, so a redeploy can
+never silently re-point or re-enable a live subscription. To wire it up:
+
+1. Set a strong random `Alvys:Webhooks:Secret` server-side (Key Vault / `ALVYS_WEBHOOKS_SECRET`).
+   Never put it in the SPA, `RUNTIME_*` config, or a committed env file.
+2. In Alvys, register a subscription: `POST /webhooks` (Alvys Public API) with the callback URL
+   `https://<this-api-host>/api/alvys/webhooks/receiver`, the same signing secret, and the
+   `load.status.changed` / `load.changed` event types.
+3. Confirm deliveries appear in the "Inbound webhooks" panel with `Processed` state.
 
 ## Next slice
 

@@ -1,3 +1,4 @@
+using LtlTool.Api.Features.Integrations.Alvys.Webhooks;
 using LtlTool.Api.Features.Integrations.Alvys.Writeback;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Consolidation;
@@ -31,6 +32,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Durable Phase 6 extracted LTL signals (see <see cref="EfSignalStore"/>). Internal data, never Alvys.</summary>
     public DbSet<SignalRecord> Signals => Set<SignalRecord>();
+
+    /// <summary>Durable received Alvys webhook deliveries (see <see cref="EfAlvysWebhookStore"/>). Idempotency-keyed by event id.</summary>
+    public DbSet<AlvysWebhookEvent> AlvysWebhookEvents => Set<AlvysWebhookEvent>();
+
+    /// <summary>Per-load freshness markers derived from webhook deliveries (see <see cref="EfAlvysWebhookStore"/>). A pointer only — Alvys stays authoritative.</summary>
+    public DbSet<LoadFreshnessRecord> LoadFreshness => Set<LoadFreshnessRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -69,6 +76,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(e => e.Reason).HasMaxLength(1024);
             entity.Property(e => e.LastError).HasMaxLength(2048);
             entity.Property(e => e.CorrelationId).IsRequired().HasMaxLength(64);
+            // Post-write reconciliation (document uploads). Enum stored as a readable string.
+            entity.Property(e => e.ReconciliationState).HasConversion<string>().HasMaxLength(16);
+            entity.Property(e => e.ReconciliationDetail).HasMaxLength(2048);
+            entity.Property(e => e.ResultReference).HasMaxLength(1024);
 
             // Owner-scoped history listing, newest first.
             entity.HasIndex(e => new { e.OwnerId, e.CreatedAt });
@@ -163,6 +174,35 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // Review-queue listing (by status, newest first) and per-load surfacing.
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.LoadNumber);
+        });
+
+        modelBuilder.Entity<AlvysWebhookEvent>(entity =>
+        {
+            entity.ToTable("AlvysWebhookEvents");
+            // The Alvys-supplied event id is the natural idempotency key: a duplicate delivery of the
+            // same id is rejected on insert (the PK gives us the unique index for free).
+            entity.HasKey(e => e.EventId);
+            entity.Property(e => e.EventId).HasMaxLength(128);
+            entity.Property(e => e.EventType).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.LoadNumber).HasMaxLength(64);
+            // Raw body stored verbatim for audit/replay; nvarchar(max) so a large snapshot round-trips.
+            entity.Property(e => e.RawBody).IsRequired();
+            // Enum stored as a readable string so the table is legible in the database.
+            entity.Property(e => e.ProcessingState).HasConversion<string>().HasMaxLength(16);
+            entity.Property(e => e.ProcessingError).HasMaxLength(2048);
+
+            // Admin listing is newest-first; per-load freshness derivation filters by load number.
+            entity.HasIndex(e => e.ReceivedAt);
+            entity.HasIndex(e => e.LoadNumber);
+        });
+
+        modelBuilder.Entity<LoadFreshnessRecord>(entity =>
+        {
+            entity.ToTable("LoadFreshness");
+            entity.HasKey(e => e.LoadNumber);
+            entity.Property(e => e.LoadNumber).HasMaxLength(64);
+            entity.Property(e => e.LastEventType).HasMaxLength(128);
+            entity.Property(e => e.LastEventId).HasMaxLength(128);
         });
     }
 }
