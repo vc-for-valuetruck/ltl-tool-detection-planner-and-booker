@@ -16,7 +16,14 @@ namespace LtlTool.Api.Tests;
 /// Do not weaken this test by changing an assertion; if the surface intentionally evolves, update
 /// this file AND <c>CLAUDE.md</c> together as the intentional API change.
 /// </para>
+///
+/// <para>
+/// Tagged <c>Category=ApiSurfaceContract</c> so it runs both in the full <c>api</c> job and in the
+/// dedicated "Verify API Surface Contract" CI job, alongside the reflection-based
+/// <see cref="LtlApiSurfaceManifestTests"/>.
+/// </para>
 /// </summary>
+[Trait("Category", "ApiSurfaceContract")]
 public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory factory)
     : IClassFixture<TemplateWebApplicationFactory>
 {

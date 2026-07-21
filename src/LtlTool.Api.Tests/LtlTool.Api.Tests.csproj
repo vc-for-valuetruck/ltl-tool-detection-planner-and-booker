@@ -25,6 +25,9 @@
     <!-- Snapshot fixtures for the internal-API (observed-not-contracted) write call sites. Copied to
          the test output so the regression tests fail loudly if request/response serialization drifts. -->
     <None Include="Alvys\Fixtures\internal\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Checked-in expected LTL API surface manifest (CLAUDE.md § "Current API surface (preserve)").
+         Copied to the test output so LtlApiSurfaceManifestTests can read it at runtime. -->
+    <None Include="Ltl\ltl-api-surface.manifest.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

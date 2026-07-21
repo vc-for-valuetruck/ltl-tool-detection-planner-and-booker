@@ -239,11 +239,16 @@ The demo does **not** require a live tenant. If creds or sandbox data are missin
   (`.github/workflows/ci.yml`). As of the Phase 0 Stability slice, CI runs **four jobs**:
   `api` (`dotnet test -c Release`), `migration-sqlserver` (`Category=SqlServerMigration`),
   `web` (`npm run build` production), and `web-test` (`npm test`,
-  `ng test --watch=false --browsers=ChromeHeadless`). Phase 0 also added a contract-
-  preserving test that asserts every LTL endpoint in `CLAUDE.md` § "Current API surface
-  (preserve)" stays mapped and behind `AllowedEmailDomain`. The .NET SDK was **not
-  available in the runbook authoring environment**, so `dotnet test` was not re-run
-  locally — rely on the green CI on `main` for API/test and migration verification.
+  `ng test --watch=false --browsers=ChromeHeadless`). Phase 0 also added a dedicated,
+  visibly-named **`Verify API Surface Contract`** job that asserts every LTL endpoint in
+  `CLAUDE.md` § "Current API surface (preserve)" stays mapped with the documented verb.
+  Two complementary tests back it: `LtlApiSurfaceManifestTests` reflects over the live
+  ASP.NET route table and compares it against the checked-in manifest
+  (`src/LtlTool.Api.Tests/Ltl/ltl-api-surface.manifest.txt`), catching route/verb renames;
+  `LtlApiSurfaceContractTests` fires unauthenticated requests to prove each route is mapped
+  **and** behind `AllowedEmailDomain` (401, not 404). The .NET SDK was **not available in
+  the runbook authoring environment**, so `dotnet test` was not re-run locally — rely on the
+  green CI on `main` for API/test and migration verification.
 
 ---
 
@@ -290,13 +295,13 @@ feature (Phase 1+) is deferred until every box below is checked on `main`.
 - [ ] `Ltl:MaxVisibilityEnriched` bounded-enrichment banner shows on the Exceptions tab.
 
 **Cross-cutting**
-- [x] CI matrix is four jobs (api / migration-sqlserver / web / web-test).
-- [x] LTL API surface is contract-locked (`LtlApiSurfaceContractTests`).
+- [x] CI matrix covers api / api-surface-contract / migration-sqlserver / web / web-test (plus trailer-fit and the continue-on-error e2e-demo stack).
+- [x] LTL API surface is contract-locked by a dedicated `Verify API Surface Contract` CI job (`LtlApiSurfaceManifestTests` reflects the route table against the checked-in manifest; `LtlApiSurfaceContractTests` probes mapped-and-protected).
 - [x] `AlvysWriteOptions` production-host rejection is locked (`AlvysWriteOptionsTests`).
 - [x] UAT health workflow probes `/api/ltl/search` and `/api/alvys/ops/status` (expect 401 on unauth).
 - [x] Alvys is the sole source of truth per `CLAUDE.md` Safety principles (no non-Alvys / non-DOT data paths).
 - [ ] One clean end-to-end deploy has completed to Azure UAT App Service (blocked on Azure/Entra secrets landing in the `uat` environment).
-- [x] No open TODO/FIXME/HACK in `src/LtlTool.Api/Features/Ltl/*` or `web/src/app/features/ltl/*` (swept 2026-07-15).
+- [x] No open TODO/FIXME/HACK in `src/LtlTool.Api/Features/Ltl/*` or `web/src/app/features/ltl/*` (re-swept 2026-07-21 — zero markers; Phase 0 exit criterion met).
 
 ## 13. Consolidate walkthrough (Phase 1 pilot: Laredo → Dallas)
 
