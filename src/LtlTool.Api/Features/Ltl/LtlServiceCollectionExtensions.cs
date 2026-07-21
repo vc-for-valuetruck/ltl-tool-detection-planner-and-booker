@@ -119,6 +119,14 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<ConsolidationOpportunityService>();
         services.AddScoped<ConsolidationPlanService>();
 
+        // Corridor-health sweep: the expensive per-corridor Alvys walk lives in a scoped probe;
+        // a singleton cache serves the last snapshot to the request path instantly and refreshes it
+        // in the background (stale-while-revalidate + hard timeout) so /corridors/health never hangs
+        // on the sweep. A startup warmup pre-populates the cache so the first UI load shows counts.
+        services.AddScoped<ICorridorHealthProbe, CorridorHealthProbe>();
+        services.AddSingleton<CorridorHealthCache>();
+        services.AddHostedService<CorridorHealthWarmup>();
+
         // Consolidation audit trail. Singleton in-memory store matching the same posture as
         // InMemoryAssignmentAuditStore; swap for an EF-backed store alongside Phase 2 writeback.
         services.AddSingleton<IConsolidationAuditStore, InMemoryConsolidationAuditStore>();

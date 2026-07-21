@@ -1,16 +1,14 @@
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Consolidation;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace LtlTool.Api.Tests.Ltl.Consolidation;
 
 /// <summary>
-/// Live-count endpoint. Uses FakeAlvysClient so it exercises the real
-/// LtlLoadService.SearchAsync path (which is what the endpoint actually calls) rather than
-/// mocking at the service level.
+/// Corridor-health sweep. Exercises <see cref="CorridorHealthProbe"/> directly (the controller now
+/// just serves the cache's snapshot), using FakeAlvysClient so it runs the real
+/// LtlLoadService.SearchAsync path the probe actually calls rather than mocking at the service level.
 /// </summary>
 public class ConsolidationControllerHealthTests
 {
@@ -23,11 +21,9 @@ public class ConsolidationControllerHealthTests
         client.Loads.Add(BuildLoad("L-2", "Laredo", "TX", "Dallas", "TX"));
         client.Loads.Add(BuildLoad("L-3", "Houston", "TX", "Dallas", "TX"));
 
-        var controller = BuildController(client, PilotOptions());
+        var probe = BuildProbe(client, PilotOptions());
 
-        var result = await controller.GetCorridorHealth(default);
-        var healths = Assert.IsAssignableFrom<IReadOnlyList<CorridorHealth>>(
-            ((OkObjectResult)result.Result!).Value);
+        var healths = await probe.ComputeAsync(default);
 
         var laredoDallas = Assert.Single(healths);
         Assert.Equal("LAREDO_TO_DALLAS", laredoDallas.Code);
@@ -64,10 +60,8 @@ public class ConsolidationControllerHealthTests
             ],
         };
 
-        var controller = BuildController(client, opts);
-        var result = await controller.GetCorridorHealth(default);
-        var healths = Assert.IsAssignableFrom<IReadOnlyList<CorridorHealth>>(
-            ((OkObjectResult)result.Result!).Value);
+        var probe = BuildProbe(client, opts);
+        var healths = await probe.ComputeAsync(default);
 
         var only = Assert.Single(healths);
         Assert.Equal(1, only.OpenLoadCount);
@@ -100,10 +94,8 @@ public class ConsolidationControllerHealthTests
             ],
         };
 
-        var controller = BuildController(client, opts);
-        var result = await controller.GetCorridorHealth(default);
-        var healths = Assert.IsAssignableFrom<IReadOnlyList<CorridorHealth>>(
-            ((OkObjectResult)result.Result!).Value);
+        var probe = BuildProbe(client, opts);
+        var healths = await probe.ComputeAsync(default);
 
         var only = Assert.Single(healths);
         Assert.Equal(1, only.OpenLoadCount);
@@ -120,11 +112,9 @@ public class ConsolidationControllerHealthTests
         // Only irrelevant loads seeded \u2014 no Laredo->Dallas.
         client.Loads.Add(BuildLoad("L-1", "Houston", "TX", "Austin", "TX"));
 
-        var controller = BuildController(client, PilotOptions());
+        var probe = BuildProbe(client, PilotOptions());
 
-        var result = await controller.GetCorridorHealth(default);
-        var healths = Assert.IsAssignableFrom<IReadOnlyList<CorridorHealth>>(
-            ((OkObjectResult)result.Result!).Value);
+        var healths = await probe.ComputeAsync(default);
 
         var only = Assert.Single(healths);
         Assert.Equal(0, only.OpenLoadCount);
@@ -147,10 +137,8 @@ public class ConsolidationControllerHealthTests
             ],
         };
 
-        var controller = BuildController(client, opts);
-        var result = await controller.GetCorridorHealth(default);
-        var healths = Assert.IsAssignableFrom<IReadOnlyList<CorridorHealth>>(
-            ((OkObjectResult)result.Result!).Value);
+        var probe = BuildProbe(client, opts);
+        var healths = await probe.ComputeAsync(default);
 
         Assert.Empty(healths);
     }
@@ -160,11 +148,9 @@ public class ConsolidationControllerHealthTests
     {
         // FakeAlvysClient with a load-throwing override simulates an Alvys blip.
         var client = new ThrowingSearchAlvysClient();
-        var controller = BuildController(client, PilotOptions());
+        var probe = BuildProbe(client, PilotOptions());
 
-        var result = await controller.GetCorridorHealth(default);
-        var healths = Assert.IsAssignableFrom<IReadOnlyList<CorridorHealth>>(
-            ((OkObjectResult)result.Result!).Value);
+        var healths = await probe.ComputeAsync(default);
 
         var only = Assert.Single(healths);
         Assert.Null(only.OpenLoadCount); // caller shows "unknown" honestly, not a false zero
@@ -211,17 +197,12 @@ public class ConsolidationControllerHealthTests
         ],
     };
 
-    private static ConsolidationController BuildController(IAlvysClient client, ConsolidationOptions opts)
+    private static CorridorHealthProbe BuildProbe(IAlvysClient client, ConsolidationOptions opts)
     {
         var ltlOptions = LtlTestFactory.Options();
         var normalizer = LtlTestFactory.Normalizer();
         var loads = new LtlLoadService(client, normalizer, LtlTestFactory.Visibility(), LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(), ltlOptions, LtlTestFactory.Clock());
-        return new ConsolidationController(
-            candidates: null!,
-            plans: null!,
-            audits: null!,
-            options: Microsoft.Extensions.Options.Options.Create(opts),
-            loads: loads);
+        return new CorridorHealthProbe(loads, Microsoft.Extensions.Options.Options.Create(opts));
     }
 
     /// <summary>Fake that throws on the paged search overload; used to exercise the degrade branch.</summary>
