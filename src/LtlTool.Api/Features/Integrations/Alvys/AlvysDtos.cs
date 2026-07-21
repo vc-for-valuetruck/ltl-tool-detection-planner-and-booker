@@ -943,6 +943,23 @@ public sealed class AlvysTripStop
     [JsonPropertyName("DepartedDate")]
     public DateTimeOffset? DepartedDate { get; set; }
 
+    // The live trips/search wire ships stop movement/window timing under a different key set than
+    // the fields above: an inline StopWindow object ({Begin,End}), an AppointmentDate, and
+    // ArrivedAt/DepartedAt (verified against a fresh 2026-07-20 in-transit trips pull). These are
+    // additive, nullable projections of that shape so real data binds; the legacy keys stay for
+    // in-memory unit fixtures that populate them. Read helpers should prefer whichever is present.
+    [JsonPropertyName("StopWindow")]
+    public AlvysStopWindow? StopWindow { get; set; }
+
+    [JsonPropertyName("AppointmentDate")]
+    public DateTimeOffset? AppointmentDate { get; set; }
+
+    [JsonPropertyName("ArrivedAt")]
+    public DateTimeOffset? ArrivedAt { get; set; }
+
+    [JsonPropertyName("DepartedAt")]
+    public DateTimeOffset? DepartedAt { get; set; }
+
     [JsonPropertyName("References")]
     public List<AlvysReference>? References { get; set; }
 }

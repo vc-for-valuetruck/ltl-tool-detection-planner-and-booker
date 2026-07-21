@@ -48,7 +48,7 @@ public sealed class NotificationTriggerEngine(
         try
         {
             await SweepConsolidationPlansAsync(ct);
-            await SweepPredictedLateAsync(ct);
+            await SweepLoadExceptionsAsync(ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -82,13 +82,20 @@ public sealed class NotificationTriggerEngine(
     }
 
     /// <summary>
-    /// T8 — every in-transit load the normalizer flagged "predicted late" (ETA past its delivery
-    /// window) becomes an exception notification, BEFORE an actual-late event. Dedupe identity is
-    /// the load id + predicted ETA (via the trigger's <c>OccurredAt</c>), so re-polling an unchanged
-    /// prediction never re-fires, while a materially shifted ETA surfaces a fresh heads-up. Reads the
-    /// internal <see cref="LtlLoadService"/> exception worklist (Alvys-read-only); writes nothing back.
+    /// T8 — one sweep of the internal <see cref="LtlLoadService"/> exception worklist
+    /// (Alvys-read-only) fires two exception notification kinds:
+    /// <list type="bullet">
+    /// <item>Predicted-late: an in-transit load whose ETA is past its delivery window, fired BEFORE
+    /// it actually goes late. Dedupe is load id + predicted ETA (the trigger <c>OccurredAt</c>), so
+    /// re-polling an unchanged prediction never re-fires while a materially shifted ETA surfaces a
+    /// fresh heads-up.</item>
+    /// <item>Actual-late delivery: the delivery-stop window/appointment has passed with no arrival
+    /// recorded on Alvys. Dedupe is load + stop + window end, so a still-late delivery seen on every
+    /// poll fires exactly once (no re-fire storm).</item>
+    /// </list>
+    /// Writes nothing back to Alvys.
     /// </summary>
-    private async Task SweepPredictedLateAsync(CancellationToken ct)
+    private async Task SweepLoadExceptionsAsync(CancellationToken ct)
     {
         using var scope = services.CreateScope();
         var loads = scope.ServiceProvider.GetRequiredService<LtlLoadService>();
@@ -98,9 +105,45 @@ public sealed class NotificationTriggerEngine(
         foreach (var load in exceptionLoads)
         {
             ct.ThrowIfCancellationRequested();
-            if (!load.PredictedLate || load.PredictedDeliveryAt is null) continue;
-            await dispatcher.DispatchAsync(ToPredictedLateTrigger(load), ct);
+            if (load.PredictedLate && load.PredictedDeliveryAt is not null)
+                await dispatcher.DispatchAsync(ToPredictedLateTrigger(load), ct);
+            if (load.LateDelivery is not null)
+                await dispatcher.DispatchAsync(ToLateDeliveryTrigger(load), ct);
         }
+    }
+
+    /// <summary>
+    /// Maps an actual-late delivery to a T8 exception trigger. <c>SourceKey</c> is
+    /// <c>{loadId}:{stopId}</c> and <c>OccurredAt</c> is the passed window end, so the dispatcher
+    /// idempotency key is one-per-(load, stop, window end) — a still-late delivery seen on every
+    /// poll fires exactly once. Exposed for unit testing the mapping in isolation.
+    /// </summary>
+    public static NotificationTrigger ToLateDeliveryTrigger(LtlLoadSummary load)
+    {
+        var loadLabel = load.LoadNumber ?? load.Id;
+        var late = load.LateDelivery!;
+        var where = FormatPlace(late.DestinationCity, late.DestinationState);
+        var destination = where is null ? string.Empty : $" to {where}";
+
+        return new NotificationTrigger
+        {
+            Stage = NotificationStage.ExceptionRaised,
+            SourceKey = $"{load.Id}:{late.StopId}",
+            Title = $"Late delivery · {loadLabel}",
+            Summary = $"Load {loadLabel}{destination} is {late.HoursOverdue:0.#}h overdue. {late.Message}.",
+            LoadId = load.Id,
+            LoadNumber = load.LoadNumber,
+            LinkPath = $"/ltl/loads/{Uri.EscapeDataString(loadLabel)}",
+            OccurredAt = late.WindowEnd,
+        };
+    }
+
+    private static string? FormatPlace(string? city, string? state)
+    {
+        if (!string.IsNullOrWhiteSpace(city) && !string.IsNullOrWhiteSpace(state)) return $"{city}, {state}";
+        if (!string.IsNullOrWhiteSpace(city)) return city;
+        if (!string.IsNullOrWhiteSpace(state)) return state;
+        return null;
     }
 
     /// <summary>

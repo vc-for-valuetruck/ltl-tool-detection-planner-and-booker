@@ -76,6 +76,21 @@ export interface LtlExceptionFlag {
   blocksBilling: boolean;
 }
 
+/**
+ * Actual-late delivery signal, derived only from live Alvys trip-stop status: the delivery stop's
+ * appointment/window end has passed with no arrival recorded. Null unless the load is an actual-late
+ * delivery. Distinct from `predictedLate` (a forward-looking ETA estimate) — this is a past fact.
+ */
+export interface LtlLateDelivery {
+  stopId: string;
+  destinationCity: string | null;
+  destinationState: string | null;
+  windowEnd: string;
+  windowBasis: string;
+  hoursOverdue: number;
+  message: string;
+}
+
 /** Accounts-receivable aging bucket for an unpaid invoice (Current/30/60/90+). */
 export type InvoiceAgingBucket = 'Current' | 'Days1To30' | 'Days31To60' | 'Days61To90' | 'Over90Days';
 
@@ -181,6 +196,12 @@ export interface LtlLoadSummary {
   predictedLate: boolean;
   /** Provenance for the ETA, so the UI never presents it as a routing-API promise. */
   etaBasis: string | null;
+  /**
+   * Actual-late delivery signal for this load (delivery-stop window passed with no arrival
+   * recorded on Alvys). Null unless the load is an actual-late delivery — distinct from
+   * predictedLate, which is a forward-looking ETA estimate.
+   */
+  lateDelivery: LtlLateDelivery | null;
   equipment: string[];
   weightLbs: number | null;
   volume: number | null;

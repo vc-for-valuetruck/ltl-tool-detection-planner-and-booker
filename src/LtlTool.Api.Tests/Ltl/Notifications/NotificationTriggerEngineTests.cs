@@ -119,4 +119,62 @@ public sealed class NotificationTriggerEngineTests
         Assert.Contains("delivery window", trigger.Summary);
         Assert.Contains("PCMiler", trigger.Summary);
     }
+
+    private static readonly DateTimeOffset WindowEnd = new(2026, 7, 20, 22, 0, 0, TimeSpan.Zero);
+
+    private static LtlLoadSummary LateDeliveryLoad(
+        string id = "L-late-del",
+        string? loadNumber = "1004253",
+        string stopId = "stop-9",
+        string? city = "Laredo",
+        string? state = "TX") => new()
+    {
+        Id = id,
+        LoadNumber = loadNumber,
+        Status = "In Transit",
+        LateDelivery = new LtlLateDelivery
+        {
+            StopId = stopId,
+            DestinationCity = city,
+            DestinationState = state,
+            WindowEnd = WindowEnd,
+            WindowBasis = "delivery window",
+            HoursOverdue = 1.9,
+            Message = "Late delivery — delivery window ended Jul 20, 2026 5:00 PM UTC-05:00, "
+                + "no arrival recorded (per Alvys stop status)",
+        },
+    };
+
+    [Fact]
+    public void ToLateDeliveryTrigger_dedupes_on_load_and_stop_and_window_end()
+    {
+        // SourceKey = {loadId}:{stopId} and OccurredAt = window end, so a still-late delivery seen
+        // on every poll produces one stable idempotency key (no re-fire storm).
+        var trigger = NotificationTriggerEngine.ToLateDeliveryTrigger(LateDeliveryLoad());
+
+        Assert.Equal(NotificationStage.ExceptionRaised, trigger.Stage);
+        Assert.Equal("L-late-del:stop-9", trigger.SourceKey);
+        Assert.Equal("L-late-del", trigger.LoadId);
+        Assert.Equal(WindowEnd, trigger.OccurredAt);
+    }
+
+    [Fact]
+    public void ToLateDeliveryTrigger_links_to_load_number_and_names_hours_and_destination()
+    {
+        var trigger = NotificationTriggerEngine.ToLateDeliveryTrigger(LateDeliveryLoad(loadNumber: "1004253"));
+
+        Assert.Equal("/ltl/loads/1004253", trigger.LinkPath);
+        Assert.Contains("1004253", trigger.Title);
+        Assert.Contains("1.9h overdue", trigger.Summary);
+        Assert.Contains("Laredo, TX", trigger.Summary);
+    }
+
+    [Fact]
+    public void ToLateDeliveryTrigger_falls_back_to_load_id_when_number_missing()
+    {
+        var trigger = NotificationTriggerEngine.ToLateDeliveryTrigger(
+            LateDeliveryLoad(id: "L-late-del", loadNumber: null));
+
+        Assert.Equal("/ltl/loads/L-late-del", trigger.LinkPath);
+    }
 }

@@ -170,6 +170,18 @@ public sealed class LtlLoadService(
     private async Task<IReadOnlyDictionary<string, TripEconomics>> FetchTripEconomicsForLoadsAsync(
         IReadOnlyList<AlvysLoad> loads, CancellationToken ct)
     {
+        var trips = await SweepTripsForLoadsAsync(loads, ct);
+        return BuildEconomicsMap(trips);
+    }
+
+    /// <summary>
+    /// Bulk-fetches the trips for a set of loads in one paged, load-number-keyed trip search,
+    /// returning the raw trips (deduped to the first trip per load number). Shared by the economics
+    /// and exception paths so a single sweep can feed both — no double round-trip. Read-only.
+    /// </summary>
+    private async Task<List<AlvysTrip>> SweepTripsForLoadsAsync(
+        IReadOnlyList<AlvysLoad> loads, CancellationToken ct)
+    {
         var loadNumbers = loads
             .Select(l => l.LoadNumber)
             .Where(n => !string.IsNullOrWhiteSpace(n))
@@ -177,9 +189,10 @@ public sealed class LtlLoadService(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var map = new Dictionary<string, TripEconomics>(StringComparer.OrdinalIgnoreCase);
-        if (loadNumbers.Count == 0) return map;
+        var trips = new List<AlvysTrip>();
+        if (loadNumbers.Count == 0) return trips;
 
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var page = 0;
         var pageSize = _options.AlvysPageSize;
         var fetched = 0;
@@ -192,18 +205,50 @@ public sealed class LtlLoadService(
 
             foreach (var trip in response.Items)
             {
-                if (string.IsNullOrWhiteSpace(trip.LoadNumber) || map.ContainsKey(trip.LoadNumber!)) continue;
-                var payable = trip.Carrier?.TotalPayable?.Amount;
-                var driverRate = trip.TripValue?.Amount;
-                var loadedMiles = trip.LoadedMileage?.Value;
-                if (payable is null && driverRate is null && loadedMiles is null) continue;
-                map[trip.LoadNumber!] = new TripEconomics(payable, driverRate, loadedMiles);
+                if (string.IsNullOrWhiteSpace(trip.LoadNumber) || !seen.Add(trip.LoadNumber!)) continue;
+                trips.Add(trip);
             }
 
             fetched += response.Items.Count;
             if (fetched >= response.Total || response.Items.Count < pageSize) break;
             if (fetched >= _options.MaxLoadsScanned) break;
             page++;
+        }
+
+        return trips;
+    }
+
+    /// <summary>Builds the load-number → economics map from a swept trip set (pure).</summary>
+    private static IReadOnlyDictionary<string, TripEconomics> BuildEconomicsMap(IReadOnlyList<AlvysTrip> trips)
+    {
+        var map = new Dictionary<string, TripEconomics>(StringComparer.OrdinalIgnoreCase);
+        foreach (var trip in trips)
+        {
+            if (string.IsNullOrWhiteSpace(trip.LoadNumber) || map.ContainsKey(trip.LoadNumber!)) continue;
+            var payable = trip.Carrier?.TotalPayable?.Amount;
+            var driverRate = trip.TripValue?.Amount;
+            var loadedMiles = trip.LoadedMileage?.Value;
+            if (payable is null && driverRate is null && loadedMiles is null) continue;
+            map[trip.LoadNumber!] = new TripEconomics(payable, driverRate, loadedMiles);
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    /// Builds the load-number → actual-late-delivery map from a swept trip set. A trip contributes
+    /// an entry only when its delivery stop's window/appointment has passed with no recorded arrival
+    /// (see <see cref="LateDeliveryDetector"/>). Pure over the already-fetched trips.
+    /// </summary>
+    private IReadOnlyDictionary<string, LtlLateDelivery> BuildLateDeliveryMap(IReadOnlyList<AlvysTrip> trips)
+    {
+        var now = clock.GetUtcNow();
+        var map = new Dictionary<string, LtlLateDelivery>(StringComparer.OrdinalIgnoreCase);
+        foreach (var trip in trips)
+        {
+            if (string.IsNullOrWhiteSpace(trip.LoadNumber) || map.ContainsKey(trip.LoadNumber!)) continue;
+            var late = LateDeliveryDetector.Detect(trip, now, _options.LateDeliveryGraceMinutes);
+            if (late is not null) map[trip.LoadNumber!] = late;
         }
 
         return map;
@@ -272,9 +317,13 @@ public sealed class LtlLoadService(
     {
         var (loads, _) = await SweepAsync(new LoadSearchRequest { PageSize = _options.AlvysPageSize }, ct);
 
-        // Trip economics (loaded miles) feed the predicted-delivery ETA so a predicted-late arrival
-        // surfaces here before an actual-late event. Missing miles simply yield no ETA — never a guess.
-        var tripEconByLoad = await FetchTripEconomicsForLoadsAsync(loads, ct);
+        // One trip sweep feeds two exception signals: trip economics (loaded miles → the
+        // predicted-delivery ETA, so a predicted-late arrival surfaces before it actually goes late)
+        // and actual-late DELIVERY detection (delivery-stop window passed with no arrival recorded).
+        // Missing data simply yields no signal — never a guess.
+        var trips = await SweepTripsForLoadsAsync(loads, ct);
+        var tripEconByLoad = BuildEconomicsMap(trips);
+        var lateDeliveryByLoad = BuildLateDeliveryMap(trips);
 
         var enrichLimit = Math.Max(0, _options.MaxVisibilityEnriched);
         var summaries = new List<LtlLoadSummary>(loads.Count);
@@ -287,6 +336,10 @@ public sealed class LtlLoadService(
                 && tripEconByLoad.TryGetValue(loadNumber, out var e)
                 ? e
                 : default;
+            var lateDelivery = !string.IsNullOrWhiteSpace(loadNumber)
+                && lateDeliveryByLoad.TryGetValue(loadNumber, out var ld)
+                ? ld
+                : null;
 
             if (enriched < enrichLimit && !string.IsNullOrWhiteSpace(loadNumber))
             {
@@ -295,7 +348,8 @@ public sealed class LtlLoadService(
                     load, visibility: context, extraExceptions: visibilityExceptions,
                     carrierPayable: econ.CarrierPayable,
                     driverTripRate: econ.DriverTripRate,
-                    loadedMiles: econ.LoadedMiles));
+                    loadedMiles: econ.LoadedMiles,
+                    lateDelivery: lateDelivery));
                 enriched++;
             }
             else
@@ -304,7 +358,8 @@ public sealed class LtlLoadService(
                     load,
                     carrierPayable: econ.CarrierPayable,
                     driverTripRate: econ.DriverTripRate,
-                    loadedMiles: econ.LoadedMiles));
+                    loadedMiles: econ.LoadedMiles,
+                    lateDelivery: lateDelivery));
             }
         }
 
