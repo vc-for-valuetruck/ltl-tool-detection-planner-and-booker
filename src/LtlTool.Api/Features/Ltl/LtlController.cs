@@ -233,13 +233,31 @@ public sealed class LtlController(
     /// <summary>
     /// Read-only margin/exception rollup grouped by customer, rep, or lane — profitability
     /// visibility over the same normalized load set the billing worklist uses. No Alvys
-    /// writeback; no external BI connection.
+    /// writeback, and no external system is ingested here — see <see cref="MarginRollupExport"/>
+    /// for the CSV shape of this same data, for a BI tool to read as output.
     /// </summary>
     [HttpGet("reporting/margin-rollup")]
     [ProducesResponseType(typeof(MarginRollupResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<MarginRollupResponse>> MarginRollup(
         [FromQuery] RollupGroupBy groupBy = RollupGroupBy.Customer, CancellationToken ct = default)
         => Ok(await loads.GetMarginRollupAsync(groupBy, ct));
+
+    /// <summary>
+    /// CSV export of the margin rollup for external reporting tools (e.g. Power BI's Text/CSV
+    /// connector). Same authorization and the same read-only Alvys-derived data as
+    /// <see cref="MarginRollup"/> — only the response shape changes; nothing new is ingested and
+    /// nothing is written back to Alvys.
+    /// </summary>
+    [HttpGet("reporting/margin-rollup/export")]
+    [Produces("text/csv")]
+    public async Task<IActionResult> MarginRollupExport(
+        [FromQuery] RollupGroupBy groupBy = RollupGroupBy.Customer, CancellationToken ct = default)
+    {
+        var result = await loads.GetMarginRollupAsync(groupBy, ct);
+        var csv = MarginRollupCsvWriter.Write(result);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+        return File(bytes, "text/csv", $"margin-rollup-{groupBy}.csv".ToLowerInvariant());
+    }
 
     /// <summary>
     /// Live "Capacity today" snapshot (Phase 7.4): active trucks, trailer pool by equipment type,

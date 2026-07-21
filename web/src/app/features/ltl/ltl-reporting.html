@@ -6,6 +6,8 @@
     <span class="worklist-sub">
       Profitability visibility over the same normalized loads as the billing worklist — grouped by
       customer, rep, or lane. Read-only; entirely Alvys-derived; nothing is written to Alvys.
+      Use "Export CSV" to pull this feed into Power BI or another reporting tool — the ingestion
+      is Alvys-sourced, never a separate data path.
     </span>
   </div>
 
@@ -30,6 +32,9 @@
         }
       </span>
     }
+    <a class="badge-filter" [href]="exportUrl()" target="_blank" rel="noopener" data-testid="reporting-export-csv">
+      Export CSV
+    </a>
   </div>
 
   @if (loading()) {

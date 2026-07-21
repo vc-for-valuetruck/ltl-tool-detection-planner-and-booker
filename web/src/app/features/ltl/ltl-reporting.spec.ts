@@ -101,4 +101,20 @@ describe('LtlReporting', () => {
     expect(c['marginClass'](row({ grossMarginPercent: 8 }))).toContain('chip-warn');
     expect(c['marginClass'](row({ grossMarginPercent: 25 }))).toContain('chip-good');
   });
+
+  it('exposes a CSV export URL that follows the selected group-by', () => {
+    const seen: string[] = [];
+    const c = build({
+      marginRollup: () => of(response([])),
+      marginRollupExportUrl: (groupBy) => {
+        seen.push(groupBy);
+        return `/api/ltl/reporting/margin-rollup/export?groupBy=${groupBy}`;
+      },
+    });
+    c.ngOnInit();
+    expect(c['exportUrl']()).toBe('/api/ltl/reporting/margin-rollup/export?groupBy=Customer');
+
+    c['selectGroupBy']('Lane');
+    expect(c['exportUrl']()).toBe('/api/ltl/reporting/margin-rollup/export?groupBy=Lane');
+  });
 });

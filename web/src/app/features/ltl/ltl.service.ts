@@ -89,6 +89,15 @@ export class LtlService {
   }
 
   /**
+   * Absolute URL for the CSV rendering of the margin rollup — for a direct browser download, or
+   * for an external reporting tool (e.g. Power BI's Text/CSV connector) to pull Alvys-derived
+   * data straight from this tool. Same auth and same read-only data as `marginRollup`.
+   */
+  marginRollupExportUrl(groupBy: RollupGroupBy): string {
+    return `${this.base}/reporting/margin-rollup/export?groupBy=${encodeURIComponent(groupBy)}`;
+  }
+
+  /**
    * Live "Capacity today" snapshot: active trucks, trailer pool by equipment type, and in-transit
    * trips. Read-only; every count is a live Alvys read, truncation reported honestly.
    */

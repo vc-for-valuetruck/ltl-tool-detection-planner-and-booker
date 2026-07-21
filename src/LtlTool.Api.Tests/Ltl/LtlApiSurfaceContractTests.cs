@@ -41,6 +41,8 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/notifications/channels")]
     [InlineData("/api/ltl/reporting/margin-rollup")]
     [InlineData("/api/ltl/reporting/margin-rollup?groupBy=Rep")]
+    [InlineData("/api/ltl/reporting/margin-rollup/export")]
+    [InlineData("/api/ltl/reporting/margin-rollup/export?groupBy=Lane")]
     public async Task Ltl_get_routes_are_mapped_and_protected(string route)
     {
         var client = _factory.CreateClient();

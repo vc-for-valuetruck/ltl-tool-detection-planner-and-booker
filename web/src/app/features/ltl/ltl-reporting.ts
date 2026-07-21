@@ -42,6 +42,13 @@ export class LtlReporting implements OnInit {
     this.load();
   }
 
+  /**
+   * URL for the current group-by's CSV export — for a direct download, or to hand to an external
+   * reporting tool (e.g. Power BI's Text/CSV connector) so it can pull Alvys-derived data straight
+   * from this tool. Same auth as every other `/api/ltl/*` call.
+   */
+  protected readonly exportUrl = computed(() => this.ltl.marginRollupExportUrl(this.groupBy()));
+
   protected selectGroupBy(groupBy: RollupGroupBy): void {
     if (this.groupBy() === groupBy) return;
     this.groupBy.set(groupBy);
