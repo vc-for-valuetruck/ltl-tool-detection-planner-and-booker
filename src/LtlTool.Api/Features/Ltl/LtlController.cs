@@ -33,6 +33,9 @@ public sealed class LtlController(
     LaredoArrivalsService arrivals,
     ILogger<LtlController> logger) : ControllerBase
 {
+    /// <summary>Upper bound on rows accepted by the preflight batch-validate endpoint.</summary>
+    private const int BatchValidateMaxItems = 50;
+
     /// <summary>Normalized, filtered, sorted, paged LTL search over the swept Alvys loads.</summary>
     [HttpGet("search")]
     [ProducesResponseType(typeof(LtlSearchResponse), StatusCodes.Status200OK)]
@@ -213,6 +216,74 @@ public sealed class LtlController(
     [ProducesResponseType(typeof(IReadOnlyList<AssignmentAudit>), StatusCodes.Status200OK)]
     public ActionResult<IReadOnlyList<AssignmentAudit>> GetAssignments(string idOrNumber)
         => Ok(auditStore.ForLoad(idOrNumber));
+
+    /// <summary>
+    /// Preflight batch validate (Phase 3): dry-runs the same validation as
+    /// <see cref="ValidateAssignment"/> across the top of a worklist in one call, returning a
+    /// per-row blocker/warning count so a dispatcher sees which proposed assignments are clean
+    /// before committing any of them. Records nothing and writes nothing to Alvys. Unresolvable
+    /// loads come back as <c>found = false</c> rather than failing the whole batch. The request is
+    /// capped at <see cref="BatchValidateMaxItems"/> rows.
+    /// </summary>
+    [HttpPost("assign/validate-batch")]
+    [ProducesResponseType(typeof(AssignmentBatchValidateResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AssignmentBatchValidateResponse>> ValidateAssignmentBatch(
+        [FromBody] AssignmentBatchValidateRequest request, CancellationToken ct)
+    {
+        var items = (request.Items ?? [])
+            .Where(i => !string.IsNullOrWhiteSpace(i.LoadId))
+            .Take(BatchValidateMaxItems)
+            .ToList();
+
+        var rows = new List<AssignmentBatchValidateRow>(items.Count);
+        foreach (var item in items)
+        {
+            var loadId = item.LoadId!;
+            var single = new AssignmentRequest
+            {
+                DriverId = item.DriverId,
+                TruckId = item.TruckId,
+                TrailerId = item.TrailerId,
+                MatchScore = item.MatchScore,
+                MatchLabel = item.MatchLabel,
+            };
+
+            var (_, result) = await BuildValidationAsync(loadId, single, ct);
+            if (result is null)
+            {
+                rows.Add(new AssignmentBatchValidateRow { LoadId = loadId, Found = false });
+                continue;
+            }
+
+            var blockers = result.Blockers.ToArray();
+            var warnings = result.Warnings.ToArray();
+            rows.Add(new AssignmentBatchValidateRow
+            {
+                LoadId = loadId,
+                Found = true,
+                BlockerCount = blockers.Length,
+                WarningCount = warnings.Length,
+                Blockers = blockers,
+                Warnings = warnings,
+            });
+        }
+
+        return Ok(new AssignmentBatchValidateResponse { Rows = rows });
+    }
+
+    /// <summary>
+    /// Cross-load assignment-decision history for the /ltl/assignments page, newest first, filtered
+    /// by recording user, UTC day and/or typed override reason. Read-only over the local audit store;
+    /// every row still carries <see cref="AssignmentAudit.AlvysWriteback"/> = <c>"NotPerformed"</c>.
+    /// </summary>
+    [HttpGet("assignments")]
+    [ProducesResponseType(typeof(IReadOnlyList<AssignmentAudit>), StatusCodes.Status200OK)]
+    public ActionResult<IReadOnlyList<AssignmentAudit>> ListAssignments(
+        [FromQuery] string? user,
+        [FromQuery] DateOnly? day,
+        [FromQuery] AssignmentReasonType? reasonType,
+        [FromQuery] int max = 200)
+        => Ok(auditStore.Query(new AssignmentAuditQuery(user, day, reasonType, max)));
 
     /// <summary>
     /// Billing worklist: loads still needing billing attention, optionally filtered to a single
