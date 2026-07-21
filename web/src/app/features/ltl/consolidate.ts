@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { catchError, of } from 'rxjs';
 import { ConsolidationService } from './consolidation.service';
 import { LtlNav } from './ltl-nav';
+import { LtlParentChildBadge } from './ltl-parent-child-badge';
 import { LtlEdiEnrichment, LtlLoadSummary } from './ltl.models';
 import {
   ConsolidationAuditRecord,
@@ -142,7 +143,7 @@ export function chooseDefaultSelection(
 @Component({
   selector: 'app-consolidate',
   standalone: true,
-  imports: [CommonModule, FormsModule, LtlNav],
+  imports: [CommonModule, FormsModule, LtlNav, LtlParentChildBadge],
   templateUrl: './consolidate.html',
   styleUrls: ['./consolidate.css'],
 })

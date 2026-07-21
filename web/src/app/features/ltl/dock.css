@@ -1,0 +1,645 @@
+.dock-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 24px;
+  padding-bottom: 64px;
+}
+
+.dock-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dock-head h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  max-width: 720px;
+  line-height: 1.5;
+}
+
+/* ===================== Step rail ===================== */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.steps li {
+  flex: 1 1 auto;
+  min-width: 120px;
+  text-align: center;
+  padding: 12px 10px;
+  border-radius: var(--radius-card);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.steps li.done {
+  color: var(--text-secondary);
+  border-color: var(--success);
+}
+
+.steps li.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ===================== Panels ===================== */
+.panel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.panel h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.panel-sub,
+.review-sub {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* ===================== Tap grid (tablet-first big targets) ===================== */
+.tap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.tap-card {
+  appearance: none;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  min-height: 96px;
+  padding: 18px;
+  border-radius: var(--radius-card);
+  border: 2px solid var(--card-border);
+  background: var(--body-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.tap-card:hover:not(.disabled) {
+  border-color: var(--accent);
+}
+
+.tap-card.selected {
+  border-color: var(--success);
+  background: var(--info-row-bg);
+}
+
+.tap-card.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.tap-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.added-tick {
+  color: var(--success);
+  font-weight: 800;
+}
+
+.tap-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.tap-warn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger-text);
+}
+
+/* ===================== Chips ===================== */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--text-secondary);
+}
+
+.chip-bound {
+  background: var(--info-bg);
+  color: var(--info-text);
+  border-color: var(--info-bg);
+}
+
+.chip-tier {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-color: var(--warning-bg);
+}
+
+.factors .factor {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--card-border);
+}
+
+.factor.fit-Good { color: var(--success); border-color: var(--success); }
+.factor.fit-Tight { color: var(--warning-text); border-color: var(--warning-text); }
+.factor.fit-Blocked { color: var(--danger-text); border-color: var(--danger-text); }
+.factor.fit-Unknown { color: var(--text-muted); }
+
+/* ===================== Manual add ===================== */
+.manual-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.manual-add label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.manual-row {
+  display: flex;
+  gap: 10px;
+}
+
+.manual-row input {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 14px;
+  font-size: 16px;
+  font-family: inherit;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-border);
+  background: var(--body-bg);
+  color: var(--text-primary);
+}
+
+/* ===================== Selected bar ===================== */
+.selected-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--card-border);
+}
+
+.selected-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.selected-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.selected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 8px 6px 12px;
+  border-radius: 999px;
+  background: var(--info-row-bg);
+  border: 1px solid var(--info-bg);
+  color: var(--text-primary);
+}
+
+.chip-x {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.selected-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ===================== Result bar (undo + notification) ===================== */
+.result-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-undo {
+  appearance: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  background: var(--card-bg);
+  border: 1px solid var(--danger-text);
+  color: var(--danger-text);
+}
+
+.btn-undo:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.undo-chip,
+.notify-chip {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.undo-chip.undone {
+  background: var(--info-row-bg);
+  color: var(--text-secondary);
+  border-color: var(--info-bg);
+}
+
+.notify-chip.ok {
+  background: var(--info-row-bg);
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.notify-chip.pending {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-color: var(--warning-bg);
+}
+
+.notify-chip.muted {
+  background: var(--card-bg);
+  color: var(--text-muted);
+  border-color: var(--card-border);
+}
+
+.notify-chip.failed {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border-color: var(--danger-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip-retry {
+  appearance: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  background: var(--danger-text);
+  border: none;
+  color: #fff;
+}
+
+.chip-retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ===================== Review ===================== */
+.review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.review-card {
+  padding: 16px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-border);
+  background: var(--body-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.review-card.parent-card {
+  border-color: var(--accent);
+  border-width: 2px;
+}
+
+.review-role {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.review-load {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.review-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ===================== Result / economics ===================== */
+.result-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.result-print-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.econ {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.econ-cell {
+  padding: 16px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-border);
+  background: var(--body-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.econ-cell.red-rpm {
+  border-color: var(--danger-text);
+  background: var(--danger-bg);
+}
+
+.econ-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.econ-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.rpm-chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.rpm-chip.rpm-Below { background: var(--danger-bg); color: var(--danger-text); }
+.rpm-chip.rpm-Ok { background: var(--info-row-bg); color: var(--success); }
+.rpm-chip.rpm-Unavailable { background: var(--card-bg); color: var(--text-muted); }
+
+/* ===================== Buttons ===================== */
+.btn,
+.btn-primary,
+.btn-ghost {
+  appearance: none;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.btn {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--text-primary);
+}
+
+.btn-primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  background: none;
+  border: 1px solid var(--card-border);
+  color: var(--text-secondary);
+}
+
+/* ===================== States ===================== */
+.state {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.state-empty {
+  background: var(--body-bg);
+  border: 1px dashed var(--card-border);
+  border-radius: var(--radius-card);
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.note {
+  background: var(--info-row-bg);
+  border: 1px solid var(--info-bg);
+  border-radius: var(--radius-card);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.error {
+  color: var(--danger-text);
+  background: var(--danger-bg);
+  border-radius: var(--radius-card);
+  padding: 12px 16px;
+  font-size: 14px;
+}
+
+.error ul { margin: 6px 0 0; padding-left: 18px; }
+
+.disclaimer {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ===================== Click card text ===================== */
+.clickcard-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'JetBrains Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  background: var(--body-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+/* ===================== Print documents ===================== */
+/* Print docs are hidden on screen; each print mode reveals exactly one. */
+.print-doc {
+  display: none;
+  color: #000;
+}
+
+.doc-head h1 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.doc-meta {
+  display: block;
+  font-size: 12px;
+  color: #333;
+}
+
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 13px;
+}
+
+.doc-table th,
+.doc-table td {
+  border: 1px solid #999;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.doc-table .doc-parent {
+  font-weight: 700;
+  background: #f0f0f0;
+}
+
+.doc-econ {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.doc-note {
+  font-size: 12px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.doc-legend {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.doc-child-note {
+  display: block;
+  font-size: 11px;
+  color: #333;
+  margin-top: 4px;
+}
+
+@media (max-width: 720px) {
+  .page-shell { padding: 16px; }
+  .review-actions,
+  .result-head { flex-direction: column; }
+}
+
+/* When a print artifact is armed, hide the screen chrome and show only that artifact. */
+@media print {
+  .no-print { display: none !important; }
+}
+
+:host(.printing-bol) .dock-screen,
+:host(.printing-card) .dock-screen {
+  display: none;
+}
+
+:host(.printing-bol) .print-bol {
+  display: block;
+}
+
+:host(.printing-card) .print-clickcard {
+  display: block;
+}

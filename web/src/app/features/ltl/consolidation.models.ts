@@ -233,6 +233,8 @@ export interface ConsolidationAuditRecord {
   combinedRevenuePerMile?: number;
   blockers: string[];
   alvysWriteback: string;
+  /** What the entry records: `Combine` (a plan was committed) or `Undo` (a combine was retracted). */
+  action?: string;
   recordedBy: string;
   recordedAt: string;
 }

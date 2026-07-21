@@ -52,6 +52,10 @@ export const routes: Routes = [
     loadComponent: () => import('./features/ltl/consolidate').then((m) => m.Consolidate),
   },
   {
+    path: 'ltl/dock',
+    loadComponent: () => import('./features/ltl/dock').then((m) => m.Dock),
+  },
+  {
     path: 'ltl/consolidate/plan/:planId',
     loadComponent: () => import('./features/ltl/plan-detail').then((m) => m.PlanDetail),
   },

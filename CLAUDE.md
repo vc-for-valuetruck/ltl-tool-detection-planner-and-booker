@@ -90,6 +90,10 @@ defensible recommendations, and revenue protection.
 - `POST /api/ltl/consolidation/plan` — Phase 1 pilot: build a consolidation plan preview (parent + siblings → click-card content). Read-only; nothing writes to Alvys.
 - `POST /api/ltl/consolidation/plan/audit` — Phase 1 pilot: record a plan as an internal audit entry (leadership visibility). Read-only against Alvys.
 - `GET  /api/ltl/consolidation/plan/audits?parentLoadId={id}` — Phase 1 pilot: audit history for one parent (or all when parentLoadId omitted).
+- `GET  /api/ltl/dock/warehouses` — Phase 2.5 Dock mode: configured yards a dock worker can pick (honest projection of static config). Read-only.
+- `GET  /api/ltl/dock/arrivals?warehouse={code}&date={yyyy-MM-dd}` — Phase 2.5 Dock mode: trucks/loads at/inbound to a warehouse, reusing the Arrivals Board. Read-only.
+- `GET  /api/ltl/dock/candidates?parentLoadId={id}&corridor={code}` — Phase 2.5 Dock mode: eligible sibling suggestions for a parent load, via the consolidation candidate service. Read-only.
+- `POST /api/ltl/dock/combine` — Phase 2.5 Dock mode: combines parent + siblings into a plan preview and records the consolidation audit (`AlvysWriteback = NotPerformed`). Returns the plan (click card + combined economics) + audit. Read-only against Alvys.
 - `GET  /api/ltl/notifications?max={n}` — Phase 6: recent workflow notifications (newest first) + lifetime count + per-channel config state. Read-only.
 - `GET  /api/ltl/notifications/channels` — Phase 6: honest per-channel configuration snapshot (in-app always on; Teams/email config-gated).
 - `GET  /api/ltl/reporting/margin-rollup?groupBy={Customer|Rep|Lane}` — read-only margin/exception rollup over the same normalized load set as the billing worklist, aggregated by customer, rep (Alvys id only — no rep-name field exists), or lane (derived from origin/destination). No external BI connection.

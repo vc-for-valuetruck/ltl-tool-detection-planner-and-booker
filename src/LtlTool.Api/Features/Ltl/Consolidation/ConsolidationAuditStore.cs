@@ -65,6 +65,13 @@ public sealed class ConsolidationAuditRecord
     /// following the same audit convention used by <c>AssignmentAudit</c>.</summary>
     public string AlvysWriteback { get; init; } = "NotPerformed";
 
+    /// <summary>
+    /// What the audit entry records: <c>Combine</c> (the default — a plan was committed) or
+    /// <c>Undo</c> (a just-committed combine was retracted at the dock). Kept so the leadership
+    /// trail shows both sides of a one-tap Undo rather than silently dropping the combine.
+    /// </summary>
+    public string Action { get; init; } = "Combine";
+
     public required string RecordedBy { get; init; }
     public required DateTimeOffset RecordedAt { get; init; }
 }
@@ -78,6 +85,15 @@ public interface IConsolidationAuditStore
 {
     /// <summary>Records a new audit entry and returns it (with server-assigned Id + timestamp).</summary>
     ConsolidationAuditRecord Record(
+        ConsolidationPlanResponse plan,
+        string recordedBy);
+
+    /// <summary>
+    /// Records a retraction (one-tap Undo) of a just-committed combine as a second audit entry with
+    /// <c>Action = "Undo"</c>. Nothing was pushed to Alvys, so this reverses nothing there — it keeps
+    /// the leadership trail honest about both the combine and its undo.
+    /// </summary>
+    ConsolidationAuditRecord RecordUndo(
         ConsolidationPlanResponse plan,
         string recordedBy);
 
@@ -103,7 +119,16 @@ public sealed class InMemoryConsolidationAuditStore(TimeProvider clock) : IConso
 
     public ConsolidationAuditRecord Record(
         ConsolidationPlanResponse plan,
-        string recordedBy)
+        string recordedBy) => Add(plan, recordedBy, "Combine");
+
+    public ConsolidationAuditRecord RecordUndo(
+        ConsolidationPlanResponse plan,
+        string recordedBy) => Add(plan, recordedBy, "Undo");
+
+    private ConsolidationAuditRecord Add(
+        ConsolidationPlanResponse plan,
+        string recordedBy,
+        string action)
     {
         var record = new ConsolidationAuditRecord
         {
@@ -120,6 +145,7 @@ public sealed class InMemoryConsolidationAuditStore(TimeProvider clock) : IConso
             CombinedDriverTripValue = plan.CombinedDriverTripValue,
             CombinedRevenuePerMile = plan.CombinedRevenuePerMile,
             Blockers = plan.Blockers.ToArray(),
+            Action = action,
             RecordedBy = recordedBy,
             RecordedAt = _clock.GetUtcNow(),
         };
