@@ -28,6 +28,7 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/loads/100/matches")]
     [InlineData("/api/ltl/loads/100/matches?top=3")]
     [InlineData("/api/ltl/loads/100/billing-readiness")]
+    [InlineData("/api/ltl/loads/100/accessorial-review")]
     [InlineData("/api/ltl/loads/100/assignments")]
     [InlineData("/api/ltl/billing/worklist")]
     [InlineData("/api/ltl/billing/worklist?badge=ReadyToBill")]

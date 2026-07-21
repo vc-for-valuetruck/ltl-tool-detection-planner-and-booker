@@ -80,7 +80,8 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         decimal? resolvedRevenue = null,
         decimal? carrierPayable = null,
         AccessorialReviewContext? accessorialSignals = null,
-        decimal? carrierAccessorialsTotal = null)
+        decimal? carrierAccessorialsTotal = null,
+        AccessorialReviewResult? accessorialReview = null)
     {
         var badges = new List<BillingBadge>();
         var missing = new List<MissingDataFlag>();
@@ -239,6 +240,25 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
                 + $"{(carrierAccessorialsTotal.Value - customerAccessorialsTotal):0.##} margin gap.");
         }
 
+        // Deterministic accessorial-review candidates (Phase 3.5). When the analyzer found a Likely
+        // candidate (stop-timing detention/layover/weekend/reconsignment, or a note/document keyword
+        // hit) the load needs an accessorial review before billing. Advisory: it promotes the
+        // MissingAccessorialReview badge and a risk line, but does not itself block Ready-to-Bill —
+        // the hard itemization gap below still owns the block, so this is additive/non-breaking.
+        var analyzerReviewCandidates = accessorialReview is { Evaluated: true }
+            ? accessorialReview.Candidates
+                .Where(c => c.Status == AccessorialCandidateStatus.Likely)
+                .Select(c => c.Type)
+                .Distinct()
+                .ToList()
+            : [];
+        if (analyzerReviewCandidates.Count > 0)
+        {
+            risks.Add(
+                $"Accessorial review needed — deterministic evidence of {string.Join(", ", analyzerReviewCandidates)} "
+                + "activity; confirm it is billed.");
+        }
+
         // POD — only when delivered, and only when documents were supplied to look at.
         var podEvaluated = documents is not null;
         var podMissing = false;
@@ -264,7 +284,8 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         if (!hasRate) badges.Add(BillingBadge.MissingRate);
         if (load.Weight is null or <= 0) badges.Add(BillingBadge.MissingWeight);
         if (podMissing) badges.Add(BillingBadge.MissingPod);
-        if (accessorialReviewNeeded) badges.Add(BillingBadge.MissingAccessorialReview);
+        if (accessorialReviewNeeded || analyzerReviewCandidates.Count > 0)
+            badges.Add(BillingBadge.MissingAccessorialReview);
         if (possibleUnbilledAccessorial) badges.Add(BillingBadge.PossibleUnbilledAccessorial);
         if (carrierAccessorialMismatch) badges.Add(BillingBadge.CarrierAccessorialMismatch);
         if (invoiceAmountDrift) badges.Add(BillingBadge.InvoiceAmountDrift);

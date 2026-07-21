@@ -33,6 +33,15 @@ public sealed class AccessorialSignalAnalyzer
             "lumper charge", "lumper service", "labor charge"]),
         (AccessorialSignalType.Reconsignment, ["reconsign", "redelivery", "re-delivery",
             "address change", "redirect", "reroute", "rerouted", "delivery address changed"]),
+        (AccessorialSignalType.Handling, ["hand unload", "hand-unload", "hand load", "hand-load",
+            "pallet jack", "palletjack", "no dock", "floor load", "floor-load", "sort and segregate",
+            "sort & segregate", "driver assist", "driver-assist", "handball", "hand ball",
+            "handling fee", "cross dock", "cross-dock", "crossdock"]),
+        (AccessorialSignalType.InsideDelivery, ["inside delivery", "inside-delivery", "deliver inside",
+            "carry inside", "white glove", "white-glove", "threshold delivery"]),
+        (AccessorialSignalType.WeekendDelivery, ["weekend delivery", "saturday delivery",
+            "sunday delivery", "after hours", "after-hours", "afterhours", "weekend pickup",
+            "saturday pickup", "sunday pickup"]),
     ];
 
     /// <summary>

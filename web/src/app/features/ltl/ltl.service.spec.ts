@@ -6,7 +6,12 @@ import {
 } from '@angular/common/http/testing';
 import { LtlService } from './ltl.service';
 import { RUNTIME_CONFIG } from '../../runtime-config';
-import { AccessorialReviewContext, CapacitySnapshot, LaneRateContext } from './ltl.models';
+import {
+  AccessorialReviewContext,
+  AccessorialReviewResult,
+  CapacitySnapshot,
+  LaneRateContext,
+} from './ltl.models';
 import { LaredoArrivalsBoard } from './arrivals.models';
 import { YardArtifactView } from './yard-artifacts.models';
 
@@ -79,6 +84,46 @@ describe('LtlService — accessorial signals', () => {
     expect(result).toBeDefined();
     expect(result!.evaluated).toBeFalse();
     expect(result!.signals).toEqual([]);
+  });
+
+  it('calls GET /api/ltl/loads/{id}/accessorial-review and maps candidates', () => {
+    let result: AccessorialReviewResult | undefined;
+
+    service.getAccessorialReview('LTL-300').subscribe((r) => (result = r));
+
+    const req = http.expectOne('/api/ltl/loads/LTL-300/accessorial-review');
+    expect(req.request.method).toBe('GET');
+
+    const fakeResponse: AccessorialReviewResult = {
+      evaluated: true,
+      hasLikelyCandidate: true,
+      candidates: [
+        {
+          type: 'Detention',
+          status: 'Likely',
+          reason: 'Detention — 3h over free time at Delivery',
+          evidence: 'stop S2, arrived …, departed …, customer free time = 180m',
+          sourceId: 'S2',
+          sourceType: 'Stop',
+        },
+        {
+          type: 'Detention',
+          status: 'CannotEvaluate',
+          reason: "Can't evaluate detention — customer free time not configured",
+          evidence: 'A closed stop dwell exists but no free-time term is configured.',
+          sourceId: null,
+          sourceType: 'Stop',
+        },
+      ],
+    };
+    req.flush(fakeResponse);
+
+    expect(result).toBeDefined();
+    expect(result!.evaluated).toBeTrue();
+    expect(result!.hasLikelyCandidate).toBeTrue();
+    expect(result!.candidates.length).toBe(2);
+    expect(result!.candidates[0].status).toBe('Likely');
+    expect(result!.candidates[1].status).toBe('CannotEvaluate');
   });
 });
 

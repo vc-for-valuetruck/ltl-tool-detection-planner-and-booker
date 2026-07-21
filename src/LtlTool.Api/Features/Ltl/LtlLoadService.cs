@@ -19,9 +19,15 @@ public sealed class LtlLoadService(
     IAlvysClient alvys, LtlNormalizationService normalizer, VisibilityAnalyzer visibility,
     AccessorialSignalAnalyzer accessorialAnalyzer, IAccessorialSignalExtractor accessorialExtractor,
     IOptions<LtlOptions> options, TimeProvider clock,
-    TenderEnrichmentService? tenderEnrichment = null)
+    TenderEnrichmentService? tenderEnrichment = null,
+    AccessorialReviewAnalyzer? accessorialReviewAnalyzer = null)
 {
     private readonly LtlOptions _options = options.Value;
+
+    // Optional/last-positioned so existing positional test constructions keep compiling; DI always
+    // supplies the registered analyzer. Falls back to a fresh instance bound to the same options.
+    private readonly AccessorialReviewAnalyzer _accessorialReviewAnalyzer =
+        accessorialReviewAnalyzer ?? new AccessorialReviewAnalyzer(options);
 
     /// <summary>Normalized, filtered, sorted, paged LTL search.</summary>
     public async Task<LtlSearchResponse> SearchAsync(LtlSearchQuery query, CancellationToken ct)
@@ -69,6 +75,8 @@ public sealed class LtlLoadService(
         var tripEcon = await FetchTripEconomicsForLoadAsync(loadNumber, ct);
         var (context, visibilityExceptions) = await FetchVisibilityAsync(loadNumber, ct);
         var accessorialContext = await BuildAccessorialContextAsync(loadNumber, documents, ct);
+        var accessorialReview = _accessorialReviewAnalyzer.Analyze(
+            load, tripEcon.Stops ?? [], accessorialContext);
         var ediEnrichment = tenderEnrichment is null ? null : await tenderEnrichment.EnrichOneAsync(load, ct);
         return normalizer.Normalize(
             load, documents, invoices, context, visibilityExceptions,
@@ -77,7 +85,8 @@ public sealed class LtlLoadService(
             loadedMiles: tripEcon.LoadedMiles,
             ediEnrichment: ediEnrichment,
             accessorialSignals: accessorialContext,
-            carrierAccessorialsTotal: tripEcon.CarrierAccessorialsTotal);
+            carrierAccessorialsTotal: tripEcon.CarrierAccessorialsTotal,
+            accessorialReview: accessorialReview);
     }
 
     /// <summary>
@@ -92,7 +101,8 @@ public sealed class LtlLoadService(
         decimal? CarrierPayable,
         decimal? DriverTripRate,
         decimal? LoadedMiles,
-        decimal? CarrierAccessorialsTotal = null);
+        decimal? CarrierAccessorialsTotal = null,
+        IReadOnlyList<AlvysTripStop>? Stops = null);
 
     /// <summary>
     /// Fetches the inbound + outbound visibility history for a single load (read-only) and turns it
@@ -163,7 +173,8 @@ public sealed class LtlLoadService(
             CarrierPayable: trip.Carrier?.TotalPayable?.Amount,
             DriverTripRate: trip.TripValue?.Amount,
             LoadedMiles: trip.LoadedMileage?.Value,
-            CarrierAccessorialsTotal: trip.Carrier?.Accessorials?.Amount);
+            CarrierAccessorialsTotal: trip.Carrier?.Accessorials?.Amount,
+            Stops: trip.Stops);
     }
 
     /// <summary>
@@ -747,6 +758,26 @@ public sealed class LtlLoadService(
         var loadNumber = load.LoadNumber ?? idOrNumber;
         var documents = await alvys.ListLoadDocumentsAsync(loadNumber, ct);
         return await BuildAccessorialContextAsync(loadNumber, documents, ct);
+    }
+
+    /// <summary>
+    /// Deterministic accessorial-review candidates for a load (Phase 3.5): stop-timing detention /
+    /// layover / weekend / reconsignment signals plus the note/document keyword signals, each citing
+    /// its Alvys source. Returns <c>null</c> when the load is not found and
+    /// <see cref="AccessorialReviewResult.NotEvaluated"/> when the load has neither trip stops nor
+    /// notes/documents to inspect. Read-only: nothing is written back to Alvys.
+    /// </summary>
+    public async Task<AccessorialReviewResult?> GetAccessorialReviewAsync(
+        string idOrNumber, CancellationToken ct)
+    {
+        var load = await ResolveLoadAsync(idOrNumber, ct);
+        if (load is null) return null;
+
+        var loadNumber = load.LoadNumber ?? idOrNumber;
+        var documents = await alvys.ListLoadDocumentsAsync(loadNumber, ct);
+        var keywordContext = await BuildAccessorialContextAsync(loadNumber, documents, ct);
+        var tripEcon = await FetchTripEconomicsForLoadAsync(loadNumber, ct);
+        return _accessorialReviewAnalyzer.Analyze(load, tripEcon.Stops ?? [], keywordContext);
     }
 
     /// <summary>

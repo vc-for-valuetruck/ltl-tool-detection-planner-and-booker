@@ -124,6 +124,37 @@ public sealed class LtlOptions
     /// Bound from <c>Ltl:Urgency</c>.
     /// </summary>
     public LtlUrgencyOptions Urgency { get; set; } = new();
+
+    /// <summary>
+    /// Deterministic accessorial-review thresholds (Phase 3.5). Bound from <c>Ltl:AccessorialReview</c>.
+    /// </summary>
+    public AccessorialReviewOptions AccessorialReview { get; set; } = new();
+}
+
+/// <summary>
+/// Thresholds for the deterministic <c>AccessorialReviewAnalyzer</c> (bound from
+/// <c>Ltl:AccessorialReview</c>). Customer free-time minutes ship <b>empty</b> on purpose: a
+/// detention threshold is a per-customer contract term, never something the tool may invent. When a
+/// customer has no entry the analyzer reports "can't evaluate detention — customer free time not
+/// configured" rather than assuming a number.
+/// </summary>
+public sealed class AccessorialReviewOptions
+{
+    public const string SectionName = "Ltl:AccessorialReview";
+
+    /// <summary>
+    /// Dwell hours at a single stop at/above which a layover accessorial candidate is flagged.
+    /// Not customer-specific (a >24h dwell is a layover for anyone), so it may safely default.
+    /// </summary>
+    public int LayoverThresholdHours { get; set; } = 24;
+
+    /// <summary>
+    /// Per-customer free-time allowance in minutes, keyed by Alvys customer id <b>or</b> customer
+    /// name (case-insensitive; id is tried first). Ships empty — no invented defaults. A stop whose
+    /// dwell exceeds the customer's free time is a detention candidate; a customer with no entry
+    /// yields a <see cref="AccessorialCandidateStatus.CannotEvaluate"/> candidate instead.
+    /// </summary>
+    public Dictionary<string, int> CustomerFreeTimeMinutes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>
