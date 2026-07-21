@@ -40,6 +40,8 @@ export class LtlBilling implements OnInit {
     { value: 'MissingWeight', label: 'Missing Weight' },
     { value: 'MissingAccessorialReview', label: 'Missing Accessorial Review' },
     { value: 'PossibleUnbilledAccessorial', label: 'Possible Unbilled Accessorial' },
+    { value: 'CarrierAccessorialMismatch', label: 'Carrier Accessorial Mismatch' },
+    { value: 'InvoiceAmountDrift', label: 'Invoice Amount Drift' },
     { value: 'CustomerReviewNeeded', label: 'Customer Review Needed' },
     { value: 'ExceptionBlockingBilling', label: 'Exception Blocking Billing' },
     { value: 'AlreadyInvoiced', label: 'Already Invoiced' },
@@ -101,6 +103,8 @@ export class LtlBilling implements OnInit {
     ExceptionBlockingBilling: 'Exception Blocking Billing',
     AlreadyInvoiced: 'Already Invoiced',
     PossibleUnbilledAccessorial: 'Possible Unbilled Accessorial',
+    CarrierAccessorialMismatch: 'Carrier Accessorial Mismatch',
+    InvoiceAmountDrift: 'Invoice Amount Drift',
   };
 
   private static readonly MISSING_LABELS: Record<MissingDataFlag, string> = {

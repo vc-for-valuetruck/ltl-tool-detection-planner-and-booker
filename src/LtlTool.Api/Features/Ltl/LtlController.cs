@@ -231,6 +231,17 @@ public sealed class LtlController(
         => Ok(await loads.ExceptionsAsync(ct));
 
     /// <summary>
+    /// Read-only margin/exception rollup grouped by customer, rep, or lane — profitability
+    /// visibility over the same normalized load set the billing worklist uses. No Alvys
+    /// writeback; no external BI connection.
+    /// </summary>
+    [HttpGet("reporting/margin-rollup")]
+    [ProducesResponseType(typeof(MarginRollupResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<MarginRollupResponse>> MarginRollup(
+        [FromQuery] RollupGroupBy groupBy = RollupGroupBy.Customer, CancellationToken ct = default)
+        => Ok(await loads.GetMarginRollupAsync(groupBy, ct));
+
+    /// <summary>
     /// Live "Capacity today" snapshot (Phase 7.4): active trucks, trailer pool by equipment type,
     /// and in-transit trips — every count a read-only Alvys sweep, truncation reported honestly.
     /// </summary>

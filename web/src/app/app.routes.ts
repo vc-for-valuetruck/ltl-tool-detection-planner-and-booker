@@ -35,6 +35,10 @@ export const routes: Routes = [
       import('./features/ltl/ltl-notifications').then((m) => m.LtlNotifications),
   },
   {
+    path: 'ltl/reporting',
+    loadComponent: () => import('./features/ltl/ltl-reporting').then((m) => m.LtlReporting),
+  },
+  {
     path: 'ltl/consolidate',
     loadComponent: () => import('./features/ltl/consolidate').then((m) => m.Consolidate),
   },

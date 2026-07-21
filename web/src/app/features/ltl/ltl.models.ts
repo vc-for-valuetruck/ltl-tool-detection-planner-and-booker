@@ -33,7 +33,9 @@ export type BillingBadge =
   | 'CustomerReviewNeeded'
   | 'ExceptionBlockingBilling'
   | 'AlreadyInvoiced'
-  | 'PossibleUnbilledAccessorial';
+  | 'PossibleUnbilledAccessorial'
+  | 'CarrierAccessorialMismatch'
+  | 'InvoiceAmountDrift';
 
 export type AssignmentState = 'Unassigned' | 'Assigned' | 'Unknown';
 
@@ -61,7 +63,36 @@ export type LtlSortField =
   | 'Weight'
   | 'Customer'
   | 'Status'
-  | 'BillingReadiness';
+  | 'BillingReadiness'
+  | 'UrgencyScore';
+
+export type RollupGroupBy = 'Customer' | 'Rep' | 'Lane';
+
+/**
+ * One grouped row in the margin rollup. Every total is `null` when no load in the group carries
+ * the underlying value — an empty group is never rendered as `$0`.
+ */
+export interface MarginRollupRow {
+  key: string;
+  label: string;
+  /** True when `label` is only an opaque Alvys id (rep grouping has no name field) — never render it as a real name. */
+  labelIsId: boolean;
+  loadCount: number;
+  totalRevenue: number | null;
+  totalCarrierPayable: number | null;
+  totalGrossMargin: number | null;
+  /** Revenue-weighted margin percent over the margin-known loads in this group, not a naive average. */
+  grossMarginPercent: number | null;
+  totalUnpaidBalance: number | null;
+  exceptionCount: number;
+  readyToBillCount: number;
+}
+
+export interface MarginRollupResponse {
+  groupBy: RollupGroupBy;
+  rows: MarginRollupRow[];
+  truncated: boolean;
+}
 
 export interface LtlPlace {
   name: string | null;
@@ -194,6 +225,8 @@ export interface LtlLoadSummary {
   poNumber: string | null;
   customerId: string | null;
   customerName: string | null;
+  /** Alvys sales-rep id. Opaque id only — no human-readable rep name field exists on the Alvys load projection. */
+  customerRepId: string | null;
   status: string;
   assignment: AssignmentState;
   origin: LtlPlace | null;
@@ -261,6 +294,12 @@ export interface LtlLoadSummary {
   grossMarginPercent: number | null;
   isLtl: boolean | null;
   ltlClassification: string | null;
+  /**
+   * Relative dispatch/billing-attention priority (unpaid dollars + days-stale-unbilled +
+   * exception weight, combined). A ranking number, not currency — always present; 0 means
+   * "nothing raises urgency", not "unknown".
+   */
+  urgencyScore: number;
   missingData: MissingDataFlag[];
   billing: BillingReadinessResult;
   exceptions: LtlExceptionFlag[];

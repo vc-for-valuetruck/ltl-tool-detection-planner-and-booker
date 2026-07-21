@@ -14,7 +14,9 @@ import {
   LtlLoadSummary,
   LtlSearchQuery,
   LtlSearchResponse,
+  MarginRollupResponse,
   MatchResult,
+  RollupGroupBy,
   SavedView,
   SavedViewCollection,
   SavedViewRequest,
@@ -74,6 +76,16 @@ export class LtlService {
 
   exceptions(): Observable<LtlLoadSummary[]> {
     return this.http.get<LtlLoadSummary[]>(`${this.base}/exceptions`);
+  }
+
+  /**
+   * Read-only margin/exception rollup grouped by customer, rep, or lane. Same normalized load set
+   * as the billing worklist, aggregated. No external BI connection.
+   */
+  marginRollup(groupBy: RollupGroupBy): Observable<MarginRollupResponse> {
+    return this.http.get<MarginRollupResponse>(`${this.base}/reporting/margin-rollup`, {
+      params: new HttpParams().set('groupBy', groupBy),
+    });
   }
 
   /**

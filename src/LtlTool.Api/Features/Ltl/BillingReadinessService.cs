@@ -65,6 +65,13 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
     /// typed signal (detention/layover/lumper/reconsignment) and the load has no customer
     /// accessorial charge at all, it flags a likely missed accessorial rather than the narrower
     /// itemization gap <see cref="BillingBadge.MissingAccessorialReview"/> already covers.
+    /// <paramref name="carrierAccessorialsTotal"/> is optional (from the same trip fetch as
+    /// <paramref name="carrierPayable"/>); when it exceeds the customer's accessorial total it
+    /// flags a numeric carrier/customer accessorial mismatch — the carrier was paid for an
+    /// accessorial that was never billed through to the customer. When <paramref name="invoices"/>
+    /// and <paramref name="resolvedRevenue"/> are both supplied, a posted invoice whose total
+    /// drifts from the quoted revenue by more than <see cref="LtlOptions.InvoiceDriftThresholdPercent"/>
+    /// is flagged as a possible reclass/reweigh adjustment made after the quote.
     /// </summary>
     public BillingReadinessResult Evaluate(
         AlvysLoad load,
@@ -72,7 +79,8 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         IReadOnlyList<AlvysInvoice>? invoices = null,
         decimal? resolvedRevenue = null,
         decimal? carrierPayable = null,
-        AccessorialReviewContext? accessorialSignals = null)
+        AccessorialReviewContext? accessorialSignals = null,
+        decimal? carrierAccessorialsTotal = null)
     {
         var badges = new List<BillingBadge>();
         var missing = new List<MissingDataFlag>();
@@ -111,6 +119,32 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
                             agingBucket = BucketFor(days);
                         }
                     }
+                }
+            }
+        }
+
+        // Posted-invoice total drifted from the quoted revenue — a proxy for a reclass/reweigh
+        // adjustment applied after the quote. Only evaluated against posted invoices with a known
+        // total, against the caller's already-resolved revenue; never inferred.
+        var invoiceAmountDrift = false;
+        if (invoices is { Count: > 0 } && resolvedRevenue is > 0)
+        {
+            foreach (var invoice in invoices)
+            {
+                if (!IsPostedInvoice(invoice)) continue;
+                var invoiceTotal = invoice.Total?.Amount
+                    ?? (invoice.LineItems is { Count: > 0 }
+                        ? invoice.LineItems.Sum(li => li.Amount ?? 0m)
+                        : (decimal?)null);
+                if (invoiceTotal is null) continue;
+
+                var diffPercent = Math.Abs(invoiceTotal.Value - resolvedRevenue.Value) / resolvedRevenue.Value * 100m;
+                if ((double)diffPercent >= _options.InvoiceDriftThresholdPercent)
+                {
+                    invoiceAmountDrift = true;
+                    risks.Add(
+                        $"Invoice {InvoiceLabel(invoice)} total {invoiceTotal.Value:0.##} differs from the "
+                        + $"quoted {resolvedRevenue.Value:0.##} by {diffPercent:0.#}% — possible reclass/reweigh adjustment.");
                 }
             }
         }
@@ -190,6 +224,21 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
                 + "accessorial activity, but the load carries no customer accessorial charge.");
         }
 
+        // Carrier was paid more in accessorials than the customer was billed — a numeric,
+        // higher-confidence sibling of the keyword-based check above. A small tolerance absorbs
+        // cents-level rounding without masking a real gap.
+        var customerAccessorialsTotal = load.CustomerAccessorials is > 0 ? load.CustomerAccessorials.Value : 0m;
+        var carrierAccessorialMismatch =
+            carrierAccessorialsTotal is > 0
+            && carrierAccessorialsTotal.Value > customerAccessorialsTotal + 0.01m;
+        if (carrierAccessorialMismatch)
+        {
+            risks.Add(
+                $"Carrier was paid {carrierAccessorialsTotal!.Value:0.##} in accessorials but the "
+                + $"customer was billed only {customerAccessorialsTotal:0.##} — a "
+                + $"{(carrierAccessorialsTotal.Value - customerAccessorialsTotal):0.##} margin gap.");
+        }
+
         // POD — only when delivered, and only when documents were supplied to look at.
         var podEvaluated = documents is not null;
         var podMissing = false;
@@ -217,6 +266,8 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         if (podMissing) badges.Add(BillingBadge.MissingPod);
         if (accessorialReviewNeeded) badges.Add(BillingBadge.MissingAccessorialReview);
         if (possibleUnbilledAccessorial) badges.Add(BillingBadge.PossibleUnbilledAccessorial);
+        if (carrierAccessorialMismatch) badges.Add(BillingBadge.CarrierAccessorialMismatch);
+        if (invoiceAmountDrift) badges.Add(BillingBadge.InvoiceAmountDrift);
         if (missing.Contains(MissingDataFlag.Customer)) badges.Add(BillingBadge.CustomerReviewNeeded);
         if (blocked) badges.Add(BillingBadge.ExceptionBlockingBilling);
 
@@ -228,6 +279,7 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
             && load.Weight is > 0
             && !accessorialReviewNeeded
             && !possibleUnbilledAccessorial
+            && !carrierAccessorialMismatch
             && !blocked
             && !missing.Contains(MissingDataFlag.Customer)
             && (!podEvaluated || !podMissing);
@@ -350,6 +402,26 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
             {
                 Code = "POSSIBLE_UNBILLED_ACCESSORIAL",
                 Message = "Notes/documents suggest an accessorial event occurred, but no accessorial charge is on the load.",
+                BlocksBilling = false,
+            });
+        }
+
+        if (billing.Badges.Contains(BillingBadge.CarrierAccessorialMismatch))
+        {
+            exceptions.Add(new LtlExceptionFlag
+            {
+                Code = "CARRIER_ACCESSORIAL_MISMATCH",
+                Message = "Carrier accessorial pay exceeds the customer accessorial charge — margin gap.",
+                BlocksBilling = false,
+            });
+        }
+
+        if (billing.Badges.Contains(BillingBadge.InvoiceAmountDrift))
+        {
+            exceptions.Add(new LtlExceptionFlag
+            {
+                Code = "INVOICE_AMOUNT_DRIFT",
+                Message = "A posted invoice's total differs from the quoted rate — review for a supplemental bill or credit memo.",
                 BlocksBilling = false,
             });
         }

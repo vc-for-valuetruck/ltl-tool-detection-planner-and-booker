@@ -96,6 +96,14 @@ public sealed class LtlOptions
     public double MarginRiskThresholdPercent { get; set; } = 10.0;
 
     /// <summary>
+    /// Percent difference between a posted invoice's total and the load's quoted revenue
+    /// (<c>LtlNormalizationService.ResolveRevenue</c>) at/above which the invoice is flagged as
+    /// drifted from the quote — a proxy for an after-the-fact reclass/reweigh adjustment. Only
+    /// evaluated against posted invoices with a known total; never inferred from a missing value.
+    /// </summary>
+    public double InvoiceDriftThresholdPercent { get; set; } = 5.0;
+
+    /// <summary>
     /// Accessorial-signal AI extraction (Phase 6). Disabled by default — set
     /// <see cref="AccessorialAiOptions.Enabled"/> to <c>true</c> and supply credentials
     /// server-side only to activate the Azure OpenAI extractor. The deterministic keyword
@@ -110,6 +118,33 @@ public sealed class LtlOptions
     /// only once its real engine is wired and validated against Alvys-derived inputs.
     /// </summary>
     public OptimizationOptions Optimization { get; set; } = new();
+
+    /// <summary>
+    /// Weights for the dispatch/billing-attention urgency score (<see cref="LtlLoadSummary.UrgencyScore"/>).
+    /// Bound from <c>Ltl:Urgency</c>.
+    /// </summary>
+    public LtlUrgencyOptions Urgency { get; set; } = new();
+}
+
+/// <summary>
+/// Per-signal weights combined into <see cref="LtlLoadSummary.UrgencyScore"/>: unpaid dollars,
+/// days stale since delivery with no invoice, and exception count (blocking exceptions weigh more
+/// than non-blocking ones). Defaults are relative, not calibrated dollar-equivalents — tune per
+/// environment once real prioritization feedback comes in.
+/// </summary>
+public sealed class LtlUrgencyOptions
+{
+    /// <summary>Points added per dollar of unpaid invoice balance.</summary>
+    public double DollarWeight { get; set; } = 1.0;
+
+    /// <summary>Points added per day delivered-but-unbilled beyond zero.</summary>
+    public double StaleDayWeight { get; set; } = 50.0;
+
+    /// <summary>Points added per billing-blocking exception on the load.</summary>
+    public double BlockingExceptionWeight { get; set; } = 500.0;
+
+    /// <summary>Points added per non-blocking (advisory) exception on the load.</summary>
+    public double ExceptionWeight { get; set; } = 100.0;
 }
 
 /// <summary>

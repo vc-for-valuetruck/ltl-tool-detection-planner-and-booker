@@ -56,6 +56,10 @@ public sealed class LtlNormalizationService(
     /// on the list/search path where trips are not fetched. <paramref name="accessorialSignals"/>
     /// is optional (fetched from the load's notes/documents on the detail path only) and is
     /// folded into billing readiness to catch a likely missed accessorial.
+    /// <paramref name="carrierAccessorialsTotal"/> is optional (from the same trip fetch as
+    /// <paramref name="carrierPayable"/>, so available on both the detail and billing-worklist
+    /// paths) and lets billing readiness catch a carrier-paid accessorial that was never billed
+    /// to the customer.
     /// </summary>
     public LtlLoadSummary Normalize(
         AlvysLoad load,
@@ -69,7 +73,8 @@ public sealed class LtlNormalizationService(
         LtlEdiEnrichment? ediEnrichment = null,
         LtlLateDelivery? lateDelivery = null,
         LtlStuckStop? stuckStop = null,
-        AccessorialReviewContext? accessorialSignals = null)
+        AccessorialReviewContext? accessorialSignals = null,
+        decimal? carrierAccessorialsTotal = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -113,7 +118,8 @@ public sealed class LtlNormalizationService(
 
         var (isLtl, classification) = ClassifyLtl(load, equipment);
 
-        var billingResult = billing.Evaluate(load, documents, invoices, revenue, carrierPayable, accessorialSignals);
+        var billingResult = billing.Evaluate(
+            load, documents, invoices, revenue, carrierPayable, accessorialSignals, carrierAccessorialsTotal);
         var grossMargin = revenue is not null && carrierPayable is not null
             ? revenue.Value - carrierPayable.Value
             : (decimal?)null;
@@ -197,6 +203,8 @@ public sealed class LtlNormalizationService(
             assignment, status, billingResult, exceptions, missing, visibilityContext,
             delivered, hasRevenue: revenue is not null);
 
+        var urgencyScore = ComputeUrgencyScore(billingResult, exceptions, delivered, actualDelivery);
+
         return new LtlLoadSummary
         {
             Id = load.Id,
@@ -205,6 +213,7 @@ public sealed class LtlNormalizationService(
             PoNumber = load.PONumber,
             CustomerId = load.CustomerId,
             CustomerName = load.CustomerName,
+            CustomerRepId = load.CustomerRepId,
             Status = status,
             Assignment = assignment,
             Origin = origin,
@@ -237,7 +246,39 @@ public sealed class LtlNormalizationService(
             Exceptions = exceptions,
             Visibility = visibilityContext,
             Workflow = workflowState,
+            UrgencyScore = urgencyScore,
         };
+    }
+
+    /// <summary>
+    /// Combines dollars-at-risk (unpaid invoice balance), days delivered-but-unbilled, and
+    /// exception weight into one sortable priority number (<see cref="LtlUrgencyOptions"/> for the
+    /// weights). Every load gets a score — a load with no risk signal at all scores exactly 0,
+    /// meaning "nothing raises urgency", not "unknown". This is a derived ranking value, not a raw
+    /// Alvys field, so zero-weighting an absent signal here does not violate the "never default
+    /// missing data to zero" rule that applies to actual operational/billing fields.
+    /// </summary>
+    private decimal ComputeUrgencyScore(
+        BillingReadinessResult billing,
+        IReadOnlyList<LtlExceptionFlag> exceptions,
+        bool delivered,
+        DateTimeOffset? actualDelivery)
+    {
+        var weights = _options.Urgency;
+
+        var staleDays = 0;
+        if (delivered && !billing.IsAlreadyInvoiced && actualDelivery is { } deliveredAt)
+        {
+            staleDays = Math.Max(0, (int)(timeProvider.GetUtcNow() - deliveredAt).TotalDays);
+        }
+
+        var blockingExceptions = exceptions.Count(e => e.BlocksBilling);
+        var nonBlockingExceptions = exceptions.Count - blockingExceptions;
+
+        return (billing.UnpaidBalance ?? 0m) * (decimal)weights.DollarWeight
+            + staleDays * (decimal)weights.StaleDayWeight
+            + blockingExceptions * (decimal)weights.BlockingExceptionWeight
+            + nonBlockingExceptions * (decimal)weights.ExceptionWeight;
     }
 
     /// <summary>

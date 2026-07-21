@@ -340,4 +340,162 @@ public sealed class BillingReadinessServiceTests
 
         Assert.Contains(exceptions, e => e.Code == "POSSIBLE_UNBILLED_ACCESSORIAL" && !e.BlocksBilling);
     }
+
+    [Fact]
+    public void Carrier_accessorial_exceeding_customer_charge_flags_mismatch()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = 100m;
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], carrierAccessorialsTotal: 350m);
+
+        Assert.Contains(BillingBadge.CarrierAccessorialMismatch, result.Badges);
+        Assert.Contains(result.Risks, r => r.Contains("350") && r.Contains("100") && r.Contains("margin gap"));
+        Assert.False(result.IsReadyToBill);
+    }
+
+    [Fact]
+    public void Carrier_accessorial_with_no_customer_charge_at_all_flags_mismatch()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = null;
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], carrierAccessorialsTotal: 150m);
+
+        Assert.Contains(BillingBadge.CarrierAccessorialMismatch, result.Badges);
+    }
+
+    [Fact]
+    public void Carrier_accessorial_at_or_below_customer_charge_is_not_flagged()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = 200m;
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], carrierAccessorialsTotal: 200m);
+
+        Assert.DoesNotContain(BillingBadge.CarrierAccessorialMismatch, result.Badges);
+    }
+
+    [Fact]
+    public void Carrier_accessorial_total_not_supplied_never_flags_mismatch()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = null;
+
+        var result = LtlTestFactory.Billing().Evaluate(load, []);
+
+        Assert.DoesNotContain(BillingBadge.CarrierAccessorialMismatch, result.Badges);
+    }
+
+    [Fact]
+    public void Carrier_accessorial_mismatch_produces_a_non_blocking_exception()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = null;
+
+        var billing = LtlTestFactory.Billing();
+        var result = billing.Evaluate(load, [], carrierAccessorialsTotal: 150m);
+        var exceptions = billing.DeriveExceptions(load, result);
+
+        Assert.Contains(exceptions, e => e.Code == "CARRIER_ACCESSORIAL_MISMATCH" && !e.BlocksBilling);
+    }
+
+    [Fact]
+    public void Posted_invoice_total_far_from_quoted_revenue_flags_amount_drift()
+    {
+        var load = DeliveredBillable(); // CustomerRate = 1200m
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-1", IsSubmitted = true,
+                Total = new AlvysMoney { Amount = 1500m },
+            },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices, resolvedRevenue: 1200m);
+
+        Assert.Contains(BillingBadge.InvoiceAmountDrift, result.Badges);
+        Assert.Contains(result.Risks, r => r.Contains("INV-1") && r.Contains("reclass/reweigh"));
+    }
+
+    [Fact]
+    public void Posted_invoice_total_within_threshold_of_quoted_revenue_is_not_flagged()
+    {
+        var load = DeliveredBillable(); // CustomerRate = 1200m
+        var invoices = new List<AlvysInvoice>
+        {
+            new() { Id = "I1", Number = "INV-1", IsSubmitted = true, Total = new AlvysMoney { Amount = 1210m } },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices, resolvedRevenue: 1200m);
+
+        Assert.DoesNotContain(BillingBadge.InvoiceAmountDrift, result.Badges);
+    }
+
+    [Fact]
+    public void Non_posted_invoice_drift_is_not_flagged()
+    {
+        var load = DeliveredBillable(); // CustomerRate = 1200m
+        var invoices = new List<AlvysInvoice>
+        {
+            new() { Id = "I1", Number = "INV-1", Total = new AlvysMoney { Amount = 2000m } }, // not posted
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices, resolvedRevenue: 1200m);
+
+        Assert.DoesNotContain(BillingBadge.InvoiceAmountDrift, result.Badges);
+    }
+
+    [Fact]
+    public void Invoice_drift_not_evaluated_without_resolved_revenue()
+    {
+        var load = DeliveredBillable();
+        var invoices = new List<AlvysInvoice>
+        {
+            new() { Id = "I1", Number = "INV-1", IsSubmitted = true, Total = new AlvysMoney { Amount = 2000m } },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices);
+
+        Assert.DoesNotContain(BillingBadge.InvoiceAmountDrift, result.Badges);
+    }
+
+    [Fact]
+    public void Invoice_amount_drift_falls_back_to_summing_line_items_when_total_is_missing()
+    {
+        var load = DeliveredBillable(); // CustomerRate = 1200m
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-1", IsSubmitted = true,
+                LineItems =
+                [
+                    new AlvysInvoiceLineItem { Type = "Linehaul", Amount = 1200m },
+                    new AlvysInvoiceLineItem { Type = "Accessorial", Amount = 400m },
+                ],
+            },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices, resolvedRevenue: 1200m);
+
+        Assert.Contains(BillingBadge.InvoiceAmountDrift, result.Badges);
+    }
+
+    [Fact]
+    public void Invoice_amount_drift_produces_a_non_blocking_exception()
+    {
+        var load = DeliveredBillable();
+        var invoices = new List<AlvysInvoice>
+        {
+            new() { Id = "I1", Number = "INV-1", IsSubmitted = true, Total = new AlvysMoney { Amount = 2000m } },
+        };
+
+        var billing = LtlTestFactory.Billing();
+        var result = billing.Evaluate(load, [], invoices, resolvedRevenue: 1200m);
+        var exceptions = billing.DeriveExceptions(load, result);
+
+        Assert.Contains(exceptions, e => e.Code == "INVOICE_AMOUNT_DRIFT" && !e.BlocksBilling);
+    }
 }
