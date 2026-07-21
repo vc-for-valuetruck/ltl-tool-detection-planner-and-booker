@@ -89,25 +89,26 @@ public sealed class ConsolidationController(
     /// computed snapshot instantly and refreshes it in the background (stale-while-revalidate with
     /// a hard timeout). A cold cache returns an empty list and kicks off the first refresh — the UI
     /// renders corridor chips from <c>/corridors</c> immediately and treats health as a progressive
-    /// enhancement. The <c>X-Corridor-Health-As-Of</c> header carries the snapshot's timestamp
-    /// (absent on a cold cache) so the UI can show an honest "as of" stamp. The full candidate walk
-    /// still happens when the dispatcher picks a corridor and enters an anchor load.
+    /// enhancement. The payload's <c>asOf</c> field carries the snapshot's timestamp (<c>null</c> on
+    /// a cold cache) so the UI can show an honest "as of" stamp; the <c>X-Corridor-Health-As-Of</c>
+    /// header mirrors it for non-UI callers. The full candidate walk still happens when the
+    /// dispatcher picks a corridor and enters an anchor load.
     /// </para>
     /// </summary>
     [HttpGet("corridors/health")]
-    [ProducesResponseType(typeof(IReadOnlyList<CorridorHealth>), StatusCodes.Status200OK)]
-    public ActionResult<IReadOnlyList<CorridorHealth>> GetCorridorHealth()
+    [ProducesResponseType(typeof(CorridorHealthSnapshotResponse), StatusCodes.Status200OK)]
+    public ActionResult<CorridorHealthSnapshotResponse> GetCorridorHealth()
     {
         var snapshot = _corridorHealth.GetSnapshot();
         if (snapshot is not null)
         {
             Response.Headers["X-Corridor-Health-As-Of"] = snapshot.AsOf.ToString("O");
-            return Ok(snapshot.Healths);
+            return Ok(new CorridorHealthSnapshotResponse { AsOf = snapshot.AsOf, Corridors = snapshot.Healths });
         }
 
         // Cold cache: return an honest empty snapshot now (the refresh is already in flight) rather
         // than blocking the caller on the sweep. The picker stays populated from /corridors.
-        return Ok(Array.Empty<CorridorHealth>());
+        return Ok(new CorridorHealthSnapshotResponse { AsOf = null, Corridors = Array.Empty<CorridorHealth>() });
     }
 
     /// <summary>

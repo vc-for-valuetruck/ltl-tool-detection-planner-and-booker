@@ -143,11 +143,11 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     if (!healthResp.ok()) {
       test.skip(true, `Corridor health returned ${healthResp.status()}; skipping auto-seed check.`);
     }
-    const healths = (await healthResp.json()) as Array<{
-      seedLoadId?: string | null;
-      seedLoadNumber?: string | null;
-    }>;
-    const hasSeed = healths.some((h) => h.seedLoadId || h.seedLoadNumber);
+    const snapshot = (await healthResp.json()) as {
+      asOf?: string | null;
+      corridors?: Array<{ seedLoadId?: string | null; seedLoadNumber?: string | null }>;
+    };
+    const hasSeed = (snapshot.corridors ?? []).some((h) => h.seedLoadId || h.seedLoadNumber);
     if (!hasSeed) {
       test.skip(true, 'No corridor exposes a seed hint today; nothing to auto-seed.');
     }
@@ -201,10 +201,10 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     // with a specific reason.
     const healthResp = await request.get(`${API_URL}/api/ltl/consolidation/corridors/health`);
     if (healthResp.ok()) {
-      const healths = (await healthResp.json()) as Array<{
-        code: string;
-        openLoadCount: number | null;
-      }>;
+      const snapshot = (await healthResp.json()) as {
+        corridors?: Array<{ code: string; openLoadCount: number | null }>;
+      };
+      const healths = snapshot.corridors ?? [];
       const total = healths.reduce((n, h) => n + (h.openLoadCount ?? 0), 0);
       if (total === 0) {
         test.skip(
@@ -316,9 +316,11 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
       ? ((await oppResp.json()).opportunities ?? []).length
       : 0;
     const pilotSeed = healthResp.ok()
-      ? ((await healthResp.json()) as Array<{ seedLoadId?: string | null; seedLoadNumber?: string | null }>).some(
-          (h) => h.seedLoadId || h.seedLoadNumber,
-        )
+      ? (
+          ((await healthResp.json()) as {
+            corridors?: Array<{ seedLoadId?: string | null; seedLoadNumber?: string | null }>;
+          }).corridors ?? []
+        ).some((h) => h.seedLoadId || h.seedLoadNumber)
       : false;
     if (opps === 0 && !pilotSeed) {
       test.skip(true, 'No pilot seed and an empty opportunity sweep — nothing to consolidate today.');

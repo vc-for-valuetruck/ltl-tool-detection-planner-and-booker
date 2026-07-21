@@ -37,6 +37,12 @@
     }
   </div>
 
+  @if (healthAsOf(); as asOf) {
+    <div class="corridor-health-asof muted" data-testid="corridor-health-asof">
+      Open-load counts as of {{ formatDateTime(asOf) }}
+    </div>
+  }
+
   @if (selectedIsOutsidePilot()) {
     <div class="live-lane-note live-lane-note-example" data-testid="consolidate-live-lane-note">
       <strong>Recent delivered example — not open freight.</strong>

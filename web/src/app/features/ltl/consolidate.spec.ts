@@ -260,17 +260,20 @@ describe('Consolidate default auto-seed', () => {
           },
         ]),
       getCorridorHealth: () =>
-        of([
-          {
-            code: 'LAREDO_TO_DALLAS',
-            openLoadCount: 4,
-            truncated: false,
-            originCity: 'Laredo',
-            destinationCity: 'Dallas',
-            seedLoadId: 'SEED',
-            seedLoadNumber: 'L-100234',
-          },
-        ]),
+        of({
+          asOf: '2026-07-21T00:19:16Z',
+          corridors: [
+            {
+              code: 'LAREDO_TO_DALLAS',
+              openLoadCount: 4,
+              truncated: false,
+              originCity: 'Laredo',
+              destinationCity: 'Dallas',
+              seedLoadId: 'SEED',
+              seedLoadNumber: 'L-100234',
+            },
+          ],
+        }),
       getCandidates: () =>
         of({
           corridorCode: 'LAREDO_TO_DALLAS',
@@ -318,17 +321,20 @@ describe('Consolidate default auto-seed', () => {
   it('does not auto-seed when the corridor lane is empty (seed absent)', () => {
     const stub = makeStubService({
       getCorridorHealth: () =>
-        of([
-          {
-            code: 'LAREDO_TO_DALLAS',
-            openLoadCount: 0,
-            truncated: false,
-            originCity: 'Laredo',
-            destinationCity: 'Dallas',
-            seedLoadId: null,
-            seedLoadNumber: null,
-          },
-        ]) as any,
+        of({
+          asOf: '2026-07-21T00:19:16Z',
+          corridors: [
+            {
+              code: 'LAREDO_TO_DALLAS',
+              openLoadCount: 0,
+              truncated: false,
+              originCity: 'Laredo',
+              destinationCity: 'Dallas',
+              seedLoadId: null,
+              seedLoadNumber: null,
+            },
+          ],
+        }) as any,
     });
     const c = componentWith(stub);
     c.ngOnInit();
@@ -504,7 +510,7 @@ describe('Consolidate live-lane walkthrough', () => {
   function liveStub(recordPlanAudit?: jasmine.Spy): ConsolidationService {
     return {
       getCorridors: () => of([]),
-      getCorridorHealth: () => of([]),
+      getCorridorHealth: () => of({ asOf: null, corridors: [] }),
       getOpportunities: () =>
         of({
           opportunities: [makeOpportunity()],
@@ -566,7 +572,7 @@ describe('Consolidate live-lane walkthrough', () => {
   it('shows an honest Lane fit chip: same-city sibling is Good, different-city is verify (findings #3)', () => {
     const stub = {
       getCorridors: () => of([]),
-      getCorridorHealth: () => of([]),
+      getCorridorHealth: () => of({ asOf: null, corridors: [] }),
       getOpportunities: () =>
         of({
           opportunities: [
