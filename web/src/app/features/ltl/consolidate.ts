@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { catchError, forkJoin, of } from 'rxjs';
+import { catchError, of } from 'rxjs';
 import { ConsolidationService } from './consolidation.service';
 import { LtlNav } from './ltl-nav';
 import { LtlEdiEnrichment, LtlLoadSummary } from './ltl.models';
@@ -191,6 +191,12 @@ export class Consolidate implements OnInit {
   /** Guards the one-time default auto-seed so a manual search is never re-seeded out from under the user. */
   private autoSeeded = false;
 
+  /** Origin→destination STATE pairs of the configured pilot corridors, used to fold matching live lanes. */
+  private pilotStatePairs = new Set<string>();
+
+  /** Guards the one-time default corridor selection across the two progressive reads (health, opportunities). */
+  private defaultApplied = false;
+
   readonly hasSelection = computed(() => this.selectedSiblingIds().size > 0);
 
   /**
@@ -311,56 +317,112 @@ export class Consolidate implements OnInit {
   });
 
   ngOnInit(): void {
-    // Fire all three reads in parallel. /corridors is static config; /corridors/health hits
-    // Alvys per pilot corridor; /opportunities is the live "Today's consolidations" sweep across
-    // ALL lanes. Each source is wrapped so one degrading never blanks the whole picker — a failed
-    // sweep just means no live lanes are offered, and a failed corridor read just means no pilot
-    // chips. Merged into one picker: pilot corridors first, then live lanes discovered from the
-    // sweep (busiest first), each with its open-load count.
-    forkJoin({
-      corridors: this.consolidation.getCorridors().pipe(catchError(() => of([] as CorridorSummary[]))),
-      health: this.consolidation.getCorridorHealth().pipe(catchError(() => of([] as CorridorHealth[]))),
-      opportunities: this.consolidation
-        .getOpportunities()
-        .pipe(catchError(() => of(null as ConsolidationOpportunitiesResponse | null))),
-    }).subscribe(({ corridors, health, opportunities }) => {
-      const healthByCode = new Map<string, CorridorHealth>(health.map((h) => [h.code, h]));
-      const pilotRows: CorridorPickerRow[] = corridors.map((c) => ({
-        code: c.code,
-        originName: c.origin.name,
-        destinationName: c.destination.name,
-        openLoadCount: healthByCode.get(c.code)?.openLoadCount ?? null,
-        loadedCleanly: healthByCode.has(c.code) && healthByCode.get(c.code)?.openLoadCount !== null,
-        seedLoadId: healthByCode.get(c.code)?.seedLoadId ?? null,
-        seedLoadNumber: healthByCode.get(c.code)?.seedLoadNumber ?? null,
-        isLiveLane: false,
-        outsidePilot: false,
-        opportunity: null,
-      }));
+    // /corridors is static config and returns instantly. Render the picker chips from it ALONE so
+    // the tab is usable the moment it opens — the two live Alvys reads (/corridors/health, now
+    // server-cached; /opportunities, the "Today's consolidations" sweep) are progressive
+    // enhancements layered on afterwards and never block the chips from appearing. Each read is
+    // wrapped so one degrading never blanks the picker.
+    this.consolidation
+      .getCorridors()
+      .pipe(catchError(() => of([] as CorridorSummary[])))
+      .subscribe((corridors) => {
+        const pilotRows: CorridorPickerRow[] = corridors.map((c) => ({
+          code: c.code,
+          originName: c.origin.name,
+          destinationName: c.destination.name,
+          // Counts + seed hints arrive with the health snapshot (applyHealth); null = "not yet".
+          openLoadCount: null,
+          loadedCleanly: false,
+          seedLoadId: null,
+          seedLoadNumber: null,
+          isLiveLane: false,
+          outsidePilot: false,
+          opportunity: null,
+        }));
+        // A live lane whose origin→dest state pair matches a pilot corridor is folded into that
+        // pilot row (not shown twice), so remember the pilot corridors' state pairs.
+        this.pilotStatePairs = new Set<string>(
+          corridors.map(
+            (c) => `${(c.origin.state ?? '').toUpperCase()}->${(c.destination.state ?? '').toUpperCase()}`,
+          ),
+        );
+        this.corridors.set(pilotRows);
+        this.loadingCorridors.set(false);
 
-      // A live lane whose origin→dest state pair matches a pilot corridor is folded into that
-      // pilot row (not shown twice), so seed the fold-set from the pilot corridors' state pairs.
-      const pilotStatePairs = new Set<string>(
-        corridors
-          .map((c) => `${(c.origin.state ?? '').toUpperCase()}->${(c.destination.state ?? '').toUpperCase()}`),
-      );
-      const liveLaneRows = buildLiveLaneRows(opportunities, pilotStatePairs);
+        // Progressive enhancement 1: fold live open-load counts + seed hints into the pilot rows
+        // as soon as the (server-cached) health snapshot arrives. When a pilot lane already has a
+        // workable pair we default-select and auto-seed it here without waiting on the slower
+        // opportunity sweep.
+        this.consolidation
+          .getCorridorHealth()
+          .pipe(catchError(() => of([] as CorridorHealth[])))
+          .subscribe((health) => this.applyHealth(health));
 
-      this.corridors.set([...pilotRows, ...liveLaneRows]);
-      this.totalScanned.set(opportunities?.totalScanned ?? null);
-      this.generatedAt.set(opportunities?.generatedAt ?? null);
-      this.dataSource.set(opportunities?.dataSource ?? null);
-      this.loadingCorridors.set(false);
+        // Progressive enhancement 2: append live lanes discovered by the opportunity sweep. This
+        // is the fallback default-selection path when no pilot lane has a workable pair.
+        this.consolidation
+          .getOpportunities()
+          .pipe(catchError(() => of(null as ConsolidationOpportunitiesResponse | null)))
+          .subscribe((opportunities) => this.applyOpportunities(opportunities));
+      });
+  }
 
-      // Default selection: pilot-with-data → pilot; else busiest live lane; else honest empty.
-      const defaultCode = chooseDefaultSelection(pilotRows, liveLaneRows);
-      if (defaultCode) {
-        this.selectedCorridor.set(defaultCode);
-        const row = this.corridors().find((r) => r.code === defaultCode);
-        if (row?.isLiveLane) this.selectLiveLane(row);
-        else this.maybeAutoSeedQueue();
-      }
+  /**
+   * Folds the corridor-health snapshot into the already-rendered pilot rows (open-load counts +
+   * seed hints). If a pilot lane has a seed AND at least two open loads it can actually form a
+   * consolidation, so we default-select and auto-seed it immediately — no need to wait for the
+   * slower opportunity sweep. This mirrors {@link chooseDefaultSelection}'s pilotWithPair rule (a
+   * lone open load defers to a live pair, so it is NOT auto-selected here).
+   */
+  private applyHealth(health: CorridorHealth[]): void {
+    const healthByCode = new Map<string, CorridorHealth>(health.map((h) => [h.code, h]));
+    const merged = this.corridors().map((r) => {
+      if (r.isLiveLane) return r;
+      const h = healthByCode.get(r.code);
+      if (!h) return r;
+      return {
+        ...r,
+        openLoadCount: h.openLoadCount ?? null,
+        loadedCleanly: h.openLoadCount !== null,
+        seedLoadId: h.seedLoadId ?? null,
+        seedLoadNumber: h.seedLoadNumber ?? null,
+      };
     });
+    this.corridors.set(merged);
+
+    if (this.defaultApplied) return;
+    const pilotWithPair = merged.find(
+      (r) => !r.isLiveLane && (r.seedLoadId || r.seedLoadNumber) && (r.openLoadCount ?? 0) >= 2,
+    );
+    if (pilotWithPair) {
+      this.defaultApplied = true;
+      this.selectedCorridor.set(pilotWithPair.code);
+      this.maybeAutoSeedQueue();
+    }
+  }
+
+  /**
+   * Appends live lanes from the opportunity sweep and, if no default corridor was already applied
+   * from the health snapshot, runs the full default-selection ladder (pilot-with-pair → busiest
+   * live lane → first pilot honest-empty). Also fills the live footer facts.
+   */
+  private applyOpportunities(opportunities: ConsolidationOpportunitiesResponse | null): void {
+    const liveLaneRows = buildLiveLaneRows(opportunities, this.pilotStatePairs);
+    const pilotRows = this.corridors().filter((r) => !r.isLiveLane);
+    this.corridors.set([...pilotRows, ...liveLaneRows]);
+    this.totalScanned.set(opportunities?.totalScanned ?? null);
+    this.generatedAt.set(opportunities?.generatedAt ?? null);
+    this.dataSource.set(opportunities?.dataSource ?? null);
+
+    if (this.defaultApplied) return;
+    const defaultCode = chooseDefaultSelection(pilotRows, liveLaneRows);
+    if (defaultCode) {
+      this.defaultApplied = true;
+      this.selectedCorridor.set(defaultCode);
+      const row = this.corridors().find((r) => r.code === defaultCode);
+      if (row?.isLiveLane) this.selectLiveLane(row);
+      else this.maybeAutoSeedQueue();
+    }
   }
 
   selectCorridor(code: string): void {

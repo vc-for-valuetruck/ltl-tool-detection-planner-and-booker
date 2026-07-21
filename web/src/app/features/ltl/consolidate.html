@@ -33,7 +33,7 @@
         }
       </button>
     } @empty {
-      <span class="corridor-chip-count muted">Corridors unavailable — seed search still works.</span>
+      <span class="corridor-chip-count muted">Corridors unavailable — anchor load search still works.</span>
     }
   </div>
 
@@ -57,7 +57,7 @@
     <form class="seed-form" data-testid="consolidate-seed-form" (ngSubmit)="loadCandidates()">
       <input
         type="text"
-        placeholder="Seed load id or load number (e.g. L-100234)"
+        placeholder="Alvys load # (e.g. 1001800)"
         [ngModel]="seedInput()"
         (ngModelChange)="seedInput.set($event)"
         name="seed"
@@ -87,8 +87,8 @@
       <h3>No live parent on {{ selectedCorridorLabel() }} right now</h3>
       <p class="muted">
         Alvys has no open load on this corridor lane at the moment, so there is nothing to
-        auto-plan. This is an honest empty state — nothing is fabricated. Enter a seed load id or
-        load number above and hit <strong>Find candidates</strong> to plan against a specific load,
+        auto-plan. This is an honest empty state — nothing is fabricated. Enter an Alvys load #
+        above and hit <strong>Find candidates</strong> to plan against a specific load,
         or pick another corridor once more lanes come online.
       </p>
     </div>
@@ -97,7 +97,7 @@
   @if (candidateResponse(); as response) {
     @if (!response.seed) {
       <div class="banner banner-warn">
-        Seed load could not be resolved in Alvys. Check the id and try again &mdash; nothing is
+        Anchor load could not be resolved in Alvys. Check the load # and try again &mdash; nothing is
         fabricated when Alvys has no match.
       </div>
     } @else {
@@ -229,7 +229,7 @@
               } @empty {
                 <tr>
                   <td colspan="11" class="empty">
-                    No corridor-matching siblings for this seed. Try a different seed &mdash; we never
+                    No corridor-matching siblings for this anchor load. Try a different anchor load &mdash; we never
                     invent candidates when Alvys returns none.
                   </td>
                 </tr>

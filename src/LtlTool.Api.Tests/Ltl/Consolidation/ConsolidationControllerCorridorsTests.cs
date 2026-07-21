@@ -86,13 +86,13 @@ public class ConsolidationControllerCorridorsTests
 
     private static ConsolidationController BuildController(ConsolidationOptions options)
     {
-        // /corridors doesn't touch candidates/plans/audits/loads; nulls are fine for this
-        // direct-construction test. Health-endpoint tests use BuildControllerWithLoads.
+        // /corridors doesn't touch candidates/plans/audits/corridor-health; nulls are fine for this
+        // direct-construction test. The corridor-health sweep is covered by CorridorHealthProbe tests.
         return new ConsolidationController(
             candidates: null!,
             plans: null!,
             audits: null!,
             options: Microsoft.Extensions.Options.Options.Create(options),
-            loads: null!);
+            corridorHealth: null!);
     }
 }

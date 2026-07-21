@@ -20,17 +20,10 @@ public sealed class ConsolidationController(
     ConsolidationPlanService plans,
     IConsolidationAuditStore audits,
     IOptions<ConsolidationOptions> options,
-    LtlLoadService loads) : ControllerBase
+    CorridorHealthCache corridorHealth) : ControllerBase
 {
     private readonly ConsolidationOptions _options = options.Value;
-    private readonly LtlLoadService _loads = loads;
-
-    /// <summary>
-    /// Upper bound on origin × destination lane probes the corridor-health walk issues per
-    /// corridor. Keeps the two-sided nearby-cities cross-product bounded on every UI page-load;
-    /// the default pilot config (≈8 origin × ≈9 destination cities) sits comfortably under it.
-    /// </summary>
-    private const int MaxLaneProbes = 100;
+    private readonly CorridorHealthCache _corridorHealth = corridorHealth;
 
     /// <summary>
     /// Lists the consolidation corridors the planner recognises today, joined with each
@@ -85,149 +78,36 @@ public sealed class ConsolidationController(
     /// <summary>
     /// Live health snapshot for every configured corridor: how many open loads sit on the
     /// canonical origin → destination lane right now. Meant for the UI corridor picker so
-    /// leadership can see at a glance which corridors have plannable pairs before typing a
-    /// seed id.
+    /// leadership can see at a glance which corridors have plannable pairs before typing an
+    /// anchor load id.
     ///
     /// <para>
-    /// <b>Bounded two-sided walk.</b> This probes the origin nearby-cities × destination
-    /// nearby-cities cross-product (each a tiny PageSize=1 read) up to
-    /// <see cref="MaxLaneProbes"/> lane probes per corridor, then stops and reports the count as
-    /// truncated. The two-sided walk is what lets the pilot queue auto-populate against the live
-    /// tenant, where in-spirit corridor freight sits on non-canonical city pairs (e.g. Santa
-    /// Catarina → Irving, not "Laredo" → "Dallas"). The probe cap keeps Alvys reads bounded on
-    /// every UI page-load; when it trips, the count is honestly flagged truncated rather than
-    /// silently under-reported. The full candidate walk still happens when the dispatcher picks a
-    /// corridor and enters a seed.
+    /// <b>Served from a cache, never inline.</b> The underlying sweep (a bounded two-sided
+    /// nearby-cities cross-product of tiny PageSize=1 Alvys reads — see
+    /// <see cref="CorridorHealthProbe"/>) is expensive enough that running it on the request path
+    /// hung this endpoint for 10s+. Instead <see cref="CorridorHealthCache"/> serves the last
+    /// computed snapshot instantly and refreshes it in the background (stale-while-revalidate with
+    /// a hard timeout). A cold cache returns an empty list and kicks off the first refresh — the UI
+    /// renders corridor chips from <c>/corridors</c> immediately and treats health as a progressive
+    /// enhancement. The <c>X-Corridor-Health-As-Of</c> header carries the snapshot's timestamp
+    /// (absent on a cold cache) so the UI can show an honest "as of" stamp. The full candidate walk
+    /// still happens when the dispatcher picks a corridor and enters an anchor load.
     /// </para>
     /// </summary>
     [HttpGet("corridors/health")]
     [ProducesResponseType(typeof(IReadOnlyList<CorridorHealth>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<CorridorHealth>>> GetCorridorHealth(
-        CancellationToken ct)
+    public ActionResult<IReadOnlyList<CorridorHealth>> GetCorridorHealth()
     {
-        var warehouseByCode = _options.Warehouses.ToDictionary(
-            w => w.Code, w => w, StringComparer.OrdinalIgnoreCase);
-
-        var healths = new List<CorridorHealth>();
-        foreach (var corridor in _options.Corridors)
+        var snapshot = _corridorHealth.GetSnapshot();
+        if (snapshot is not null)
         {
-            if (!warehouseByCode.TryGetValue(corridor.OriginWarehouseCode, out var origin) ||
-                !warehouseByCode.TryGetValue(corridor.DestinationWarehouseCode, out var destination))
-            {
-                // Silently drop misconfigured corridors here — the /corridors listing already
-                // filtered them out. This branch is defensive.
-                continue;
-            }
-
-            // Canonical city = first entry in NearbyCities, by convention the yard's own name.
-            // Warehouses ship at least one nearby city so First() is safe on real config, but
-            // guard against test/edge configs anyway.
-            var originCity = origin.NearbyCities.FirstOrDefault();
-            var destinationCity = destination.NearbyCities.FirstOrDefault();
-            if (string.IsNullOrWhiteSpace(originCity) || string.IsNullOrWhiteSpace(destinationCity))
-            {
-                healths.Add(new CorridorHealth
-                {
-                    Code = corridor.Code,
-                    OpenLoadCount = 0,
-                    Truncated = false,
-                    OriginCity = originCity ?? origin.Code,
-                    DestinationCity = destinationCity ?? destination.Code,
-                });
-                continue;
-            }
-
-            // Walk origin nearby-cities × destination nearby-cities (each a tiny PageSize=1 read)
-            // rather than only the canonical yard-name pair. This is what makes the pilot queue
-            // auto-populate reliably: the seed hint is found whenever ANY legal origin/destination
-            // pair (e.g. Santa Catarina → Irving, not just "Laredo" → "Dallas") has a live parent
-            // — the common case in the live tenant. The walk is bounded by MaxLaneProbes so the
-            // cross-product can never balloon Alvys reads on a page-load; a tripped cap is
-            // reported honestly as truncated below.
-            var originCities = origin.NearbyCities.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
-            var destinationCities = destination.NearbyCities.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
-
-            var totalCount = 0;
-            var anyTruncated = false;
-            var successfulReads = 0;
-            var probes = 0;
-            LtlLoadSummary? seed = null;
-            foreach (var oCity in originCities)
-            {
-                foreach (var dCity in destinationCities)
-                {
-                    if (probes >= MaxLaneProbes)
-                    {
-                        // Bounded sweep: stop probing beyond the cap and flag the count truncated
-                        // so the picker never implies it scanned the full cross-product.
-                        anyTruncated = true;
-                        break;
-                    }
-                    probes++;
-
-                    LtlSearchResponse response;
-                    try
-                    {
-                        response = await _loads.SearchAsync(new LtlSearchQuery
-                        {
-                            // Status pinned to Open: Alvys loads/search returns nothing for a
-                            // filterless request, and only open freight is plannable.
-                            Status = ["Open"],
-                            OriginCity = oCity,
-                            DestinationCity = dCity,
-                            Page = 0,
-                            // PageSize=1 keeps Alvys payloads tiny — we only need Total + a seed hint.
-                            PageSize = 1,
-                        }, ct);
-                    }
-                    catch (Exception)
-                    {
-                        // One lane's read failing must not take the picker down; skip it and let the
-                        // rest of the walk contribute. Only if EVERY read fails do we report the
-                        // corridor as "unknown" below.
-                        continue;
-                    }
-
-                    successfulReads++;
-                    totalCount += response.Total;
-                    anyTruncated |= response.Truncated;
-                    // First open load found becomes the default seed hint so the UI can populate the
-                    // pilot queue on tab-load without app-settings. Honest: stays null when every lane
-                    // is empty. Never fabricated.
-                    seed ??= response.Items.FirstOrDefault();
-                }
-
-                if (probes >= MaxLaneProbes) break;
-            }
-
-            if (successfulReads == 0)
-            {
-                // Every origin-city read degraded — return a null signal so the caller shows
-                // "unknown" honestly rather than a false zero.
-                healths.Add(new CorridorHealth
-                {
-                    Code = corridor.Code,
-                    OpenLoadCount = null,
-                    Truncated = false,
-                    OriginCity = originCity,
-                    DestinationCity = destinationCity,
-                });
-                continue;
-            }
-
-            healths.Add(new CorridorHealth
-            {
-                Code = corridor.Code,
-                OpenLoadCount = totalCount,
-                Truncated = anyTruncated,
-                OriginCity = originCity,
-                DestinationCity = destinationCity,
-                SeedLoadId = seed?.Id,
-                SeedLoadNumber = seed?.LoadNumber,
-            });
+            Response.Headers["X-Corridor-Health-As-Of"] = snapshot.AsOf.ToString("O");
+            return Ok(snapshot.Healths);
         }
 
-        return Ok(healths);
+        // Cold cache: return an honest empty snapshot now (the refresh is already in flight) rather
+        // than blocking the caller on the sweep. The picker stays populated from /corridors.
+        return Ok(Array.Empty<CorridorHealth>());
     }
 
     /// <summary>
