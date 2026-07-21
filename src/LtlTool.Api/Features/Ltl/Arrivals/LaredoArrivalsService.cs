@@ -41,11 +41,24 @@ public sealed class LaredoArrivalsService(
         ["Arrived", "Completed", "Picked Up", "Loading", "Unloading", "Checked In"];
 
     public async Task<LaredoArrivalsBoard> GetBoardAsync(DateOnly? date, CancellationToken ct)
+        => await GetBoardAsync(date, null, ct);
+
+    /// <summary>
+    /// Builds an arrivals board for a specific configured warehouse (Dock mode, Phase 2.5). When
+    /// <paramref name="warehouseCode"/> is null the board falls back to the pilot corridor's origin
+    /// (Laredo) so the existing Phase 8.1 <c>/api/ltl/arrivals</c> behavior is unchanged. The onward
+    /// "bound" highlight (<see cref="LaredoArrival.DallasBound"/>) tracks whichever destination
+    /// warehouse a corridor pairs with the arrival warehouse — Dallas for the Laredo yard, and honest
+    /// <c>false</c> when the arrival warehouse is itself a corridor endpoint with no onward leg.
+    /// Read-only; nothing writes back to Alvys.
+    /// </summary>
+    public async Task<LaredoArrivalsBoard> GetBoardAsync(
+        DateOnly? date, string? warehouseCode, CancellationToken ct)
     {
         var now = clock.GetUtcNow();
         var day = date ?? DateOnly.FromDateTime(now.UtcDateTime);
 
-        var (origin, destination) = ResolveCorridorWarehouses();
+        var (origin, destination) = ResolveWarehouses(warehouseCode);
         if (origin is null)
         {
             // Corridor/warehouse config missing — honest empty board, no fabrication.
@@ -70,7 +83,7 @@ public sealed class LaredoArrivalsService(
             : await BuildEquipmentIndexAsync(ct);
 
         var arrivals = candidates
-            .Select(x => BuildArrival(x.trip, x.laredo!, origin, destination!, trucksById, trailersById, now))
+            .Select(x => BuildArrival(x.trip, x.laredo!, origin, destination, trucksById, trailersById, now))
             .OrderByDescending(a => a.DallasBound)
             .ThenBy(a => a.ScheduledArrivalStart ?? DateTimeOffset.MaxValue)
             .ThenBy(a => a.TripNumber, StringComparer.OrdinalIgnoreCase)
@@ -86,16 +99,43 @@ public sealed class LaredoArrivalsService(
         };
     }
 
-    private (ConsolidationWarehouseOptions? Origin, ConsolidationWarehouseOptions? Destination) ResolveCorridorWarehouses()
+    /// <summary>
+    /// Resolves the arrival warehouse and its onward destination warehouse. With a null
+    /// <paramref name="warehouseCode"/> the arrival yard is the pilot corridor's origin (Laredo),
+    /// preserving the Phase 8.1 board. With a code, the arrival yard is that configured warehouse and
+    /// the onward destination is whichever warehouse a corridor pairs it with as origin (null when the
+    /// warehouse is only ever a corridor endpoint). Origin null ⇒ config missing ⇒ honest empty board.
+    /// </summary>
+    private (ConsolidationWarehouseOptions? Origin, ConsolidationWarehouseOptions? Destination) ResolveWarehouses(
+        string? warehouseCode)
     {
-        var corridor = _consolidation.Corridors.FirstOrDefault(
-            c => string.Equals(c.Code, PilotCorridorCode, StringComparison.OrdinalIgnoreCase));
-        if (corridor is null) return (null, null);
-
         var byCode = _consolidation.Warehouses.ToDictionary(
             w => w.Code, w => w, StringComparer.OrdinalIgnoreCase);
-        byCode.TryGetValue(corridor.OriginWarehouseCode, out var origin);
-        byCode.TryGetValue(corridor.DestinationWarehouseCode, out var destination);
+
+        ConsolidationWarehouseOptions? origin;
+        if (string.IsNullOrWhiteSpace(warehouseCode))
+        {
+            var pilot = _consolidation.Corridors.FirstOrDefault(
+                c => string.Equals(c.Code, PilotCorridorCode, StringComparison.OrdinalIgnoreCase));
+            if (pilot is null) return (null, null);
+            byCode.TryGetValue(pilot.OriginWarehouseCode, out origin);
+        }
+        else
+        {
+            byCode.TryGetValue(warehouseCode, out origin);
+        }
+
+        if (origin is null) return (null, null);
+
+        // Onward destination: the first corridor whose origin is this warehouse.
+        var onwardCorridor = _consolidation.Corridors.FirstOrDefault(
+            c => string.Equals(c.OriginWarehouseCode, origin.Code, StringComparison.OrdinalIgnoreCase));
+        ConsolidationWarehouseOptions? destination = null;
+        if (onwardCorridor is not null)
+        {
+            byCode.TryGetValue(onwardCorridor.DestinationWarehouseCode, out destination);
+        }
+
         return (origin, destination);
     }
 
@@ -103,7 +143,7 @@ public sealed class LaredoArrivalsService(
         AlvysTrip trip,
         AlvysTripStop laredo,
         ConsolidationWarehouseOptions origin,
-        ConsolidationWarehouseOptions destination,
+        ConsolidationWarehouseOptions? destination,
         IReadOnlyDictionary<string, AlvysTruck> trucksById,
         IReadOnlyDictionary<string, AlvysTrailerEquipment> trailersById,
         DateTimeOffset now)
@@ -112,7 +152,8 @@ public sealed class LaredoArrivalsService(
         var laredoIndex = stops.IndexOf(laredo);
         var onward = laredoIndex >= 0 ? stops.Skip(laredoIndex + 1).ToList() : [];
 
-        var dallasBound = onward.Any(s => MatchesWarehouse(s.Address, destination));
+        var dallasBound = destination is not null
+            && onward.Any(s => MatchesWarehouse(s.Address, destination));
         var inboundStop = stops.FirstOrDefault(
             s => string.Equals(s.StopType, "Pickup", StringComparison.OrdinalIgnoreCase)) ?? stops.FirstOrDefault();
 

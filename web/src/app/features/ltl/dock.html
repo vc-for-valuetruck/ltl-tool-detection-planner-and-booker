@@ -1,0 +1,316 @@
+<app-ltl-nav active="dock" />
+
+<div class="dock-page page-shell">
+  <!-- Screen chrome — hidden entirely while printing an artifact -->
+  <div class="dock-screen">
+    <header class="dock-head">
+      <div>
+        <h1>Dock mode</h1>
+        <p class="subtitle">
+          A truck landed at the yard. Pick the yard, tap the BOL-controlling load, add the loads
+          riding with it, review the combined driver math, then combine. Read-only against Alvys —
+          combining records an internal audit and prints your paperwork; it never writes to Alvys.
+        </p>
+      </div>
+      @if (step() !== 'warehouse') {
+        <button type="button" class="btn-ghost" (click)="startOver()">Start over</button>
+      }
+    </header>
+
+    <!-- Step rail -->
+    <ol class="steps" aria-label="Dock flow">
+      <li [class.active]="step() === 'warehouse'" [class.done]="stepIndex() > 0">1 · Yard</li>
+      <li [class.active]="step() === 'arrivals'" [class.done]="stepIndex() > 1">2 · Parent</li>
+      <li [class.active]="step() === 'siblings'" [class.done]="stepIndex() > 2">3 · Siblings</li>
+      <li [class.active]="step() === 'review'" [class.done]="stepIndex() > 3">4 · Review</li>
+      <li [class.active]="step() === 'result'">5 · Combine</li>
+    </ol>
+
+    @if (error()) {
+      <div class="error" role="alert">{{ error() }}</div>
+    }
+    @if (loading()) {
+      <div class="state">Working…</div>
+    }
+
+    <!-- ===================== Step 1: warehouse ===================== -->
+    @if (step() === 'warehouse') {
+      <section class="panel">
+        <h2>Which yard did the truck land at?</h2>
+        @if (!loading() && warehouses().length === 0) {
+          <div class="state-empty">No yards are configured. Check the consolidation corridor config.</div>
+        }
+        <div class="tap-grid">
+          @for (w of warehouses(); track w.code) {
+            <button type="button" class="tap-card" (click)="pickWarehouse(w)">
+              <span class="tap-title">{{ w.name }}</span>
+              <span class="tap-sub">{{ w.code }} · {{ w.state }}</span>
+            </button>
+          }
+        </div>
+      </section>
+    }
+
+    <!-- ===================== Step 2: arrivals / pick parent ===================== -->
+    @if (step() === 'arrivals') {
+      <section class="panel">
+        <h2>
+          Tap the BOL-controlling load
+          <span class="panel-sub">{{ selectedWarehouse()?.name }} · {{ board()?.date }}</span>
+        </h2>
+        @if (board()?.truncated) {
+          <div class="note">Showing a bounded slice of Alvys arrivals — some trucks may not be listed.</div>
+        }
+        @if (!loading() && arrivals().length === 0) {
+          <div class="state-empty">No trucks are inbound to or at this yard for the board day.</div>
+        }
+        <div class="tap-grid">
+          @for (a of arrivals(); track a.tripId) {
+            <button
+              type="button"
+              class="tap-card arrival"
+              [class.disabled]="!canBeParent(a)"
+              [disabled]="!canBeParent(a)"
+              (click)="pickParent(a)"
+            >
+              <span class="tap-title">{{ a.loadNumber ?? a.tripNumber ?? a.tripId }}</span>
+              <span class="tap-sub">
+                {{ a.inboundFrom?.label ?? '—' }} → {{ a.laredo.label ?? selectedWarehouse()?.name }}
+              </span>
+              <span class="chips">
+                <span class="chip" [class.chip-status]="true">{{ a.status }}</span>
+                @if (a.dallasBound) { <span class="chip chip-bound">Corridor-bound</span> }
+                @if (a.truck?.unit) { <span class="chip">Truck {{ a.truck?.unit }}</span> }
+                @if (a.driverName) { <span class="chip">{{ a.driverName }}</span> }
+              </span>
+              @if (!canBeParent(a)) {
+                <span class="tap-warn">No load number — cannot control a BOL</span>
+              }
+            </button>
+          }
+        </div>
+      </section>
+    }
+
+    <!-- ===================== Step 3: siblings ===================== -->
+    @if (step() === 'siblings') {
+      <section class="panel">
+        <h2>
+          Add the loads riding with {{ parent()?.loadNumber }}
+          <span class="panel-sub">Parent is BOL controlling · tap a card to add or remove</span>
+        </h2>
+
+        @if (candidates()?.scanTruncated) {
+          <div class="note">Suggestion sweep was bounded — a sibling may not appear. Use manual add below.</div>
+        }
+
+        <div class="tap-grid">
+          @for (c of candidateList(); track c.loadId) {
+            <button
+              type="button"
+              class="tap-card sibling"
+              [class.selected]="isSelected(c)"
+              [class.disabled]="c.isBlocked"
+              [disabled]="c.isBlocked"
+              (click)="toggleSibling(c)"
+            >
+              <span class="tap-title">
+                {{ c.loadNumber ?? c.loadId }}
+                @if (isSelected(c)) { <span class="added-tick" aria-hidden="true">✓</span> }
+              </span>
+              <span class="tap-sub">{{ c.customerName ?? '—' }}</span>
+              <span class="tap-sub">{{ c.originLabel ?? '—' }} → {{ c.destinationLabel ?? '—' }}</span>
+              <span class="chips">
+                <span class="chip chip-tier">{{ tierLabel(c.customerTier) }}</span>
+                <span class="chip">{{ formatWeight(c.weightLbs) }}</span>
+                <span class="chip">{{ formatCurrency(c.revenue) }}</span>
+              </span>
+              <span class="chips factors">
+                @for (f of c.factors; track f.name) {
+                  <span class="factor" [class]="'fit-' + f.fit" [title]="f.rationale">{{ f.name }}</span>
+                }
+              </span>
+              @if (c.isBlocked) { <span class="tap-warn">Blocked — cannot combine</span> }
+            </button>
+          }
+        </div>
+
+        @if (candidateList().length === 0 && !loading()) {
+          <div class="state-empty">No auto-suggested siblings. Add a load number manually below.</div>
+        }
+
+        <div class="manual-add">
+          <label for="manualSibling">Add a load by number</label>
+          <div class="manual-row">
+            <input
+              id="manualSibling"
+              type="text"
+              [ngModel]="manualSiblingId()"
+              (ngModelChange)="manualSiblingId.set($event)"
+              (keyup.enter)="addManualSibling()"
+              placeholder="e.g. L-10231"
+              autocomplete="off"
+            />
+            <button type="button" class="btn" (click)="addManualSibling()">Add</button>
+          </div>
+        </div>
+
+        @if (hasSelection()) {
+          <div class="selected-bar">
+            <div class="selected-list">
+              <span class="selected-label">Riding with parent:</span>
+              @for (id of selectedSiblingIds(); track id) {
+                <span class="selected-chip">
+                  {{ siblingLabel(id) }}
+                  <button type="button" class="chip-x" (click)="removeSibling(id)" aria-label="Remove">×</button>
+                </span>
+              }
+            </div>
+            <button type="button" class="btn-primary" (click)="goToReview()">Review combine →</button>
+          </div>
+        }
+      </section>
+    }
+
+    <!-- ===================== Step 4: review ===================== -->
+    @if (step() === 'review') {
+      <section class="panel">
+        <h2>Review before you combine</h2>
+        <div class="review-grid">
+          <div class="review-card parent-card">
+            <span class="review-role">Parent · BOL controlling</span>
+            <span class="review-load">{{ parent()?.loadNumber }}</span>
+            <span class="review-sub">{{ parent()?.inboundFrom?.label ?? '—' }} → {{ parent()?.laredo?.label ?? selectedWarehouse()?.name }}</span>
+            @if (parent()?.driverName) { <span class="review-sub">Driver {{ parent()?.driverName }}</span> }
+          </div>
+          @for (id of selectedSiblingIds(); track id) {
+            <div class="review-card">
+              <span class="review-role">Sibling</span>
+              <span class="review-load">{{ siblingLabel(id) }}</span>
+            </div>
+          }
+        </div>
+        <div class="review-actions">
+          <button type="button" class="btn-ghost" (click)="backToSiblings()">← Back to siblings</button>
+          <button type="button" class="btn-primary" [disabled]="loading()" (click)="combine()">
+            Combine {{ selectedSiblingIds().length + 1 }} loads
+          </button>
+        </div>
+        <p class="disclaimer">
+          Combining records an internal audit only. Nothing is written to Alvys — you apply the click
+          card manually after dock verification.
+        </p>
+      </section>
+    }
+
+    <!-- ===================== Step 5: result ===================== -->
+    @if (step() === 'result' && plan(); as p) {
+      <section class="panel result">
+        <div class="result-head">
+          <div>
+            <h2>Combine recorded</h2>
+            <p class="subtitle">
+              Audit {{ audit()?.id }} · recorded by {{ audit()?.recordedBy }} @ {{ audit()?.recordedAt | date: 'medium' }} ·
+              Alvys writeback: <strong>{{ audit()?.alvysWriteback }}</strong>
+            </p>
+          </div>
+          <div class="result-print-actions">
+            <button type="button" class="btn" (click)="print('bol')">Print BOL packet</button>
+            <button type="button" class="btn" (click)="print('clickcard')">Print click card</button>
+          </div>
+        </div>
+
+        @if (p.blockers.length > 0) {
+          <div class="error" role="alert">
+            <strong>Blockers on this plan:</strong>
+            <ul>@for (b of p.blockers; track b) { <li>{{ b }}</li> }</ul>
+          </div>
+        }
+
+        <!-- Combined economics (driver math) -->
+        <div class="econ">
+          <div class="econ-cell">
+            <span class="econ-label">Combined driver value</span>
+            <span class="econ-value">{{ formatCurrency(p.combinedDriverTripValue) }}</span>
+          </div>
+          <div class="econ-cell">
+            <span class="econ-label">Driver loaded miles</span>
+            <span class="econ-value">{{ p.driverLoadedMiles ?? '—' }}</span>
+          </div>
+          <div class="econ-cell" [class.red-rpm]="p.rpmWarning?.status === 'Below'">
+            <span class="econ-label">Combined RPM (driver)</span>
+            <span class="econ-value">{{ formatRpm(p.combinedRevenuePerMile) }}</span>
+            @if (p.rpmWarning) {
+              <span class="rpm-chip" [class]="'rpm-' + p.rpmWarning.status">{{ p.rpmWarning.message }}</span>
+            }
+          </div>
+        </div>
+
+        @if (copyMessage()) { <div class="note">{{ copyMessage() }}</div> }
+      </section>
+    }
+  </div>
+
+  <!-- ===================== Print artifact: BOL packet / dock manifest ===================== -->
+  @if (step() === 'result' && plan(); as p) {
+    <section class="print-doc print-bol">
+      <header class="doc-head">
+        <h1>Combined BOL Packet · Dock Manifest</h1>
+        <span class="doc-meta">Audit {{ audit()?.id }} · {{ audit()?.recordedAt | date: 'medium' }} · {{ selectedWarehouse()?.name }}</span>
+        <span class="doc-meta">Read-only record — no Alvys writeback performed ({{ audit()?.alvysWriteback }})</span>
+      </header>
+
+      <table class="doc-table">
+        <thead>
+          <tr><th>Role</th><th>Load</th><th>Customer</th><th>Consolidation policy</th><th>LTL</th><th>Main Load Id</th></tr>
+        </thead>
+        <tbody>
+          <tr class="doc-parent">
+            <td>PARENT · BOL controlling</td>
+            <td>{{ p.parent.loadNumber ?? p.parent.id }}</td>
+            <td>{{ p.parent.customerName ?? '—' }}</td>
+            <td>—</td>
+            <td>true</td>
+            <td>{{ p.clickCard.mainLoadIdReferenceValue }}</td>
+          </tr>
+          @for (s of p.siblings; track s.loadId) {
+            <tr>
+              <td>Sibling</td>
+              <td>{{ s.loadNumber ?? s.loadId }}</td>
+              <td>{{ s.customerName ?? '—' }}</td>
+              <td>{{ tierLabel(s.customerTier) }}</td>
+              <td>true</td>
+              <td>{{ p.clickCard.mainLoadIdReferenceValue }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+
+      <div class="doc-econ">
+        <div>Combined driver value: <strong>{{ formatCurrency(p.combinedDriverTripValue) }}</strong></div>
+        <div>Driver loaded miles: <strong>{{ p.driverLoadedMiles ?? '—' }}</strong></div>
+        <div>Combined driver RPM: <strong>{{ formatRpm(p.combinedRevenuePerMile) }}</strong></div>
+      </div>
+
+      <p class="doc-note">
+        Sibling loaded miles ride the parent linehaul (set to 0 in Alvys) so the driver is not paid
+        twice. Verify weight, pallet count, and receiver requirements at the dock. Values shown as
+        "—" were not supplied by Alvys and were not fabricated.
+      </p>
+    </section>
+  }
+
+  <!-- ===================== Print artifact: Alvys click card ===================== -->
+  @if (step() === 'result' && plan(); as p) {
+    <section class="print-doc print-clickcard">
+      <header class="doc-head">
+        <h1>Alvys Click Card · Manual Steps</h1>
+        <span class="doc-meta">Audit {{ audit()?.id }} · apply in Alvys after dock verification</span>
+      </header>
+      <div class="clickcard-actions no-print">
+        <button type="button" class="btn" (click)="copyClickCard()">Copy to clipboard</button>
+      </div>
+      <pre class="clickcard-text">{{ p.clickCard.plainText }}</pre>
+    </section>
+  }
+</div>

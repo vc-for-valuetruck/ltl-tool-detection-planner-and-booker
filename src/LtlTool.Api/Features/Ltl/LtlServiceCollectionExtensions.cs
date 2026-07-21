@@ -143,6 +143,10 @@ public static class LtlServiceCollectionExtensions
         // InMemoryAssignmentAuditStore; swap for an EF-backed store alongside Phase 2 writeback.
         services.AddSingleton<IConsolidationAuditStore, InMemoryConsolidationAuditStore>();
 
+        // Dock mode (Phase 2.5): thin orchestrator over arrivals + consolidation services.
+        // Read-only against Alvys; combine records the consolidation audit only.
+        services.AddScoped<Dock.DockService>();
+
         // Internal, non-Alvys assignment audit. Singleton in-memory store for this slice;
         // swap for a persistent IAssignmentAuditStore in production.
         services.AddSingleton<IAssignmentAuditStore, InMemoryAssignmentAuditStore>();

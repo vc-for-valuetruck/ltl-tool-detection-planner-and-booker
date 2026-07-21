@@ -191,6 +191,53 @@ public sealed class LaredoArrivalsServiceTests
     }
 
     [Fact]
+    public async Task Board_scopes_to_a_named_warehouse_and_dallas_endpoint_has_no_onward_bound()
+    {
+        // Dock mode (Phase 2.5) passes an explicit warehouse. A Dallas-area stop on the day should
+        // surface on the Dallas board, and since no corridor originates at Dallas the onward "bound"
+        // highlight is honestly false (Dallas is only ever a corridor endpoint).
+        var client = new FakeAlvysClient
+        {
+            Trips =
+            [
+                new AlvysTrip
+                {
+                    Id = "P-DAL",
+                    TripNumber = "T-DAL",
+                    Stops =
+                    [
+                        Stop(1, "Pickup", "Fort Worth", "TX", windowStart: OnDay(6)),
+                        Stop(2, "Delivery", "Dallas", "TX", windowStart: OnDay(10)),
+                    ],
+                },
+            ],
+        };
+
+        var board = await Build(client).GetBoardAsync(null, "DALLAS", default);
+
+        Assert.Equal("DALLAS", board.Yard);
+        var arrival = Assert.Single(board.Arrivals);
+        Assert.Equal("P-DAL", arrival.TripId);
+        Assert.False(arrival.DallasBound);
+    }
+
+    [Fact]
+    public async Task Board_is_empty_for_an_unknown_warehouse_code()
+    {
+        var client = new FakeAlvysClient
+        {
+            Trips =
+            [
+                new AlvysTrip { Id = "P1", Stops = [Stop(1, "Pickup", "Laredo", "TX", windowStart: OnDay(8))] },
+            ],
+        };
+
+        var board = await Build(client).GetBoardAsync(null, "NOPE", default);
+
+        Assert.Empty(board.Arrivals);
+    }
+
+    [Fact]
     public async Task Trips_without_a_laredo_stop_do_not_appear()
     {
         var client = new FakeAlvysClient
