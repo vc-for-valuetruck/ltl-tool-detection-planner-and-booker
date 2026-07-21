@@ -159,6 +159,102 @@ public sealed class LtlControllerTests
     }
 
     [Fact]
+    public async Task Assign_persists_typed_reason_and_detail_on_audit()
+    {
+        var client = new FakeAlvysClient
+        {
+            LoadDetail = new AlvysLoad { Id = "L1", Status = "Open" },
+            Drivers = [new AlvysDriver { Id = "DR1", Name = "Sam", IsActive = true }],
+        };
+        var store = new InMemoryAssignmentAuditStore();
+        var request = new AssignmentRequest
+        {
+            DriverId = "DR1",
+            ReasonType = AssignmentReasonType.ServiceRecovery,
+            OverrideReason = "Late load, best available",
+        };
+
+        var result = await Build(client, store).Assign("L1", request, default);
+
+        var created = Assert.IsType<CreatedAtActionResult>(result.Result);
+        var audit = Assert.IsType<AssignmentAudit>(created.Value);
+        Assert.Equal(AssignmentReasonType.ServiceRecovery, audit.ReasonType);
+        Assert.Equal("Late load, best available", audit.OverrideReason);
+        Assert.Equal(AssignmentReasonType.ServiceRecovery, store.ForLoad("L1")[0].ReasonType);
+    }
+
+    [Fact]
+    public async Task ValidateAssignmentBatch_returns_per_row_counts_and_records_nothing()
+    {
+        var client = new FakeAlvysClient
+        {
+            LoadDetail = new AlvysLoad { Id = "L1", Status = "Open" },
+            Drivers = [new AlvysDriver { Id = "DR1", Name = "Sam", IsActive = true }],
+        };
+        var store = new InMemoryAssignmentAuditStore();
+        var request = new AssignmentBatchValidateRequest
+        {
+            Items =
+            [
+                new AssignmentBatchValidateItem { LoadId = "L1", DriverId = "DR1" },
+                new AssignmentBatchValidateItem { LoadId = "L1" },
+            ],
+        };
+
+        var body = Body(await Build(client, store).ValidateAssignmentBatch(request, default));
+
+        Assert.Equal(2, body.Rows.Count);
+        Assert.All(body.Rows, r => Assert.True(r.Found));
+        // Row with a driver has no blockers; the driverless row blocks on NO_DRIVER.
+        Assert.False(body.Rows[0].HasBlockers);
+        Assert.True(body.Rows[1].HasBlockers);
+        Assert.Contains(body.Rows[1].Blockers, i => i.Code == "NO_DRIVER");
+        // Preflight is a dry run — nothing recorded.
+        Assert.Empty(store.ForLoad("L1"));
+    }
+
+    [Fact]
+    public async Task ValidateAssignmentBatch_marks_unresolved_loads_not_found()
+    {
+        var client = new FakeAlvysClient { LoadDetail = null };
+        var request = new AssignmentBatchValidateRequest
+        {
+            Items = [new AssignmentBatchValidateItem { LoadId = "missing", DriverId = "DR1" }],
+        };
+
+        var body = Body(await Build(client).ValidateAssignmentBatch(request, default));
+
+        Assert.Single(body.Rows);
+        Assert.False(body.Rows[0].Found);
+        Assert.Equal(0, body.Rows[0].BlockerCount);
+    }
+
+    [Fact]
+    public void ListAssignments_filters_history_by_user_and_reason()
+    {
+        var store = new InMemoryAssignmentAuditStore();
+        store.Record("L1", new AssignmentRequest { DriverId = "DR1", ReasonType = AssignmentReasonType.CustomerRequest }, "alice@valuetruck.com");
+        store.Record("L2", new AssignmentRequest { DriverId = "DR2", ReasonType = AssignmentReasonType.CostOptimization }, "bob@valuetruck.com");
+
+        var client = new FakeAlvysClient();
+        var controller = Build(client, store);
+
+        var all = Assert.IsAssignableFrom<IReadOnlyList<AssignmentAudit>>(
+            Assert.IsType<OkObjectResult>(controller.ListAssignments(null, null, null, 200).Result).Value);
+        Assert.Equal(2, all.Count);
+
+        var byUser = Assert.IsAssignableFrom<IReadOnlyList<AssignmentAudit>>(
+            Assert.IsType<OkObjectResult>(controller.ListAssignments("bob@valuetruck.com", null, null, 200).Result).Value);
+        Assert.Single(byUser);
+        Assert.Equal("L2", byUser[0].LoadId);
+
+        var byReason = Assert.IsAssignableFrom<IReadOnlyList<AssignmentAudit>>(
+            Assert.IsType<OkObjectResult>(controller.ListAssignments(null, null, AssignmentReasonType.CustomerRequest, 200).Result).Value);
+        Assert.Single(byReason);
+        Assert.Equal("L1", byReason[0].LoadId);
+    }
+
+    [Fact]
     public async Task Search_filters_by_billing_badge()
     {
         var client = new FakeAlvysClient

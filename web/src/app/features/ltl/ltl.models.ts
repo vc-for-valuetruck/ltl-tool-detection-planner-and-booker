@@ -404,6 +404,22 @@ export interface AssignmentValidationResult {
   hasBlockers: boolean;
 }
 
+/**
+ * Typed short override reason (Phase 3 taxonomy). Mirrors the backend
+ * `AssignmentReasonType` enum. `Unspecified` is the default and how a legacy free-text-only
+ * audit row reads — its free-text detail is still preserved and shown.
+ */
+export type AssignmentReasonType =
+  | 'Unspecified'
+  | 'CustomerRequest'
+  | 'ServiceRecovery'
+  | 'CapacityConstraint'
+  | 'EquipmentSubstitution'
+  | 'DriverAvailability'
+  | 'CostOptimization'
+  | 'ComplianceReviewed'
+  | 'Other';
+
 /** Body for recording an internal (non-Alvys) assignment decision. */
 export interface AssignmentRequest {
   driverId?: string;
@@ -412,6 +428,7 @@ export interface AssignmentRequest {
   matchScore?: number;
   matchLabel?: string;
   notes?: string;
+  reasonType?: AssignmentReasonType;
   overrideReason?: string;
 }
 
@@ -424,11 +441,48 @@ export interface AssignmentAudit {
   matchScore: number | null;
   matchLabel: string | null;
   notes: string | null;
+  reasonType: AssignmentReasonType;
   overrideReason: string | null;
   warnings: AssignmentIssue[];
   recordedBy: string;
   recordedAt: string;
   alvysWriteback: string;
+}
+
+/** One proposed assignment in a preflight batch-validate call. */
+export interface AssignmentBatchValidateItem {
+  loadId: string;
+  driverId?: string;
+  truckId?: string;
+  trailerId?: string;
+  matchScore?: number;
+  matchLabel?: string;
+}
+
+export interface AssignmentBatchValidateRequest {
+  items: AssignmentBatchValidateItem[];
+}
+
+export interface AssignmentBatchValidateRow {
+  loadId: string;
+  found: boolean;
+  blockerCount: number;
+  warningCount: number;
+  hasBlockers: boolean;
+  blockers: AssignmentIssue[];
+  warnings: AssignmentIssue[];
+}
+
+export interface AssignmentBatchValidateResponse {
+  rows: AssignmentBatchValidateRow[];
+}
+
+/** Filter for the cross-load assignment audit history (/ltl/assignments page). */
+export interface AssignmentAuditQuery {
+  user?: string;
+  day?: string;
+  reasonType?: AssignmentReasonType;
+  max?: number;
 }
 
 /**
