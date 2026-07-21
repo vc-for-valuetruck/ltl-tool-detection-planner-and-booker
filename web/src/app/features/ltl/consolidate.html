@@ -132,7 +132,7 @@
                 <td>
                   <div class="load-cell">
                     <strong>{{ response.seed.loadNumber ?? response.seed.id }}</strong>
-                    <span class="load-tag">Parent</span>
+                    <app-ltl-parent-child-badge role="parent" [dense]="true" />
                   </div>
                 </td>
                 <td>{{ response.seed.customerName ?? '—' }}</td>
@@ -178,9 +178,15 @@
                   <td>
                     <div class="load-cell">
                       <strong>{{ candidate.loadNumber ?? candidate.loadId }}</strong>
-                      <span class="load-tag">
-                        {{ isSelected(candidate.loadId) ? 'Sibling · in plan' : (candidate.isBlocked ? 'Blocked' : 'Candidate') }}
-                      </span>
+                      @if (isSelected(candidate.loadId)) {
+                        <app-ltl-parent-child-badge
+                          role="child"
+                          [parentLabel]="response.seed.loadNumber ?? response.seed.id"
+                          [dense]="true"
+                        />
+                      } @else {
+                        <span class="load-tag">{{ candidate.isBlocked ? 'Blocked' : 'Candidate' }}</span>
+                      }
                     </div>
                   </td>
                   <td>{{ candidate.customerName ?? '—' }}</td>

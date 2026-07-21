@@ -144,7 +144,13 @@ public static class LtlServiceCollectionExtensions
         services.AddSingleton<IConsolidationAuditStore, InMemoryConsolidationAuditStore>();
 
         // Dock mode (Phase 2.5): thin orchestrator over arrivals + consolidation services.
-        // Read-only against Alvys; combine records the consolidation audit only.
+        // Read-only against Alvys; combine records the consolidation audit only. The dock notifier
+        // reuses the shared notification email channel + feed store; recipients per yard come from
+        // Ltl:Dock:NotifyRecipients (empty default → notifications disabled, no send attempted).
+        services
+            .AddOptions<Dock.DockOptions>()
+            .Bind(configuration.GetSection(Dock.DockOptions.SectionName));
+        services.AddScoped<Dock.DockNotificationService>();
         services.AddScoped<Dock.DockService>();
 
         // Internal, non-Alvys assignment audit. Durable EF Core store (AppDbContext) so decisions

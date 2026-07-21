@@ -3,8 +3,10 @@ using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Arrivals;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.Dock;
+using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Tests.Ltl.Consolidation;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace LtlTool.Api.Tests.Ltl.Dock;
@@ -20,7 +22,10 @@ public sealed class DockServiceTests
     private static readonly DateOnly Day = DateOnly.FromDateTime(LtlTestFactory.Now.UtcDateTime);
     private static readonly DateTimeOffset ParentPickup = new(2026, 7, 17, 8, 0, 0, TimeSpan.Zero);
 
-    private static DockService Build(FakeAlvysClient client, ConsolidationOptions? overrides = null)
+    private static DockService Build(
+        FakeAlvysClient client,
+        ConsolidationOptions? overrides = null,
+        DockOptions? dockOptions = null)
     {
         var opts = overrides ?? new ConsolidationOptions();
         var optsWrap = Microsoft.Extensions.Options.Options.Create(opts);
@@ -45,8 +50,18 @@ public sealed class DockServiceTests
 
         var audits = new InMemoryConsolidationAuditStore(LtlTestFactory.Clock());
 
-        return new DockService(arrivals, candidates, plans, audits, optsWrap);
+        var notifications = new DockNotificationService(
+            [new InAppNotificationChannel(), new EmailNotificationChannel(NotificationOptionsWrap())],
+            new InMemoryNotificationStore(),
+            Microsoft.Extensions.Options.Options.Create(dockOptions ?? new DockOptions()),
+            LtlTestFactory.Clock(),
+            NullLogger<DockNotificationService>.Instance);
+
+        return new DockService(arrivals, candidates, plans, audits, notifications, optsWrap);
     }
+
+    private static Microsoft.Extensions.Options.IOptions<NotificationOptions> NotificationOptionsWrap()
+        => Microsoft.Extensions.Options.Options.Create(new NotificationOptions());
 
     private static DateTimeOffset OnDay(int hour) =>
         new(Day.Year, Day.Month, Day.Day, hour, 0, 0, TimeSpan.Zero);
@@ -235,5 +250,60 @@ public sealed class DockServiceTests
                 new DockCombineRequest { ParentLoadId = "", SiblingLoadIds = ["L-2"] },
                 "dock.worker",
                 default));
+    }
+
+    [Fact]
+    public async Task Combine_notification_is_disabled_when_no_recipients_configured_for_the_yard()
+    {
+        var parent = Load("L-1", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup);
+        var sibling = Load("L-2", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup.AddHours(2));
+        var client = new StatefulAlvysClient(parent, sibling);
+
+        var response = await Build(client).CombineAsync(
+            new DockCombineRequest { ParentLoadId = "L-1", SiblingLoadIds = ["L-2"], WarehouseCode = "LAREDO" },
+            "dock.worker",
+            default);
+
+        // Empty Ltl:Dock:NotifyRecipients → honest "Disabled", not a fabricated delivery.
+        Assert.Equal("Disabled", response.Notification.State);
+        Assert.Empty(response.Notification.Recipients);
+    }
+
+    [Fact]
+    public async Task Combine_notification_reports_not_configured_when_recipients_set_but_email_channel_off()
+    {
+        var parent = Load("L-1", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup);
+        var sibling = Load("L-2", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup.AddHours(2));
+        var client = new StatefulAlvysClient(parent, sibling);
+
+        var dockOptions = new DockOptions();
+        dockOptions.NotifyRecipients["LAREDO"] = ["ops@valuetruck.com"];
+
+        var response = await Build(client, dockOptions: dockOptions).CombineAsync(
+            new DockCombineRequest { ParentLoadId = "L-1", SiblingLoadIds = ["L-2"], WarehouseCode = "LAREDO" },
+            "dock.worker",
+            default);
+
+        // Recipients configured, but the shared email channel has no SMTP config → honest NotConfigured.
+        Assert.Equal("NotConfigured", response.Notification.State);
+        Assert.Contains("ops@valuetruck.com", response.Notification.Recipients);
+    }
+
+    [Fact]
+    public async Task Undo_records_a_retraction_audit_and_writes_nothing_to_alvys()
+    {
+        var parent = Load("L-1", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup);
+        var sibling = Load("L-2", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup.AddHours(2));
+        var client = new StatefulAlvysClient(parent, sibling);
+        var service = Build(client);
+
+        var response = await service.UndoAsync(
+            new DockUndoRequest { ParentLoadId = "L-1", SiblingLoadIds = ["L-2"] },
+            "dock.worker",
+            default);
+
+        Assert.Equal("Undo", response.Audit.Action);
+        Assert.Equal("NotPerformed", response.Audit.AlvysWriteback);
+        Assert.Equal("L-1", response.Audit.ParentLoadId);
     }
 }

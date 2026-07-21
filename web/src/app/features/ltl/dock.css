@@ -269,6 +269,100 @@
   color: var(--text-muted);
 }
 
+.selected-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ===================== Result bar (undo + notification) ===================== */
+.result-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-undo {
+  appearance: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  background: var(--card-bg);
+  border: 1px solid var(--danger-text);
+  color: var(--danger-text);
+}
+
+.btn-undo:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.undo-chip,
+.notify-chip {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.undo-chip.undone {
+  background: var(--info-row-bg);
+  color: var(--text-secondary);
+  border-color: var(--info-bg);
+}
+
+.notify-chip.ok {
+  background: var(--info-row-bg);
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.notify-chip.pending {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-color: var(--warning-bg);
+}
+
+.notify-chip.muted {
+  background: var(--card-bg);
+  color: var(--text-muted);
+  border-color: var(--card-border);
+}
+
+.notify-chip.failed {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  border-color: var(--danger-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip-retry {
+  appearance: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  background: var(--danger-text);
+  border: none;
+  color: #fff;
+}
+
+.chip-retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* ===================== Review ===================== */
 .review-grid {
   display: grid;
@@ -511,6 +605,19 @@
   font-size: 12px;
   color: #333;
   line-height: 1.5;
+}
+
+.doc-legend {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.doc-child-note {
+  display: block;
+  font-size: 11px;
+  color: #333;
+  margin-top: 4px;
 }
 
 @media (max-width: 720px) {

@@ -39,6 +39,12 @@ public sealed class DockCombineRequest
 
     /// <summary>Corridor code; defaults to the pilot LAREDO_TO_DALLAS when omitted.</summary>
     public string? CorridorCode { get; set; }
+
+    /// <summary>
+    /// The yard the combine happened at. Drives which <c>Ltl:Dock:NotifyRecipients</c> list is
+    /// notified; null/unknown means no yard-specific recipients and notification is disabled.
+    /// </summary>
+    public string? WarehouseCode { get; set; }
 }
 
 /// <summary>
@@ -52,4 +58,57 @@ public sealed class DockCombineResponse
 {
     public required ConsolidationPlanResponse Plan { get; init; }
     public required ConsolidationAuditRecord Audit { get; init; }
+
+    /// <summary>
+    /// Outcome of the combine-summary notification. Always present — its <see cref="DockNotificationResult.State"/>
+    /// is <c>Disabled</c> when no recipients are configured for the yard, so the SPA can render an
+    /// honest retry chip only when a configured send actually failed. Never blocks the combine.
+    /// </summary>
+    public required DockNotificationResult Notification { get; init; }
+}
+
+/// <summary>
+/// Honest outcome of the dock combine notification. <see cref="State"/> mirrors the underlying
+/// notification delivery state (<c>Delivered</c>/<c>Pending</c>/<c>NotConfigured</c>/<c>Failed</c>)
+/// plus a Dock-specific <c>Disabled</c> when the yard has no configured recipients. The SPA shows a
+/// retry chip for <c>Failed</c>. Recipient addresses are echoed so the UI can name who was targeted;
+/// they are already server-side config, never a secret derived at request time.
+/// </summary>
+public sealed class DockNotificationResult
+{
+    public required string State { get; init; }
+    public required IReadOnlyList<string> Recipients { get; init; }
+    public string? Detail { get; init; }
+}
+
+/// <summary>
+/// Request to record that a just-committed dock combine was undone by the worker (one-tap Undo). The
+/// combine wrote nothing to Alvys, so an undo reverses nothing there either — it records a second,
+/// leadership-visible audit entry marking the retraction. Mirrors <see cref="DockCombineRequest"/> so
+/// the same plan is rebuilt read-only for the audit context.
+/// </summary>
+public sealed class DockUndoRequest
+{
+    public string ParentLoadId { get; set; } = "";
+    public List<string> SiblingLoadIds { get; set; } = [];
+    public string? CorridorCode { get; set; }
+}
+
+/// <summary>Result of an undo: the retraction audit record (<c>AlvysWriteback = NotPerformed</c>).</summary>
+public sealed class DockUndoResponse
+{
+    public required ConsolidationAuditRecord Audit { get; init; }
+}
+
+/// <summary>
+/// Fire-and-forget body for the dock combine effectiveness metric (Phase 2.5). Carries only
+/// status-level context — warehouse, sibling count, tap count, and time-to-combine in milliseconds
+/// (parent tap → docs rendered). No plan body, no PII.
+/// </summary>
+public sealed class DockCombineMetricRequest
+{
+    public string? WarehouseCode { get; set; }
+    public int? SiblingCount { get; set; }
+    public int? TapCount { get; set; }
+    public long? TimeToCombineMs { get; set; }
 }

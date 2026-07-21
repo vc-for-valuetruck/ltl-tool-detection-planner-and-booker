@@ -4,7 +4,15 @@ import { Observable } from 'rxjs';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import { LaredoArrivalsBoard } from './arrivals.models';
 import { ConsolidationCandidateResponse } from './consolidation.models';
-import { DockCombineRequest, DockCombineResponse, DockWarehousesResponse } from './dock.models';
+import {
+  DockCombineMetric,
+  DockCombineRequest,
+  DockCombineResponse,
+  DockNotificationResult,
+  DockUndoRequest,
+  DockUndoResponse,
+  DockWarehousesResponse,
+} from './dock.models';
 
 /**
  * Client for the Phase 2.5 Dock mode API. Read-only against Alvys — arrivals, candidates and the
@@ -43,5 +51,26 @@ export class DockService {
    */
   combine(request: DockCombineRequest): Observable<DockCombineResponse> {
     return this.http.post<DockCombineResponse>(`${this.base}/combine`, request);
+  }
+
+  /**
+   * Records a one-tap Undo of a just-committed combine. Writes a retraction audit entry only —
+   * the combine wrote nothing to Alvys, so an undo reverses nothing there. Read-only against Alvys.
+   */
+  undo(request: DockUndoRequest): Observable<DockUndoResponse> {
+    return this.http.post<DockUndoResponse>(`${this.base}/undo`, request);
+  }
+
+  /** Re-sends the combine notification (retry chip). Records no new audit. */
+  renotify(request: DockCombineRequest): Observable<DockNotificationResult> {
+    return this.http.post<DockNotificationResult>(`${this.base}/notify`, request);
+  }
+
+  /**
+   * Fire-and-forget effectiveness metric (time-to-combine + tap count). Status-only, no PII; a
+   * failure to record must never affect the dock worker, so callers ignore the result.
+   */
+  recordCombineMetric(metric: DockCombineMetric): Observable<void> {
+    return this.http.post<void>(`${this.base}/metrics/combine`, metric);
   }
 }

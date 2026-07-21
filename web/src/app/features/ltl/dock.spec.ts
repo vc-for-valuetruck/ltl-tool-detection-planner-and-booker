@@ -4,7 +4,7 @@ import { Dock } from './dock';
 import { DockService } from './dock.service';
 import { LaredoArrival, LaredoArrivalsBoard } from './arrivals.models';
 import { ConsolidationCandidate, ConsolidationCandidateResponse } from './consolidation.models';
-import { DockCombineResponse } from './dock.models';
+import { DockCombineResponse, DockNotificationResult, DockUndoResponse } from './dock.models';
 
 function arrival(overrides: Partial<LaredoArrival>): LaredoArrival {
   return {
@@ -67,7 +67,14 @@ describe('Dock', () => {
           scanTruncated: false,
         } as ConsolidationCandidateResponse),
       combine: () =>
-        of({ plan: { blockers: [], clickCard: {} }, audit: { alvysWriteback: 'NotPerformed' } } as unknown as DockCombineResponse),
+        of({
+          plan: { blockers: [], clickCard: {} },
+          audit: { alvysWriteback: 'NotPerformed' },
+          notification: { state: 'Disabled', recipients: [] },
+        } as unknown as DockCombineResponse),
+      undo: () => of({ audit: { alvysWriteback: 'NotPerformed' } } as unknown as DockUndoResponse),
+      renotify: () => of({ state: 'Delivered', recipients: ['ops@example.com'] } as DockNotificationResult),
+      recordCombineMetric: () => of(undefined),
       ...stub,
     };
     TestBed.configureTestingModule({
@@ -148,6 +155,65 @@ describe('Dock', () => {
     );
     expect(c['step']()).toBe('result');
     expect(c['audit']()!.alvysWriteback).toBe('NotPerformed');
+  });
+
+  it('combine posts the warehouse code and captures the notification result', () => {
+    const spy = jasmine.createSpy('combine').and.returnValue(
+      of({
+        plan: { blockers: [], clickCard: {} },
+        audit: { alvysWriteback: 'NotPerformed' },
+        notification: { state: 'Pending', recipients: ['ops@example.com'] },
+      } as unknown as DockCombineResponse),
+    );
+    const c = build({ combine: spy });
+    c['selectedWarehouse'].set({ code: 'LAREDO', name: 'Laredo', state: 'TX', nearbyCities: [] });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+    c['combine']();
+
+    expect(spy).toHaveBeenCalledWith(jasmine.objectContaining({ warehouseCode: 'LAREDO' }));
+    expect(c['notification']()!.state).toBe('Pending');
+  });
+
+  it('offers a one-tap Undo after a combine, then marks it undone', () => {
+    const undoSpy = jasmine.createSpy('undo').and.returnValue(
+      of({ audit: { alvysWriteback: 'NotPerformed' } } as unknown as DockUndoResponse),
+    );
+    const c = build({ undo: undoSpy });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+    c['combine']();
+    expect(c['undoAvailable']()).toBeTrue();
+
+    c['undoCombine']();
+    expect(undoSpy).toHaveBeenCalled();
+    expect(c['undone']()).toBeTrue();
+    expect(c['undoAvailable']()).toBeFalse();
+    c['ngOnDestroy']();
+  });
+
+  it('counts taps on the happy path (parent → sibling → combine)', () => {
+    const c = build({});
+    c['pickParent'](arrival({ loadNumber: 'L1' }));
+    expect(c['tapCount']()).toBe(1);
+    c['toggleSibling'](candidate({ loadId: 'L-2' }));
+    expect(c['tapCount']()).toBe(2);
+    c['combine']();
+    expect(c['tapCount']()).toBe(3);
+    c['ngOnDestroy']();
+  });
+
+  it('retries the notification and updates the chip state without a new audit', () => {
+    const renotifySpy = jasmine.createSpy('renotify').and.returnValue(
+      of({ state: 'Delivered', recipients: ['ops@example.com'] } as DockNotificationResult),
+    );
+    const c = build({ renotify: renotifySpy });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+    c['retryNotify']();
+    expect(renotifySpy).toHaveBeenCalled();
+    expect(c['notification']()!.state).toBe('Delivered');
+    expect(c['notifyRetrying']()).toBeFalse();
   });
 
   it('does not combine without a parent and at least one sibling', () => {

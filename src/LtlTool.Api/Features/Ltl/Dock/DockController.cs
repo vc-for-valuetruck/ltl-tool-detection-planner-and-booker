@@ -17,9 +17,10 @@ namespace LtlTool.Api.Features.Ltl.Dock;
 [Route("api/ltl/dock")]
 [Authorize(Policy = AccessPolicies.AllowedEmailDomain)]
 [Produces("application/json")]
-public sealed class DockController(DockService dock) : ControllerBase
+public sealed class DockController(DockService dock, ILogger<DockController> logger) : ControllerBase
 {
     private readonly DockService _dock = dock;
+    private readonly ILogger<DockController> _logger = logger;
 
     /// <summary>
     /// The configured yards a dock worker can pick (Laredo / Dallas in the pilot). Honest projection
@@ -88,6 +89,67 @@ public sealed class DockController(DockService dock) : ControllerBase
         {
             return BadRequest(new { error = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Records a one-tap Undo of a just-committed combine. Writes a retraction audit entry
+    /// (<c>Action = Undo</c>, <c>AlvysWriteback = NotPerformed</c>). Reverses nothing in Alvys — the
+    /// combine wrote nothing there. 400 on missing parent/siblings/unknown corridor.
+    /// </summary>
+    [HttpPost("undo")]
+    [ProducesResponseType(typeof(DockUndoResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<DockUndoResponse>> Undo(
+        [FromBody] DockUndoRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await _dock.UndoAsync(request, CurrentUser(), ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Re-sends the combine notification for a plan (retry chip). Read-only against Alvys; records no
+    /// new audit. Returns the honest notification outcome. 400 on missing parent/siblings/unknown corridor.
+    /// </summary>
+    [HttpPost("notify")]
+    [ProducesResponseType(typeof(DockNotificationResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<DockNotificationResult>> Renotify(
+        [FromBody] DockCombineRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            return Ok(await _dock.RenotifyAsync(request, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Effectiveness metrics (Phase 2.5, consistent with the #140 instrumentation): time-to-combine
+    /// (parent tap → docs rendered) and tap count per combine. Fire-and-forget, status-only — no plan
+    /// body, no PII — so leadership can see how minimal-tap the dock flow actually is in the field.
+    /// </summary>
+    [HttpPost("metrics/combine")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public IActionResult RecordCombineMetric([FromBody] DockCombineMetricRequest? request)
+    {
+        _logger.LogInformation(
+            "Dock metric: combine warehouse={Warehouse} siblings={SiblingCount} taps={TapCount} timeToCombineMs={TimeToCombineMs}",
+            string.IsNullOrWhiteSpace(request?.WarehouseCode) ? "unknown" : request!.WarehouseCode,
+            request?.SiblingCount ?? 0,
+            request?.TapCount ?? 0,
+            request?.TimeToCombineMs ?? 0);
+        return NoContent();
     }
 
     private string CurrentUser() =>

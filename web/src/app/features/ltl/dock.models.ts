@@ -18,6 +18,39 @@ export interface DockCombineRequest {
   parentLoadId: string;
   siblingLoadIds: string[];
   corridorCode?: string;
+  /** Yard the combine happened at — drives which per-warehouse notify recipients are emailed. */
+  warehouseCode?: string;
+}
+
+/**
+ * Honest outcome of the combine-summary notification. `state` mirrors the delivery state
+ * (`Delivered` / `Pending` / `NotConfigured` / `Failed`) plus a Dock-specific `Disabled` when the
+ * yard has no configured recipients. The SPA shows a one-tap retry chip only for `Failed`.
+ */
+export interface DockNotificationResult {
+  state: 'Delivered' | 'Pending' | 'NotConfigured' | 'Failed' | 'Disabled';
+  recipients: string[];
+  detail?: string;
+}
+
+/** Request to record a one-tap Undo of a just-committed combine. Never an Alvys write. */
+export interface DockUndoRequest {
+  parentLoadId: string;
+  siblingLoadIds: string[];
+  corridorCode?: string;
+}
+
+/** Result of an undo: the retraction audit record (`audit.action === 'Undo'`). */
+export interface DockUndoResponse {
+  audit: ConsolidationAuditRecord;
+}
+
+/** Fire-and-forget dock combine effectiveness metric (time-to-combine + tap count). */
+export interface DockCombineMetric {
+  warehouseCode?: string;
+  siblingCount?: number;
+  tapCount?: number;
+  timeToCombineMs?: number;
 }
 
 /**
@@ -29,4 +62,6 @@ export interface DockCombineRequest {
 export interface DockCombineResponse {
   plan: ConsolidationPlanResponse;
   audit: ConsolidationAuditRecord;
+  /** Outcome of the combine-summary notification; `state === 'Disabled'` when no recipients configured. */
+  notification: DockNotificationResult;
 }

@@ -1,5 +1,5 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { LaredoArrival, LaredoArrivalsBoard } from './arrivals.models';
 import {
@@ -7,9 +7,10 @@ import {
   ConsolidationCandidateResponse,
   WarehouseSummary,
 } from './consolidation.models';
-import { DockCombineResponse } from './dock.models';
+import { DockCombineResponse, DockNotificationResult } from './dock.models';
 import { DockService } from './dock.service';
 import { LtlNav } from './ltl-nav';
+import { LtlParentChildBadge } from './ltl-parent-child-badge';
 
 /** The dock-worker flow is a linear step machine; each value is one screen in the wizard. */
 type DockStep = 'warehouse' | 'arrivals' | 'siblings' | 'review' | 'result';
@@ -31,13 +32,16 @@ type PrintMode = 'none' | 'bol' | 'clickcard';
 @Component({
   selector: 'app-dock',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, LtlNav],
+  imports: [CommonModule, FormsModule, DatePipe, LtlNav, LtlParentChildBadge],
   templateUrl: './dock.html',
   styleUrls: ['./dock.css'],
   host: { '[class.printing-bol]': "printMode() === 'bol'", '[class.printing-card]': "printMode() === 'clickcard'" },
 })
-export class Dock implements OnInit {
+export class Dock implements OnInit, OnDestroy {
   private readonly dock = inject(DockService);
+
+  /** How long the one-tap Undo stays offered after a combine, in seconds (a few minutes). */
+  private static readonly UndoWindowSeconds = 180;
 
   protected readonly step = signal<DockStep>('warehouse');
 
@@ -59,6 +63,23 @@ export class Dock implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly copyMessage = signal<string | null>(null);
 
+  // --- Feature 3: minimal-tap instrumentation + one-tap Undo ----------------
+  /** Taps on the happy path since the parent was chosen (parent tap → combine). Powers the metric. */
+  protected readonly tapCount = signal(0);
+  /** Epoch ms when the parent was tapped; the start of the time-to-combine measurement. */
+  private parentTappedAt: number | null = null;
+
+  /** Notification outcome for the committed combine; updated in place by the retry chip. */
+  protected readonly notification = signal<DockNotificationResult | null>(null);
+  protected readonly notifyRetrying = signal(false);
+
+  /** One-tap Undo state. Available for a few minutes after combine, until used. */
+  protected readonly undoSecondsLeft = signal(0);
+  protected readonly undone = signal(false);
+  protected readonly undoing = signal(false);
+  protected readonly undoAvailable = computed(() => this.undoSecondsLeft() > 0 && !this.undone());
+  private undoTimer: ReturnType<typeof setInterval> | null = null;
+
   private static readonly stepOrder: DockStep[] = ['warehouse', 'arrivals', 'siblings', 'review', 'result'];
   protected readonly stepIndex = computed(() => Dock.stepOrder.indexOf(this.step()));
 
@@ -70,6 +91,10 @@ export class Dock implements OnInit {
   protected readonly hasSelection = computed(() => this.selectedSiblingIds().length > 0);
   protected readonly plan = computed(() => this.combineResult()?.plan ?? null);
   protected readonly audit = computed(() => this.combineResult()?.audit ?? null);
+  /** Parent load number/id for naming the parent on child badges; null when unknown. */
+  protected readonly parentLabel = computed(
+    () => this.plan()?.parent.loadNumber ?? this.parent()?.loadNumber ?? null,
+  );
 
   ngOnInit(): void {
     this.loading.set(true);
@@ -120,6 +145,10 @@ export class Dock implements OnInit {
     if (!arrival.loadNumber) return;
     this.parent.set(arrival);
     this.selectedSiblingIds.set([]);
+    // Start the time-to-combine clock and the tap budget at the parent tap (tap #1). Candidates are
+    // loaded immediately here so they are pre-ranked and ready before the worker looks up.
+    this.parentTappedAt = Date.now();
+    this.tapCount.set(1);
     this.step.set('siblings');
     this.loadCandidates(arrival.loadNumber);
   }
@@ -154,6 +183,7 @@ export class Dock implements OnInit {
         ? current.filter((id) => id !== candidate.loadId)
         : [...current, candidate.loadId],
     );
+    this.tapCount.update((n) => n + 1);
   }
 
   protected addManualSibling(): void {
@@ -163,6 +193,7 @@ export class Dock implements OnInit {
       this.selectedSiblingIds.set([...this.selectedSiblingIds(), id]);
     }
     this.manualSiblingId.set('');
+    this.tapCount.update((n) => n + 1);
   }
 
   protected removeSibling(id: string): void {
@@ -177,11 +208,18 @@ export class Dock implements OnInit {
 
   // --- Step 4/5: combine ---------------------------------------------------
 
+  /**
+   * The single happy-path action: records the audit, builds the BOL packet + click card, and fires
+   * the yard notification — all in one round-trip, with no confirmation dialog. On success it lands
+   * on the result step (docs rendered), starts the one-tap Undo window, and records the
+   * time-to-combine + tap-count effectiveness metric.
+   */
   protected combine(): void {
     const parent = this.parent();
     const siblings = this.selectedSiblingIds();
     if (!parent?.loadNumber || siblings.length === 0) return;
 
+    this.tapCount.update((n) => n + 1);
     this.loading.set(true);
     this.error.set(null);
     this.dock
@@ -189,18 +227,112 @@ export class Dock implements OnInit {
         parentLoadId: parent.loadNumber,
         siblingLoadIds: siblings,
         corridorCode: this.candidates()?.corridorCode,
+        warehouseCode: this.selectedWarehouse()?.code,
       })
       .subscribe({
         next: (res) => {
           this.combineResult.set(res);
+          this.notification.set(res.notification);
+          this.undone.set(false);
           this.loading.set(false);
           this.step.set('result');
+          this.startUndoWindow();
+          this.recordCombineMetric(siblings.length);
         },
         error: (err) => {
           this.error.set(this.messageOf(err, 'Combine failed — nothing was recorded.'));
           this.loading.set(false);
         },
       });
+  }
+
+  /** One-tap Undo: records a retraction audit. Nothing was written to Alvys, so this reverses nothing there. */
+  protected undoCombine(): void {
+    const parent = this.parent();
+    const siblings = this.selectedSiblingIds();
+    if (!parent?.loadNumber || siblings.length === 0 || this.undone()) return;
+
+    this.undoing.set(true);
+    this.dock
+      .undo({
+        parentLoadId: parent.loadNumber,
+        siblingLoadIds: siblings,
+        corridorCode: this.candidates()?.corridorCode,
+      })
+      .subscribe({
+        next: () => {
+          this.undone.set(true);
+          this.undoing.set(false);
+          this.stopUndoWindow();
+        },
+        error: (err) => {
+          this.error.set(this.messageOf(err, 'Undo failed — the combine audit still stands.'));
+          this.undoing.set(false);
+        },
+      });
+  }
+
+  /** Retry chip: re-sends the yard notification without recording another audit. */
+  protected retryNotify(): void {
+    const parent = this.parent();
+    const siblings = this.selectedSiblingIds();
+    if (!parent?.loadNumber || siblings.length === 0) return;
+
+    this.notifyRetrying.set(true);
+    this.dock
+      .renotify({
+        parentLoadId: parent.loadNumber,
+        siblingLoadIds: siblings,
+        corridorCode: this.candidates()?.corridorCode,
+        warehouseCode: this.selectedWarehouse()?.code,
+      })
+      .subscribe({
+        next: (result) => {
+          this.notification.set(result);
+          this.notifyRetrying.set(false);
+        },
+        error: () => {
+          // Non-blocking: leave the prior Failed state so the chip stays retryable.
+          this.notifyRetrying.set(false);
+        },
+      });
+  }
+
+  private recordCombineMetric(siblingCount: number): void {
+    const timeToCombineMs =
+      this.parentTappedAt !== null ? Date.now() - this.parentTappedAt : undefined;
+    // Fire-and-forget: a metric failure must never affect the dock worker.
+    this.dock
+      .recordCombineMetric({
+        warehouseCode: this.selectedWarehouse()?.code,
+        siblingCount,
+        tapCount: this.tapCount(),
+        timeToCombineMs,
+      })
+      .subscribe({ next: () => {}, error: () => {} });
+  }
+
+  private startUndoWindow(): void {
+    this.stopUndoWindow();
+    this.undoSecondsLeft.set(Dock.UndoWindowSeconds);
+    if (typeof setInterval !== 'function') return;
+    this.undoTimer = setInterval(() => {
+      const left = this.undoSecondsLeft() - 1;
+      this.undoSecondsLeft.set(Math.max(0, left));
+      if (left <= 0) this.stopUndoWindow();
+    }, 1000);
+  }
+
+  private stopUndoWindow(): void {
+    if (this.undoTimer !== null) {
+      clearInterval(this.undoTimer);
+      this.undoTimer = null;
+    }
+    this.undoSecondsLeft.set(0);
+  }
+
+  ngOnDestroy(): void {
+    this.stopUndoWindow();
   }
 
   protected goToReview(): void {
@@ -244,6 +376,11 @@ export class Dock implements OnInit {
     this.candidates.set(null);
     this.selectedSiblingIds.set([]);
     this.combineResult.set(null);
+    this.notification.set(null);
+    this.undone.set(false);
+    this.stopUndoWindow();
+    this.tapCount.set(0);
+    this.parentTappedAt = null;
     this.copyMessage.set(null);
     this.error.set(null);
     this.step.set('arrivals');

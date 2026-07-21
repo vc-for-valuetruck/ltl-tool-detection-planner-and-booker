@@ -17,12 +17,14 @@ public sealed class DockService(
     ConsolidationCandidateService candidates,
     ConsolidationPlanService plans,
     IConsolidationAuditStore audits,
+    DockNotificationService notifications,
     IOptions<ConsolidationOptions> options)
 {
     private readonly LaredoArrivalsService _arrivals = arrivals;
     private readonly ConsolidationCandidateService _candidates = candidates;
     private readonly ConsolidationPlanService _plans = plans;
     private readonly IConsolidationAuditStore _audits = audits;
+    private readonly DockNotificationService _notifications = notifications;
     private readonly ConsolidationOptions _opts = options.Value;
 
     /// <summary>
@@ -69,18 +71,51 @@ public sealed class DockService(
     public async Task<DockCombineResponse> CombineAsync(
         DockCombineRequest request, string recordedBy, CancellationToken ct)
     {
-        var plan = await _plans.BuildAsync(
-            new ConsolidationPlanRequest
-            {
-                ParentLoadId = request.ParentLoadId,
-                SiblingLoadIds = request.SiblingLoadIds,
-                CorridorCode = NormalizeCorridor(request.CorridorCode),
-            },
-            ct);
+        var plan = await BuildPlanAsync(request.ParentLoadId, request.SiblingLoadIds, request.CorridorCode, ct);
 
         var audit = _audits.Record(plan, recordedBy);
-        return new DockCombineResponse { Plan = plan, Audit = audit };
+
+        // Notify the yard's recipients. Non-blocking by construction — NotifyCombineAsync never
+        // throws, so a mail failure surfaces as a retry chip and never rolls back the combine/audit.
+        var notification = await _notifications.NotifyCombineAsync(request.WarehouseCode, plan, ct);
+
+        return new DockCombineResponse { Plan = plan, Audit = audit, Notification = notification };
     }
+
+    /// <summary>
+    /// Records a one-tap Undo of a just-committed combine. Rebuilds the same plan read-only for audit
+    /// context and writes an <c>Undo</c> audit entry. Reverses nothing in Alvys — the combine wrote
+    /// nothing there — it keeps the leadership trail honest about the retraction.
+    /// </summary>
+    public async Task<DockUndoResponse> UndoAsync(
+        DockUndoRequest request, string recordedBy, CancellationToken ct)
+    {
+        var plan = await BuildPlanAsync(request.ParentLoadId, request.SiblingLoadIds, request.CorridorCode, ct);
+        var audit = _audits.RecordUndo(plan, recordedBy);
+        return new DockUndoResponse { Audit = audit };
+    }
+
+    /// <summary>
+    /// Re-sends the combine notification for a plan (retry chip). Read-only against Alvys; rebuilds
+    /// the plan and re-invokes the non-blocking notifier — records no new audit.
+    /// </summary>
+    public async Task<DockNotificationResult> RenotifyAsync(
+        DockCombineRequest request, CancellationToken ct)
+    {
+        var plan = await BuildPlanAsync(request.ParentLoadId, request.SiblingLoadIds, request.CorridorCode, ct);
+        return await _notifications.NotifyCombineAsync(request.WarehouseCode, plan, ct);
+    }
+
+    private Task<ConsolidationPlanResponse> BuildPlanAsync(
+        string parentLoadId, List<string> siblingLoadIds, string? corridorCode, CancellationToken ct)
+        => _plans.BuildAsync(
+            new ConsolidationPlanRequest
+            {
+                ParentLoadId = parentLoadId,
+                SiblingLoadIds = siblingLoadIds,
+                CorridorCode = NormalizeCorridor(corridorCode),
+            },
+            ct);
 
     private string? NormalizeWarehouse(string? code) =>
         string.IsNullOrWhiteSpace(code) ? null : code.Trim();

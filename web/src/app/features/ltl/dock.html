@@ -166,7 +166,13 @@
                 </span>
               }
             </div>
-            <button type="button" class="btn-primary" (click)="goToReview()">Review combine →</button>
+            <div class="selected-actions">
+              <!-- One-tap happy path: combine directly (audit + BOL + click card + notify), no dialog. -->
+              <button type="button" class="btn-primary" [disabled]="loading()" (click)="combine()">
+                Combine {{ selectedSiblingIds().length + 1 }} loads
+              </button>
+              <button type="button" class="btn-ghost" (click)="goToReview()">Review first</button>
+            </div>
           </div>
         }
       </section>
@@ -178,14 +184,14 @@
         <h2>Review before you combine</h2>
         <div class="review-grid">
           <div class="review-card parent-card">
-            <span class="review-role">Parent · BOL controlling</span>
+            <app-ltl-parent-child-badge role="parent" />
             <span class="review-load">{{ parent()?.loadNumber }}</span>
             <span class="review-sub">{{ parent()?.inboundFrom?.label ?? '—' }} → {{ parent()?.laredo?.label ?? selectedWarehouse()?.name }}</span>
             @if (parent()?.driverName) { <span class="review-sub">Driver {{ parent()?.driverName }}</span> }
           </div>
           @for (id of selectedSiblingIds(); track id) {
             <div class="review-card">
-              <span class="review-role">Sibling</span>
+              <app-ltl-parent-child-badge role="child" [parentLabel]="parentLabel()" />
               <span class="review-load">{{ siblingLabel(id) }}</span>
             </div>
           }
@@ -218,6 +224,42 @@
             <button type="button" class="btn" (click)="print('bol')">Print BOL packet</button>
             <button type="button" class="btn" (click)="print('clickcard')">Print click card</button>
           </div>
+        </div>
+
+        <!-- One-tap Undo (no confirmation dialog) + honest notification state / retry chip -->
+        <div class="result-bar">
+          @if (undone()) {
+            <span class="undo-chip undone">Combine undone — a retraction audit was recorded.</span>
+          } @else if (undoAvailable()) {
+            <button type="button" class="btn-undo" [disabled]="undoing()" (click)="undoCombine()">
+              ↩ Undo combine ({{ undoSecondsLeft() }}s)
+            </button>
+          }
+
+          @if (notification(); as n) {
+            @switch (n.state) {
+              @case ('Delivered') {
+                <span class="notify-chip ok">Notified {{ n.recipients.length }} recipient(s).</span>
+              }
+              @case ('Pending') {
+                <span class="notify-chip pending">Notification queued for {{ n.recipients.length }} recipient(s).</span>
+              }
+              @case ('NotConfigured') {
+                <span class="notify-chip muted">Email channel not configured — no notification sent.</span>
+              }
+              @case ('Disabled') {
+                <span class="notify-chip muted">No yard notification recipients configured.</span>
+              }
+              @case ('Failed') {
+                <span class="notify-chip failed">
+                  Notification failed.
+                  <button type="button" class="chip-retry" [disabled]="notifyRetrying()" (click)="retryNotify()">
+                    {{ notifyRetrying() ? 'Retrying…' : 'Retry' }}
+                  </button>
+                </span>
+              }
+            }
+          }
         </div>
 
         @if (p.blockers.length > 0) {
@@ -266,7 +308,7 @@
         </thead>
         <tbody>
           <tr class="doc-parent">
-            <td>PARENT · BOL controlling</td>
+            <td><app-ltl-parent-child-badge role="parent" [dense]="true" /></td>
             <td>{{ p.parent.loadNumber ?? p.parent.id }}</td>
             <td>{{ p.parent.customerName ?? '—' }}</td>
             <td>—</td>
@@ -275,7 +317,10 @@
           </tr>
           @for (s of p.siblings; track s.loadId) {
             <tr>
-              <td>Sibling</td>
+              <td>
+                <app-ltl-parent-child-badge role="child" [parentLabel]="parentLabel()" [dense]="true" />
+                <span class="doc-child-note">miles zeroed in Alvys, LTL=true / Main Load Id={{ p.clickCard.mainLoadIdReferenceValue }}</span>
+              </td>
               <td>{{ s.loadNumber ?? s.loadId }}</td>
               <td>{{ s.customerName ?? '—' }}</td>
               <td>{{ tierLabel(s.customerTier) }}</td>
@@ -306,6 +351,10 @@
       <header class="doc-head">
         <h1>Alvys Click Card · Manual Steps</h1>
         <span class="doc-meta">Audit {{ audit()?.id }} · apply in Alvys after dock verification</span>
+        <span class="doc-legend">
+          <app-ltl-parent-child-badge role="parent" [dense]="true" />
+          <app-ltl-parent-child-badge role="child" [parentLabel]="parentLabel()" [dense]="true" />
+        </span>
       </header>
       <div class="clickcard-actions no-print">
         <button type="button" class="btn" (click)="copyClickCard()">Copy to clipboard</button>

@@ -4,9 +4,11 @@ using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Arrivals;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.Dock;
+using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace LtlTool.Api.Tests.Ltl.Dock;
@@ -40,7 +42,17 @@ public sealed class DockControllerTests
             new NullStopSequencer(LtlTestFactory.Clock()));
         var audits = new InMemoryConsolidationAuditStore(LtlTestFactory.Clock());
 
-        var controller = new DockController(new DockService(arrivals, candidates, plans, audits, optsWrap));
+        var notifications = new DockNotificationService(
+            [new InAppNotificationChannel(), new EmailNotificationChannel(
+                Microsoft.Extensions.Options.Options.Create(new NotificationOptions()))],
+            new InMemoryNotificationStore(),
+            Microsoft.Extensions.Options.Options.Create(new DockOptions()),
+            LtlTestFactory.Clock(),
+            NullLogger<DockNotificationService>.Instance);
+
+        var controller = new DockController(
+            new DockService(arrivals, candidates, plans, audits, notifications, optsWrap),
+            NullLogger<DockController>.Instance);
         var identity = new ClaimsIdentity([new Claim("preferred_username", "dock@valuetruck.com")], "test");
         controller.ControllerContext = new ControllerContext
         {

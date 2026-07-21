@@ -197,6 +197,9 @@ public sealed class ConsolidationControllerPhase4Tests
         public ConsolidationAuditRecord Record(ConsolidationPlanResponse plan, string recordedBy) =>
             throw new NotSupportedException();
 
+        public ConsolidationAuditRecord RecordUndo(ConsolidationPlanResponse plan, string recordedBy) =>
+            throw new NotSupportedException();
+
         public IReadOnlyList<ConsolidationAuditRecord> ForParent(string parentLoadIdOrNumber) =>
             record is not null && string.Equals(record.ParentLoadId, parentLoadIdOrNumber, StringComparison.OrdinalIgnoreCase)
                 ? [record]
