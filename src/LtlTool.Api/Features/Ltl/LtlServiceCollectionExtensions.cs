@@ -33,6 +33,12 @@ public static class LtlServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
 
         services.AddScoped<BillingReadinessService>();
+
+        // Payroll double-pay guard (Phase 4): pure analyzer + read-only trip-fetch orchestration.
+        // Highest-value billing-leak check — flags a driver paid loaded miles on >1 consolidation
+        // sibling trip. Never writes to Alvys.
+        services.AddSingleton<PayrollDoublePayAnalyzer>();
+        services.AddScoped<PayrollDoublePayService>();
         services.AddScoped<WorkflowStageService>();
         services.AddScoped<VisibilityAnalyzer>();
         services.AddScoped<EquipmentEventAnalyzer>();

@@ -31,6 +31,7 @@ public sealed class LtlController(
     ConsolidationOpportunityService consolidationOpportunityService,
     CapacitySnapshotService capacity,
     LaredoArrivalsService arrivals,
+    PayrollDoublePayService payroll,
     ILogger<LtlController> logger) : ControllerBase
 {
     /// <summary>Normalized, filtered, sorted, paged LTL search over the swept Alvys loads.</summary>
@@ -243,6 +244,22 @@ public sealed class LtlController(
     public async Task<ActionResult<IReadOnlyList<LtlLoadSummary>>> BillingWorklist(
         [FromQuery] BillingBadge? badge, CancellationToken ct)
         => Ok(await loads.BillingWorklistAsync(badge, ct));
+
+    /// <summary>
+    /// Payroll double-pay guard (Phase 4): given a consolidation group's load numbers (parent +
+    /// LTL siblings), flags any driver paid non-zero loaded miles on more than one trip of the
+    /// group — the "paid a driver twice/triple for one linehaul" leak. Read-only; group membership
+    /// is confirmed on Alvys' own <c>Main Load Id</c> trip reference. Comma-separated load numbers.
+    /// </summary>
+    [HttpGet("payroll/double-pay")]
+    [ProducesResponseType(typeof(PayrollDoublePayResult), StatusCodes.Status200OK)]
+    public async Task<ActionResult<PayrollDoublePayResult>> PayrollDoublePay(
+        [FromQuery] string? loadNumbers, CancellationToken ct)
+    {
+        var numbers = (loadNumbers ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return Ok(await payroll.AnalyzeGroupAsync(numbers, ct));
+    }
 
     /// <summary>Loads carrying one or more operational/billing exceptions.</summary>
     [HttpGet("exceptions")]

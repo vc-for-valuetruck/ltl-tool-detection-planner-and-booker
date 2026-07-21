@@ -916,3 +916,52 @@ public sealed class LtlSearchResponse
     /// </summary>
     public bool Truncated { get; init; }
 }
+
+/// <summary>
+/// One driver charged non-zero loaded miles on more than one trip of the same consolidation group
+/// (see <see cref="PayrollDoublePayAnalyzer"/>). Cites the real Alvys trip ids, driver id, and the
+/// parent load id it grouped on — this is the "paid a driver twice/triple for one linehaul" leak.
+/// </summary>
+public sealed class PayrollDoublePayFinding
+{
+    /// <summary>Parent load id from the child trips' <c>Main Load Id</c> reference (the group key).</summary>
+    public required string ParentLoadId { get; init; }
+
+    /// <summary>Alvys driver id (or the driver name when no id is present) the pay is attributed to.</summary>
+    public required string DriverId { get; init; }
+
+    /// <summary>Driver name when Alvys supplied one; null when only an id is known.</summary>
+    public string? DriverName { get; init; }
+
+    /// <summary>The offending trips — each pays this driver non-zero loaded miles in the same group.</summary>
+    public IReadOnlyList<PayrollTripPay> Trips { get; init; } = [];
+
+    /// <summary>Plain-language explanation for the worklist, safe to show verbatim.</summary>
+    public required string Message { get; init; }
+}
+
+/// <summary>One trip's driver-facing pay signals cited by a <see cref="PayrollDoublePayFinding"/>.</summary>
+public sealed record PayrollTripPay(
+    string? TripId,
+    string? TripNumber,
+    string? LoadNumber,
+    decimal? LoadedMiles,
+    decimal? TripValue);
+
+/// <summary>
+/// Result of the payroll double-pay guard over a set of consolidation-group trips.
+/// <see cref="Evaluated"/> is false (via <see cref="NotEvaluated"/>) when no trip carried a
+/// <c>Main Load Id</c> reference — honestly "nothing to inspect", never "clean".
+/// </summary>
+public sealed class PayrollDoublePayResult
+{
+    /// <summary>Shared not-evaluated singleton (no trips, or none in a consolidation group).</summary>
+    public static readonly PayrollDoublePayResult NotEvaluated = new();
+
+    public bool Evaluated { get; init; }
+
+    public IReadOnlyList<PayrollDoublePayFinding> Findings { get; init; } = [];
+
+    /// <summary>True when at least one driver is double-paid across siblings in the inspected set.</summary>
+    public bool HasDoublePayRisk { get; init; }
+}
