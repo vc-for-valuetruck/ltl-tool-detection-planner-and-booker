@@ -28,6 +28,18 @@ public sealed class MatchServiceTests
         ScheduledDeliveryAt = Pickup.AddDays(1),
     };
 
+    /// <summary>A load with no pickup instant — window feasibility must stay not-evaluated.</summary>
+    private static LtlLoadSummary LoadWithoutPickup() => new()
+    {
+        Id = "L1",
+        Status = "Open",
+        Equipment = ["Dry Van"],
+        WeightLbs = 8000m,
+        Origin = new LtlPlace { City = "Dallas", State = "TX" },
+        ScheduledPickupAt = null,
+        ScheduledDeliveryAt = Pickup.AddDays(1),
+    };
+
     private static MatchCandidate TruckCandidate(string truckId) =>
         new() { Truck = new AlvysTruck { Id = truckId, TruckNum = truckId } };
 
@@ -84,10 +96,9 @@ public sealed class MatchServiceTests
     public async Task Window_feasibility_not_evaluated_when_the_load_has_no_pickup_instant()
     {
         var service = Build(new FakeAlvysClient());
-        var load = Load();
-        load.ScheduledPickupAt = null;
 
-        var ctx = await service.FetchWindowFeasibilityAsync(load, [TruckCandidate("T1")], default);
+        var ctx = await service.FetchWindowFeasibilityAsync(
+            LoadWithoutPickup(), [TruckCandidate("T1")], default);
 
         Assert.False(ctx.Evaluated);
         Assert.Same(TripCommitmentContext.NotEvaluated, ctx);
