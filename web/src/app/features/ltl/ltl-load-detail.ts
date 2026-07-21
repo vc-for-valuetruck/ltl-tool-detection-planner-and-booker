@@ -223,7 +223,7 @@ export class LtlLoadDetail implements OnInit {
   protected badgeClass(badge: string): string {
     if (badge === 'ReadyToBill') return 'chip chip-good';
     if (badge === 'AlreadyInvoiced') return 'chip chip-neutral';
-    if (badge === 'ExceptionBlockingBilling') return 'chip chip-danger';
+    if (badge === 'ExceptionBlockingBilling' || badge === 'DaysPastTerms') return 'chip chip-danger';
     return 'chip chip-warn';
   }
 

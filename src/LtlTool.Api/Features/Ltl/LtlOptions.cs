@@ -129,6 +129,38 @@ public sealed class LtlOptions
     /// Deterministic accessorial-review thresholds (Phase 3.5). Bound from <c>Ltl:AccessorialReview</c>.
     /// </summary>
     public AccessorialReviewOptions AccessorialReview { get; set; } = new();
+
+    /// <summary>
+    /// Accounts-receivable / days-past-terms settings (Phase 4). Bound from <c>Ltl:Billing</c>.
+    /// </summary>
+    public BillingOptions Billing { get; set; } = new();
+}
+
+/// <summary>
+/// Billing / accounts-receivable settings (bound from <c>Ltl:Billing</c>). The per-customer
+/// payment terms ship <b>empty</b> on purpose: net-terms are a per-customer contract fact, never
+/// something the tool may invent. They are used only to <i>derive</i> a due date for an unpaid
+/// invoice that carries none of its own — when neither a real <c>DueDate</c> nor a configured
+/// term exists, the invoice's aging stays honestly unevaluated rather than assuming a number.
+/// </summary>
+public sealed class BillingOptions
+{
+    public const string SectionName = "Ltl:Billing";
+
+    /// <summary>
+    /// Per-customer payment terms in net days, keyed by Alvys customer id <b>or</b> customer name
+    /// (case-insensitive; id is tried first). Ships empty — no invented defaults. Used only to
+    /// derive an unpaid invoice's due date (<c>InvoicedDate</c>/<c>CreatedDate</c> + net days) when
+    /// the invoice has no <c>DueDate</c> of its own.
+    /// </summary>
+    public Dictionary<string, int> CustomerTermsDays { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Days past due at/above which an unpaid invoice is flagged with the
+    /// <see cref="BillingBadge.DaysPastTerms"/> badge. Defaults to 1 — flagged the day it goes past
+    /// due (a still-current invoice, days-past-due &lt;= 0, is never flagged).
+    /// </summary>
+    public int DaysPastTermsThreshold { get; set; } = 1;
 }
 
 /// <summary>

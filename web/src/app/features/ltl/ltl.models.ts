@@ -35,7 +35,8 @@ export type BillingBadge =
   | 'AlreadyInvoiced'
   | 'PossibleUnbilledAccessorial'
   | 'CarrierAccessorialMismatch'
-  | 'InvoiceAmountDrift';
+  | 'InvoiceAmountDrift'
+  | 'DaysPastTerms';
 
 export type AssignmentState = 'Unassigned' | 'Assigned' | 'Unknown';
 
@@ -512,6 +513,38 @@ export interface LtlSearchQuery {
   sortDescending?: boolean;
   page?: number;
   pageSize?: number;
+}
+
+/** One trip's driver-facing pay signals cited by a payroll double-pay finding. */
+export interface PayrollTripPay {
+  tripId: string | null;
+  tripNumber: string | null;
+  loadNumber: string | null;
+  loadedMiles: number | null;
+  tripValue: number | null;
+}
+
+/**
+ * One driver charged non-zero loaded miles on more than one trip of the same consolidation group
+ * (Phase 4 payroll double-pay guard). Cites the real Alvys trip ids, driver id, and the parent load
+ * id it grouped on — the "paid a driver twice/triple for one linehaul" leak.
+ */
+export interface PayrollDoublePayFinding {
+  parentLoadId: string;
+  driverId: string;
+  driverName: string | null;
+  trips: PayrollTripPay[];
+  message: string;
+}
+
+/**
+ * Result of the payroll double-pay guard over a consolidation group's trips. `evaluated=false`
+ * means no trip carried a Main Load Id reference — honestly "nothing to inspect", never "clean".
+ */
+export interface PayrollDoublePayResult {
+  evaluated: boolean;
+  findings: PayrollDoublePayFinding[];
+  hasDoublePayRisk: boolean;
 }
 
 /** One equipment-type bucket in the trailer pool breakdown (Phase 7.4 capacity snapshot). */

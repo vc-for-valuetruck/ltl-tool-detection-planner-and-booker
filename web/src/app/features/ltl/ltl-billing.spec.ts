@@ -65,8 +65,10 @@ describe('LtlBilling', () => {
   it('maps badges to human labels and readiness classes', () => {
     const c = build({ billingWorklist: () => of([]) });
     expect(c['badgeLabel']('MissingPod')).toBe('Missing POD');
+    expect(c['badgeLabel']('DaysPastTerms')).toBe('Days Past Terms');
     expect(c['badgeClass']('ReadyToBill')).toContain('chip-good');
     expect(c['badgeClass']('ExceptionBlockingBilling')).toContain('chip-danger');
+    expect(c['badgeClass']('DaysPastTerms')).toContain('chip-danger');
     expect(c['badgeClass']('MissingRate')).toContain('chip-warn');
   });
 

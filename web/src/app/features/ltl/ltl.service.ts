@@ -17,6 +17,7 @@ import {
   LtlSearchResponse,
   MarginRollupResponse,
   MatchResult,
+  PayrollDoublePayResult,
   RollupGroupBy,
   SavedView,
   SavedViewCollection,
@@ -89,6 +90,15 @@ export class LtlService {
 
   exceptions(): Observable<LtlLoadSummary[]> {
     return this.http.get<LtlLoadSummary[]>(`${this.base}/exceptions`);
+  }
+
+  /**
+   * Payroll double-pay guard (Phase 4): given a consolidation group's load numbers (parent + LTL
+   * siblings), flags any driver paid loaded miles on more than one trip of the group. Read-only.
+   */
+  payrollDoublePay(loadNumbers: string[]): Observable<PayrollDoublePayResult> {
+    const params = new HttpParams().set('loadNumbers', loadNumbers.join(','));
+    return this.http.get<PayrollDoublePayResult>(`${this.base}/payroll/double-pay`, { params });
   }
 
   /**
