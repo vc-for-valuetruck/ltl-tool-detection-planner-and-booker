@@ -168,6 +168,24 @@ table.grid td {
   color: var(--text-secondary);
 }
 
+/* Clickable exception-type filter chips. Default (unselected) reads as a neutral toggle. */
+button.chip {
+  cursor: pointer;
+  border: 1px solid var(--border, #e2e8f0);
+  background: #f1f5f9;
+  color: var(--text-secondary);
+}
+
+button.chip:hover {
+  background: #e2e8f0;
+}
+
+button.chip.chip-active {
+  background: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+  color: #fff;
+}
+
 .muted {
   color: var(--text-muted);
 }

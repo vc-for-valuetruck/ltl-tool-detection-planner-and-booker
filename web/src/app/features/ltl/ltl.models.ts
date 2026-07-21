@@ -91,6 +91,22 @@ export interface LtlLateDelivery {
   message: string;
 }
 
+/**
+ * Stuck-at-stop signal, derived only from live Alvys trip-stop status: the truck recorded an
+ * arrival at a stop but no departure, dwelling past a configured threshold. Null unless the load is
+ * stuck. `message` ALWAYS carries the honest caveat that this may just be an unclosed stop, not a
+ * physically stranded truck — the UI must render it verbatim and never present the dwell as fact.
+ */
+export interface LtlStuckStop {
+  stopId: string;
+  stopType: string | null;
+  city: string | null;
+  state: string | null;
+  arrivedAt: string;
+  hoursSinceArrival: number;
+  message: string;
+}
+
 /** Accounts-receivable aging bucket for an unpaid invoice (Current/30/60/90+). */
 export type InvoiceAgingBucket = 'Current' | 'Days1To30' | 'Days31To60' | 'Days61To90' | 'Over90Days';
 
@@ -202,6 +218,11 @@ export interface LtlLoadSummary {
    * predictedLate, which is a forward-looking ETA estimate.
    */
   lateDelivery: LtlLateDelivery | null;
+  /**
+   * Stuck-at-stop signal for this load (arrived at a stop, no departure recorded, dwelling past the
+   * threshold). Null unless the load is stuck. The message carries a mandatory honest caveat.
+   */
+  stuckStop: LtlStuckStop | null;
   equipment: string[];
   weightLbs: number | null;
   volume: number | null;

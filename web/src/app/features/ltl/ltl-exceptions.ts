@@ -24,10 +24,34 @@ export class LtlExceptions implements OnInit {
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
 
-  protected readonly hasLoads = computed(() => this.loads().length > 0);
-  protected readonly blockingCount = computed(
-    () => this.loads().filter((l) => l.exceptions.some((e) => e.blocksBilling)).length,
+  /** Active type filter chip. 'all' shows every exception-bearing load. */
+  protected readonly typeFilter = signal<'all' | 'LateDelivery' | 'StuckAtStop'>('all');
+
+  private readonly hasCode = (l: LtlLoadSummary, code: string) =>
+    l.exceptions.some((e) => e.code === code);
+
+  protected readonly lateDeliveryCount = computed(
+    () => this.loads().filter((l) => this.hasCode(l, 'LateDelivery')).length,
   );
+  protected readonly stuckStopCount = computed(
+    () => this.loads().filter((l) => this.hasCode(l, 'StuckAtStop')).length,
+  );
+
+  /** Loads after applying the active type filter chip. */
+  protected readonly filteredLoads = computed(() => {
+    const filter = this.typeFilter();
+    if (filter === 'all') return this.loads();
+    return this.loads().filter((l) => this.hasCode(l, filter));
+  });
+
+  protected readonly hasLoads = computed(() => this.filteredLoads().length > 0);
+  protected readonly blockingCount = computed(
+    () => this.filteredLoads().filter((l) => l.exceptions.some((e) => e.blocksBilling)).length,
+  );
+
+  protected setFilter(filter: 'all' | 'LateDelivery' | 'StuckAtStop'): void {
+    this.typeFilter.set(filter);
+  }
 
   ngOnInit(): void {
     this.load();

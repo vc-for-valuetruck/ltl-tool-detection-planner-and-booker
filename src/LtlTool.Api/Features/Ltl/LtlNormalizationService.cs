@@ -23,6 +23,9 @@ public sealed class LtlNormalizationService(
     /// <summary>Exception code for an actual-late delivery (window passed, no arrival recorded). Not a billing block.</summary>
     public const string LateDeliveryExceptionCode = "LateDelivery";
 
+    /// <summary>Exception code for a stuck-at-stop signal (arrived, no departure, dwell past threshold). Not a billing block.</summary>
+    public const string StuckAtStopExceptionCode = "StuckAtStop";
+
     /// <summary>Statuses that mean capacity is committed (covered → delivered).</summary>
     private static readonly HashSet<string> AssignedStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -62,7 +65,8 @@ public sealed class LtlNormalizationService(
         decimal? driverTripRate = null,
         decimal? loadedMiles = null,
         LtlEdiEnrichment? ediEnrichment = null,
-        LtlLateDelivery? lateDelivery = null)
+        LtlLateDelivery? lateDelivery = null,
+        LtlStuckStop? stuckStop = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -169,6 +173,23 @@ public sealed class LtlNormalizationService(
             ];
         }
 
+        // Stuck-at-stop (trip-stop derived, passed in by the caller). Arrived with no recorded
+        // departure past the dwell threshold. Surfaced as a non-billing-blocking exception carrying
+        // the honest "may not have closed the stop" caveat, and fed to the T8 notification trigger.
+        if (stuckStop is not null)
+        {
+            exceptions =
+            [
+                .. exceptions,
+                new LtlExceptionFlag
+                {
+                    Code = StuckAtStopExceptionCode,
+                    Message = stuckStop.Message,
+                    BlocksBilling = false,
+                },
+            ];
+        }
+
         var workflowState = workflow.Evaluate(
             assignment, status, billingResult, exceptions, missing, visibilityContext,
             delivered, hasRevenue: revenue is not null);
@@ -193,6 +214,7 @@ public sealed class LtlNormalizationService(
             PredictedLate = eta.PredictedLate,
             EtaBasis = eta.Basis,
             LateDelivery = lateDelivery,
+            StuckStop = stuckStop,
             Equipment = equipment,
             WeightLbs = load.Weight is > 0 ? load.Weight : null,
             Volume = load.Volume is > 0 ? load.Volume : null,
