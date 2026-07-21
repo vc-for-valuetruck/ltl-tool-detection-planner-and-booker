@@ -331,6 +331,137 @@ public sealed class ConsolidationPlanResponse
     /// available (Alvys exposes city/state only today).
     /// </summary>
     public bool StopsOptimized { get; init; }
+
+    /// <summary>
+    /// Red-RPM warning (Phase 4): the projected combined driver RPM checked against the configured
+    /// floor. Always present — its status is <c>Unavailable</c> (gray) rather than null when the RPM
+    /// inputs were missing, so the SPA always renders an honest chip.
+    /// </summary>
+    public ConsolidationRpmWarning? RpmWarning { get; init; }
+
+    /// <summary>
+    /// Plan-time accessorial pre-checks (Phase 4): the deterministic accessorial-review candidates
+    /// for the parent and each corridor-valid sibling, surfaced before the click card. Empty when
+    /// nothing was evaluable. Evidence-cited, no dollar amounts.
+    /// </summary>
+    public IReadOnlyList<ConsolidationAccessorialPreCheck> AccessorialPreChecks { get; init; } = [];
+}
+
+/// <summary>
+/// Fire-and-forget body for the click-card-copied effectiveness metric (Phase 4). Carries only
+/// status-level context (corridor + sibling count) — never a plan body or any PII.
+/// </summary>
+public sealed class ClickCardCopiedRequest
+{
+    public string? CorridorCode { get; set; }
+    public int? SiblingCount { get; set; }
+}
+
+/// <summary>
+/// Status of a plan's projected combined driver-RPM against the configured red-RPM floor
+/// (<see cref="ConsolidationOptions.RedRpmThresholdPerMile"/>). Deliberately three-valued so the
+/// UI never fabricates a verdict: <see cref="Unavailable"/> is distinct from <see cref="Below"/> —
+/// it means the driver-RPM inputs were missing and the chip renders gray, not red.
+/// </summary>
+public enum ConsolidationRpmWarningStatus
+{
+    /// <summary>Projected combined driver RPM is at or above the floor — no warning.</summary>
+    Ok = 0,
+
+    /// <summary>Projected combined driver RPM is below the floor — red warning chip.</summary>
+    Below = 1,
+
+    /// <summary>Driver-RPM inputs were missing, so the floor could not be checked — gray chip.</summary>
+    Unavailable = 2,
+}
+
+/// <summary>
+/// Plan-time red-RPM warning (Phase 4). Compares <see cref="ConsolidationPlanResponse.CombinedRevenuePerMile"/>
+/// (driver math: Trip.TripValue.Amount ÷ Trip.LoadedMileage.Distance.Value, never the customer rate)
+/// against the configured floor. When the RPM could not be computed the status is
+/// <see cref="ConsolidationRpmWarningStatus.Unavailable"/> and <see cref="Rpm"/> is null — never
+/// coerced to zero.
+/// </summary>
+public sealed class ConsolidationRpmWarning
+{
+    /// <summary>Ok / Below / Unavailable.</summary>
+    public required ConsolidationRpmWarningStatus Status { get; init; }
+
+    /// <summary>The configured floor the RPM was checked against (dollars per loaded mile).</summary>
+    public required decimal ThresholdPerMile { get; init; }
+
+    /// <summary>The projected combined driver RPM, or null when it could not be computed.</summary>
+    public decimal? RpmPerMile { get; init; }
+
+    /// <summary>Plain-language message safe to render directly on the chip / tooltip.</summary>
+    public required string Message { get; init; }
+}
+
+/// <summary>
+/// Plan-time accessorial pre-check for one load in the plan (Phase 4). Runs the deterministic
+/// <see cref="AccessorialReviewAnalyzer"/> (merged #135) against a candidate load at plan-build
+/// time and surfaces the likely accessorials <b>before</b> the click card, so the dispatcher sees
+/// "this plan will probably carry detention/layover/reconsignment" up front. Evidence-cited, never
+/// a dollar amount — pricing stays the accessorial team's job.
+/// </summary>
+public sealed class ConsolidationAccessorialPreCheck
+{
+    public required string LoadId { get; init; }
+    public string? LoadNumber { get; init; }
+
+    /// <summary>Whether this load was the parent (true) or a sibling (false) of the plan.</summary>
+    public required bool IsParent { get; init; }
+
+    /// <summary>
+    /// False when the load had neither trip stops nor notes/documents to inspect — mirrors
+    /// <see cref="AccessorialReviewResult.Evaluated"/>. An empty candidate list with
+    /// <c>Evaluated=false</c> means "not evaluated", never "no accessorials".
+    /// </summary>
+    public required bool Evaluated { get; init; }
+
+    /// <summary>The deterministic candidates, each citing its Alvys source. No dollar values.</summary>
+    public required IReadOnlyList<AccessorialReviewCandidate> Candidates { get; init; }
+}
+
+/// <summary>
+/// Billing-detail projection of a consolidation-audited load's <b>combined</b> economics (Phase 4).
+/// For a load that was recorded as a consolidation parent, billing detail must show the plan's
+/// combined revenue and combined driver miles/RPM — not the parent's inflated stand-alone RPM.
+/// Derived from the most-recent <see cref="ConsolidationAuditRecord"/> for the parent; every value
+/// is echoed from that audit, never re-derived. <see cref="Found"/> is false when the load has no
+/// consolidation audit on file, in which case the SPA shows the normal single-load billing view.
+/// </summary>
+public sealed class CombinedPlanBillingView
+{
+    /// <summary>False when no consolidation audit exists for this load as a parent.</summary>
+    public required bool Found { get; init; }
+
+    public string? AuditId { get; init; }
+    public string? CorridorCode { get; init; }
+    public string? ParentLoadId { get; init; }
+    public string? ParentLoadNumber { get; init; }
+
+    /// <summary>Sibling load numbers folded into the combined figures.</summary>
+    public IReadOnlyList<string> SiblingLoadNumbers { get; init; } = [];
+
+    /// <summary>Combined customer revenue across parent + siblings (context; not the RPM numerator).</summary>
+    public decimal? CombinedRevenue { get; init; }
+
+    /// <summary>Parent driver-facing loaded miles — the denominator of <see cref="CombinedRevenuePerMile"/>.</summary>
+    public decimal? DriverLoadedMiles { get; init; }
+
+    /// <summary>Combined driver trip value — the numerator of <see cref="CombinedRevenuePerMile"/>.</summary>
+    public decimal? CombinedDriverTripValue { get; init; }
+
+    /// <summary>
+    /// Combined driver RPM (driver math). This is the honest per-mile number for a consolidated
+    /// move — replaces the parent's inflated stand-alone RPM on the billing detail. Null when the
+    /// audit lacked driver inputs.
+    /// </summary>
+    public decimal? CombinedRevenuePerMile { get; init; }
+
+    /// <summary>When the underlying audit was recorded.</summary>
+    public DateTimeOffset? RecordedAt { get; init; }
 }
 
 /// <summary>

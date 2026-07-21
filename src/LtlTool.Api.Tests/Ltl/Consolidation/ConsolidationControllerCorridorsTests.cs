@@ -1,5 +1,6 @@
 using LtlTool.Api.Features.Ltl.Consolidation;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -92,7 +93,9 @@ public class ConsolidationControllerCorridorsTests
             candidates: null!,
             plans: null!,
             audits: null!,
+            laneTemplates: null!,
             options: Microsoft.Extensions.Options.Options.Create(options),
-            corridorHealth: null!);
+            corridorHealth: null!,
+            logger: NullLogger<ConsolidationController>.Instance);
     }
 }

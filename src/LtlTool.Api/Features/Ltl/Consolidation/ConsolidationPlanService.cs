@@ -227,6 +227,9 @@ public sealed class ConsolidationPlanService(
 
         var trailerFit = await EvaluateTrailerFitAsync(parent, siblings, ct);
 
+        var rpmWarning = BuildRpmWarning(combinedRpm);
+        var accessorialPreChecks = await BuildAccessorialPreChecksAsync(parent, siblings, ct);
+
         return new ConsolidationPlanResponse
         {
             PreviewId = previewId,
@@ -243,7 +246,96 @@ public sealed class ConsolidationPlanService(
             TrailerFit = trailerFit,
             StopSequence = siblings.Select(s => s.LoadNumber ?? s.LoadId).ToList(),
             StopsOptimized = stopsOptimized,
+            RpmWarning = rpmWarning,
+            AccessorialPreChecks = accessorialPreChecks,
         };
+    }
+
+    /// <summary>
+    /// Compares the projected combined driver RPM against the configured red-RPM floor
+    /// (<see cref="ConsolidationOptions.RedRpmThresholdPerMile"/>). Returns an
+    /// <see cref="ConsolidationRpmWarningStatus.Unavailable"/> warning (never null, never zero) when
+    /// the RPM could not be computed, so the SPA always renders an honest chip. Driver math only —
+    /// the input is already <c>Trip.TripValue.Amount ÷ Trip.LoadedMileage.Distance.Value</c>.
+    /// </summary>
+    private ConsolidationRpmWarning BuildRpmWarning(decimal? combinedRpm)
+    {
+        var threshold = _opts.RedRpmThresholdPerMile;
+        var us = CultureInfo.InvariantCulture;
+
+        if (combinedRpm is null)
+        {
+            return new ConsolidationRpmWarning
+            {
+                Status = ConsolidationRpmWarningStatus.Unavailable,
+                ThresholdPerMile = threshold,
+                RpmPerMile = null,
+                Message = "Combined driver RPM unavailable — needs both combined driver trip value "
+                    + "and parent loaded miles.",
+            };
+        }
+
+        if (combinedRpm.Value < threshold)
+        {
+            return new ConsolidationRpmWarning
+            {
+                Status = ConsolidationRpmWarningStatus.Below,
+                ThresholdPerMile = threshold,
+                RpmPerMile = combinedRpm,
+                Message = $"Projected combined driver RPM ${combinedRpm.Value.ToString("N2", us)}/mi "
+                    + $"is below the ${threshold.ToString("N2", us)}/mi floor — confirm this consolidation still pays.",
+            };
+        }
+
+        return new ConsolidationRpmWarning
+        {
+            Status = ConsolidationRpmWarningStatus.Ok,
+            ThresholdPerMile = threshold,
+            RpmPerMile = combinedRpm,
+            Message = $"Projected combined driver RPM ${combinedRpm.Value.ToString("N2", us)}/mi "
+                + $"is at or above the ${threshold.ToString("N2", us)}/mi floor.",
+        };
+    }
+
+    /// <summary>
+    /// Runs the deterministic accessorial-review analyzer (#135) over the parent and every
+    /// corridor-valid sibling at plan-build time, so likely accessorials surface before the click
+    /// card. Read-only against Alvys (the analyzer only interprets already-fetched notes/stops via
+    /// <see cref="LtlLoadService.GetAccessorialReviewAsync"/>); evidence-cited, never a dollar value.
+    /// A load that could not be evaluated is still returned with <c>Evaluated=false</c> so the SPA
+    /// can say "not evaluated" rather than implying a clean bill.
+    /// </summary>
+    private async Task<IReadOnlyList<ConsolidationAccessorialPreCheck>> BuildAccessorialPreChecksAsync(
+        LtlLoadSummary parent,
+        IReadOnlyList<ConsolidationPlanSibling> siblings,
+        CancellationToken ct)
+    {
+        var preChecks = new List<ConsolidationAccessorialPreCheck>();
+
+        var parentReview = await _loads.GetAccessorialReviewAsync(parent.Id, ct);
+        preChecks.Add(new ConsolidationAccessorialPreCheck
+        {
+            LoadId = parent.Id,
+            LoadNumber = parent.LoadNumber,
+            IsParent = true,
+            Evaluated = parentReview?.Evaluated ?? false,
+            Candidates = parentReview?.Candidates ?? [],
+        });
+
+        foreach (var sibling in siblings)
+        {
+            var review = await _loads.GetAccessorialReviewAsync(sibling.LoadId, ct);
+            preChecks.Add(new ConsolidationAccessorialPreCheck
+            {
+                LoadId = sibling.LoadId,
+                LoadNumber = sibling.LoadNumber,
+                IsParent = false,
+                Evaluated = review?.Evaluated ?? false,
+                Candidates = review?.Candidates ?? [],
+            });
+        }
+
+        return preChecks;
     }
 
     /// <summary>

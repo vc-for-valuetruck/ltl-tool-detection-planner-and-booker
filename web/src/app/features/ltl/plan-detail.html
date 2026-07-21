@@ -226,10 +226,75 @@
             written automatically.
           </p>
           <div class="econ-row econ-row-bold">
-            <span>Combined RPM</span>
-            <strong class="econ-positive">{{ formatRpm(combinedRpm()) }}</strong>
+            <span>Combined RPM <span class="audit-subhead">(driver math)</span></span>
+            <strong
+              data-testid="combined-rpm"
+              [class.econ-positive]="!rpmBelowFloor()"
+              [class.econ-negative]="rpmBelowFloor()"
+            >{{ formatRpm(displayRpm()) }}</strong>
           </div>
+          @if (rpmWarning(); as warning) {
+            <div
+              class="rpm-chip"
+              [class.rpm-chip-below]="rpmBelowFloor()"
+              [class.rpm-chip-unavailable]="rpmUnavailable()"
+              [class.rpm-chip-ok]="warning.status === 'Ok'"
+              data-testid="rpm-warning-chip"
+            >
+              @if (rpmBelowFloor()) {
+                <strong>Below RPM floor</strong>
+                <span>
+                  Projected driver RPM {{ formatRpm(warning.rpmPerMile) }} is under the
+                  {{ formatRpm(warning.thresholdPerMile) }} floor.
+                </span>
+              } @else if (rpmUnavailable()) {
+                <strong>RPM unavailable</strong>
+                <span>{{ warning.message }}</span>
+              } @else {
+                <strong>RPM above floor</strong>
+                <span>
+                  Projected driver RPM {{ formatRpm(warning.rpmPerMile) }} clears the
+                  {{ formatRpm(warning.thresholdPerMile) }} floor.
+                </span>
+              }
+            </div>
+          }
         </div>
+
+        @if (accessorialPreChecksWithCandidates().length > 0) {
+          <div class="card" data-testid="accessorial-pre-checks-card">
+            <h2>
+              Accessorial pre-checks
+              <span class="audit-subhead">(evidence-cited — verify before billing)</span>
+            </h2>
+            @for (check of accessorialPreChecksWithCandidates(); track check.loadId) {
+              <div class="accessorial-load" data-testid="accessorial-pre-check">
+                <h3 class="accessorial-load-head">
+                  {{ check.loadNumber ?? check.loadId }}
+                  @if (check.isParent) {
+                    <span class="accessorial-parent-tag">parent</span>
+                  }
+                </h3>
+                <ul class="accessorial-list">
+                  @for (candidate of check.candidates; track candidate.type) {
+                    <li
+                      class="accessorial-item"
+                      [class.accessorial-item-likely]="candidate.status === 'Likely'"
+                      data-testid="accessorial-candidate"
+                    >
+                      <span class="accessorial-type">{{ candidate.type }}</span>
+                      <span class="accessorial-status">{{ candidate.status }}</span>
+                      <span class="accessorial-reason">{{ candidate.reason }}</span>
+                      @if (candidate.evidence) {
+                        <span class="accessorial-evidence">{{ candidate.evidence }}</span>
+                      }
+                    </li>
+                  }
+                </ul>
+              </div>
+            }
+          </div>
+        }
 
         @if (laneRate(); as rate) {
           <div class="card" data-testid="lane-rate-card">

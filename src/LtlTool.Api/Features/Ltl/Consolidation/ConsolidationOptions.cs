@@ -98,6 +98,16 @@ public sealed class ConsolidationOptions
 
     /// <summary>Upper bound on candidates returned per candidate-list request.</summary>
     public int MaxCandidatesReturned { get; set; } = 25;
+
+    /// <summary>
+    /// Driver-RPM floor (dollars per loaded mile) below which a plan's projected combined RPM is
+    /// flagged with a red warning chip (Phase 4). Compared against
+    /// <see cref="ConsolidationPlanResponse.CombinedRevenuePerMile"/> — the driver-math number
+    /// (Trip.TripValue.Amount ÷ Trip.LoadedMileage.Distance.Value), never the inflated customer
+    /// rate. When the RPM inputs are missing the warning is <c>Unavailable</c> (gray), never
+    /// fabricated. Default $1.50/mi is a conservative pilot floor; tune per environment.
+    /// </summary>
+    public decimal RedRpmThresholdPerMile { get; set; } = 1.50m;
 }
 
 /// <summary>A configured consolidation yard.</summary>

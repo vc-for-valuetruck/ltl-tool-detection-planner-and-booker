@@ -1,4 +1,4 @@
-import { LtlEdiEnrichment, LtlLoadSummary } from './ltl.models';
+import { AccessorialReviewCandidate, LtlEdiEnrichment, LtlLoadSummary } from './ltl.models';
 
 /**
  * TypeScript mirrors of the C# consolidation API contracts. Kept intentionally narrow so the
@@ -110,6 +110,89 @@ export interface ConsolidationPlanResponse {
    */
   trailerFit?: ConsolidationTrailerFit;
   blockers: string[];
+  /**
+   * Red-RPM warning (Phase 4): the projected combined driver RPM checked against the configured
+   * floor. Always present when the server sends it — its status is 'Unavailable' (gray) rather than
+   * absent when the RPM inputs were missing, so the chip is always honest.
+   */
+  rpmWarning?: ConsolidationRpmWarning;
+  /**
+   * Plan-time accessorial pre-checks (Phase 4): the deterministic accessorial-review candidates for
+   * the parent and each corridor-valid sibling, surfaced before the click card. Evidence-cited, no
+   * dollar amounts.
+   */
+  accessorialPreChecks?: ConsolidationAccessorialPreCheck[];
+}
+
+/** Ok / Below / Unavailable — mirrors the C# ConsolidationRpmWarningStatus enum. */
+export type ConsolidationRpmWarningStatus = 'Ok' | 'Below' | 'Unavailable';
+
+/**
+ * Plan-time red-RPM warning. `rpmPerMile` stays absent (never zero) when the driver-RPM inputs were
+ * missing and `status` is 'Unavailable'. Driver math only — never the customer rate.
+ */
+export interface ConsolidationRpmWarning {
+  status: ConsolidationRpmWarningStatus;
+  thresholdPerMile: number;
+  rpmPerMile?: number;
+  message: string;
+}
+
+/**
+ * Plan-time accessorial pre-check for one load in the plan. `evaluated=false` with an empty
+ * `candidates` list means "not evaluated" — never "no accessorials". No dollar values.
+ */
+export interface ConsolidationAccessorialPreCheck {
+  loadId: string;
+  loadNumber?: string;
+  isParent: boolean;
+  evaluated: boolean;
+  candidates: AccessorialReviewCandidate[];
+}
+
+/**
+ * Billing-detail projection of a consolidation-audited load's combined economics. `found=false`
+ * when the load has no consolidation audit on file (the SPA then shows the normal single-load
+ * billing view). Every value is echoed from the audit — never re-derived.
+ */
+export interface CombinedPlanBillingView {
+  found: boolean;
+  auditId?: string;
+  corridorCode?: string;
+  parentLoadId?: string;
+  parentLoadNumber?: string;
+  siblingLoadNumbers: string[];
+  combinedRevenue?: number;
+  driverLoadedMiles?: number;
+  combinedDriverTripValue?: number;
+  combinedRevenuePerMile?: number;
+  recordedAt?: string;
+}
+
+/** SPA mirror of a saved recurring-lane template (Phase 2.5). Internal data, never Alvys. */
+export interface LaneTemplateView {
+  id: string;
+  name: string;
+  corridorCode: string;
+  customerName?: string;
+  originLabel?: string;
+  destinationLabel?: string;
+  cadenceDays?: number;
+  notes?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Request body to save a recurring-lane template. Only name + corridorCode are required. */
+export interface SaveLaneTemplateRequest {
+  name: string;
+  corridorCode: string;
+  customerName?: string;
+  originLabel?: string;
+  destinationLabel?: string;
+  cadenceDays?: number;
+  notes?: string;
 }
 
 /**
