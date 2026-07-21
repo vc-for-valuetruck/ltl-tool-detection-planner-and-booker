@@ -35,7 +35,8 @@ export type BillingBadge =
   | 'AlreadyInvoiced'
   | 'PossibleUnbilledAccessorial'
   | 'CarrierAccessorialMismatch'
-  | 'InvoiceAmountDrift';
+  | 'InvoiceAmountDrift'
+  | 'DaysPastTerms';
 
 export type AssignmentState = 'Unassigned' | 'Assigned' | 'Unknown';
 

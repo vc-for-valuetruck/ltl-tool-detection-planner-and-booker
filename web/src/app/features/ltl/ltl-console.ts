@@ -300,6 +300,7 @@ export class LtlConsole implements OnInit {
     { value: 'PossibleUnbilledAccessorial', label: 'Possible Unbilled Accessorial' },
     { value: 'CarrierAccessorialMismatch', label: 'Carrier Accessorial Mismatch' },
     { value: 'InvoiceAmountDrift', label: 'Invoice Amount Drift' },
+    { value: 'DaysPastTerms', label: 'Days Past Terms' },
     { value: 'CustomerReviewNeeded', label: 'Customer Review Needed' },
     { value: 'ExceptionBlockingBilling', label: 'Exception Blocking Billing' },
     { value: 'AlreadyInvoiced', label: 'Already Invoiced' },

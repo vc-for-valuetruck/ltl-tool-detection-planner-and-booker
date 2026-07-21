@@ -42,6 +42,7 @@ export class LtlBilling implements OnInit {
     { value: 'PossibleUnbilledAccessorial', label: 'Possible Unbilled Accessorial' },
     { value: 'CarrierAccessorialMismatch', label: 'Carrier Accessorial Mismatch' },
     { value: 'InvoiceAmountDrift', label: 'Invoice Amount Drift' },
+    { value: 'DaysPastTerms', label: 'Days Past Terms' },
     { value: 'CustomerReviewNeeded', label: 'Customer Review Needed' },
     { value: 'ExceptionBlockingBilling', label: 'Exception Blocking Billing' },
     { value: 'AlreadyInvoiced', label: 'Already Invoiced' },
@@ -80,7 +81,7 @@ export class LtlBilling implements OnInit {
   protected badgeClass(badge: BillingBadge): string {
     if (badge === 'ReadyToBill') return 'chip chip-good';
     if (badge === 'AlreadyInvoiced') return 'chip chip-neutral';
-    if (badge === 'ExceptionBlockingBilling') return 'chip chip-danger';
+    if (badge === 'ExceptionBlockingBilling' || badge === 'DaysPastTerms') return 'chip chip-danger';
     return 'chip chip-warn';
   }
 
@@ -105,6 +106,7 @@ export class LtlBilling implements OnInit {
     PossibleUnbilledAccessorial: 'Possible Unbilled Accessorial',
     CarrierAccessorialMismatch: 'Carrier Accessorial Mismatch',
     InvoiceAmountDrift: 'Invoice Amount Drift',
+    DaysPastTerms: 'Days Past Terms',
   };
 
   private static readonly MISSING_LABELS: Record<MissingDataFlag, string> = {

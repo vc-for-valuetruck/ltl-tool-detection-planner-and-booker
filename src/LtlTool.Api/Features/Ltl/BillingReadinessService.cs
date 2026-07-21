@@ -99,9 +99,11 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         decimal? unpaidBalance = null;
         InvoiceAgingBucket? agingBucket = null;
         int? agingDays = null;
+        var daysPastTerms = false;
         if (invoices is { Count: > 0 })
         {
             var now = clock.GetUtcNow();
+            var termDays = ResolveCustomerTermDays(load);
             foreach (var invoice in invoices)
             {
                 if (invoice.RemainingBalance is > 0)
@@ -111,13 +113,31 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
 
                     unpaidBalance = (unpaidBalance ?? 0m) + invoice.RemainingBalance.Value;
 
-                    if (invoice.DueDate is { } dueDate)
+                    // Effective due date: the invoice's own DueDate when present, otherwise derived
+                    // from the customer's configured net terms applied to the invoice/created date.
+                    // With neither, aging stays unevaluated — terms are never invented per load.
+                    var dueDate = invoice.DueDate
+                        ?? (termDays is { } net
+                            ? (invoice.InvoicedDate ?? invoice.CreatedDate)?.AddDays(net)
+                            : null);
+
+                    if (dueDate is { } due)
                     {
-                        var days = (int)(now - dueDate).TotalDays;
+                        var days = (int)(now - due).TotalDays;
                         if (agingDays is null || days > agingDays)
                         {
                             agingDays = days;
                             agingBucket = BucketFor(days);
+                        }
+                        if (days >= _options.Billing.DaysPastTermsThreshold)
+                        {
+                            daysPastTerms = true;
+                            var basis = invoice.DueDate is not null
+                                ? "invoice due date"
+                                : $"{termDays} day terms";
+                            risks.Add(
+                                $"Invoice {InvoiceLabel(invoice)} is {days} day(s) past terms ({basis}) "
+                                + $"with {invoice.RemainingBalance.Value:0.##} unpaid.");
                         }
                     }
                 }
@@ -269,6 +289,18 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
             {
                 missing.Add(MissingDataFlag.Pod);
                 risks.Add("Delivered load has no proof-of-delivery document.");
+
+                // Honesty: distinguish "no documents at all" from "documents present but none is
+                // recognizable as a POD (blank/unrecognized AttachmentType)". A blocked POD on an
+                // unclassified document is a classifier gap to eyeball by hand — never read as a
+                // clean no-POD, and never silently upgraded to "has POD" either.
+                var unclassified = UnclassifiedDocumentCount(documents!);
+                if (unclassified > 0)
+                {
+                    risks.Add(
+                        $"{unclassified} document(s) present but of blank/unrecognized type — POD "
+                        + "could not be confirmed automatically; verify by hand before billing.");
+                }
             }
         }
 
@@ -289,6 +321,7 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         if (possibleUnbilledAccessorial) badges.Add(BillingBadge.PossibleUnbilledAccessorial);
         if (carrierAccessorialMismatch) badges.Add(BillingBadge.CarrierAccessorialMismatch);
         if (invoiceAmountDrift) badges.Add(BillingBadge.InvoiceAmountDrift);
+        if (daysPastTerms) badges.Add(BillingBadge.DaysPastTerms);
         if (missing.Contains(MissingDataFlag.Customer)) badges.Add(BillingBadge.CustomerReviewNeeded);
         if (blocked) badges.Add(BillingBadge.ExceptionBlockingBilling);
 
@@ -321,6 +354,22 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         };
     }
 
+    /// <summary>
+    /// Configured payment terms (net days) for the load's customer, tried by Alvys customer id
+    /// first then customer name. Returns <c>null</c> when the customer has no entry — no invented
+    /// default, so an unpaid invoice with no DueDate simply stays unevaluated for aging.
+    /// </summary>
+    private int? ResolveCustomerTermDays(AlvysLoad load)
+    {
+        var terms = _options.Billing.CustomerTermsDays;
+        if (terms.Count == 0) return null;
+        if (!string.IsNullOrWhiteSpace(load.CustomerId) && terms.TryGetValue(load.CustomerId, out var byId))
+            return byId;
+        if (!string.IsNullOrWhiteSpace(load.CustomerName) && terms.TryGetValue(load.CustomerName, out var byName))
+            return byName;
+        return null;
+    }
+
     /// <summary>Buckets days-past-due into the standard Current/30/60/90+ aging convention.</summary>
     private static InvoiceAgingBucket BucketFor(int daysPastDue) => daysPastDue switch
     {
@@ -350,6 +399,15 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
 
     private static bool Contains(string? value, string token) =>
         value is not null && value.Contains(token, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Count of supplied documents carrying a blank <c>AttachmentType</c> — i.e. Alvys did not
+    /// classify them. Used only to caveat a missing-POD verdict honestly: an unclassified document
+    /// might be a POD the type-based detector could not recognize, so it must be eyeballed rather
+    /// than treated as a confirmed absence.
+    /// </summary>
+    private static int UnclassifiedDocumentCount(IReadOnlyList<AlvysLoadDocument> documents) =>
+        documents.Count(d => string.IsNullOrWhiteSpace(d.AttachmentType));
 
     /// <summary>
     /// Operational/revenue-protection exceptions derivable from the load alone. POD-related

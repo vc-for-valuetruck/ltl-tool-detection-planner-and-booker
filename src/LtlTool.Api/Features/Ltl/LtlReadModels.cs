@@ -95,6 +95,15 @@ public enum BillingBadge
     /// definition); flags the invoice for a supplemental-billing/credit-memo review.
     /// </summary>
     InvoiceAmountDrift,
+
+    /// <summary>
+    /// An unpaid invoice on the load is past its payment terms by at least
+    /// <see cref="BillingOptions.DaysPastTermsThreshold"/> days — money owed and overdue. The due
+    /// date is the invoice's own <c>DueDate</c> when present, otherwise derived from the customer's
+    /// configured net terms (<see cref="BillingOptions.CustomerTermsDays"/>); when neither exists
+    /// the invoice's aging is left unevaluated and this badge never fires (terms are never invented).
+    /// </summary>
+    DaysPastTerms,
 }
 
 /// <summary>

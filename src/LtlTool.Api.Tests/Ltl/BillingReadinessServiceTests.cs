@@ -498,4 +498,173 @@ public sealed class BillingReadinessServiceTests
 
         Assert.Contains(exceptions, e => e.Code == "INVOICE_AMOUNT_DRIFT" && !e.BlocksBilling);
     }
+
+    // --- Days-past-terms (Phase 4) --------------------------------------------------------------
+
+    /// <summary>Options with a per-customer net-terms table for the standard test customer.</summary>
+    private static LtlOptions WithCustomerTerms(string key, int netDays)
+    {
+        var options = new LtlOptions();
+        options.Billing.CustomerTermsDays[key] = netDays;
+        return options;
+    }
+
+    [Fact]
+    public void Unpaid_invoice_without_due_date_derives_terms_from_customer_config_and_flags_past_terms()
+    {
+        var load = DeliveredBillable(); // CustomerId = "CUST-1"
+        // Invoiced 2026-05-01 + net 15 = due 2026-05-16; clock is 2026-06-30 -> 45 days past.
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-300", Status = "Invoiced", RemainingBalance = 900m,
+                InvoicedDate = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+        };
+
+        var result = LtlTestFactory.Billing(WithCustomerTerms("CUST-1", 15)).Evaluate(load, [], invoices);
+
+        Assert.Contains(BillingBadge.DaysPastTerms, result.Badges);
+        Assert.Equal(45, result.AgingDays);
+        Assert.Equal(InvoiceAgingBucket.Days31To60, result.AgingBucket);
+        Assert.Contains(result.Risks, r => r.Contains("INV-300") && r.Contains("past terms") && r.Contains("15 day terms"));
+    }
+
+    [Fact]
+    public void Unpaid_invoice_without_due_date_and_no_configured_terms_leaves_aging_unevaluated()
+    {
+        var load = DeliveredBillable();
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-301", Status = "Invoiced", RemainingBalance = 900m,
+                InvoicedDate = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+        };
+
+        // No terms configured -> terms are never invented, so aging cannot be evaluated.
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices);
+
+        Assert.DoesNotContain(BillingBadge.DaysPastTerms, result.Badges);
+        Assert.Null(result.AgingDays);
+        Assert.Null(result.AgingBucket);
+        Assert.Equal(900m, result.UnpaidBalance); // balance still surfaced
+    }
+
+    [Fact]
+    public void Unpaid_invoice_with_real_due_date_flags_past_terms_on_the_invoice_due_date_basis()
+    {
+        var load = DeliveredBillable();
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-302", Status = "Invoiced", RemainingBalance = 400m,
+                DueDate = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero), // 29 days past
+            },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices);
+
+        Assert.Contains(BillingBadge.DaysPastTerms, result.Badges);
+        Assert.Contains(result.Risks, r => r.Contains("INV-302") && r.Contains("invoice due date"));
+    }
+
+    [Fact]
+    public void Unpaid_invoice_within_configured_terms_is_not_flagged_past_terms()
+    {
+        var load = DeliveredBillable();
+        // Invoiced 2026-06-20 + net 30 = due 2026-07-20; clock 2026-06-30 -> 20 days remaining.
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-303", Status = "Invoiced", RemainingBalance = 500m,
+                InvoicedDate = new DateTimeOffset(2026, 6, 20, 0, 0, 0, TimeSpan.Zero),
+            },
+        };
+
+        var result = LtlTestFactory.Billing(WithCustomerTerms("CUST-1", 30)).Evaluate(load, [], invoices);
+
+        Assert.DoesNotContain(BillingBadge.DaysPastTerms, result.Badges);
+        Assert.Equal(InvoiceAgingBucket.Current, result.AgingBucket);
+    }
+
+    [Fact]
+    public void Customer_terms_resolve_by_name_when_id_has_no_entry()
+    {
+        var load = DeliveredBillable();
+        load.CustomerId = null;
+        load.CustomerName = "Acme Freight";
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-304", Status = "Invoiced", RemainingBalance = 700m,
+                InvoicedDate = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+        };
+
+        var result = LtlTestFactory.Billing(WithCustomerTerms("Acme Freight", 15)).Evaluate(load, [], invoices);
+
+        Assert.Contains(BillingBadge.DaysPastTerms, result.Badges);
+    }
+
+    [Fact]
+    public void Paid_invoice_never_flags_past_terms_even_with_an_old_due_date()
+    {
+        var load = DeliveredBillable();
+        var invoices = new List<AlvysInvoice>
+        {
+            new()
+            {
+                Id = "I1", Number = "INV-305", Status = "Paid", RemainingBalance = 0m,
+                DueDate = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], invoices);
+
+        Assert.DoesNotContain(BillingBadge.DaysPastTerms, result.Badges);
+    }
+
+    // --- Unclassified-document POD honesty (Phase 4) --------------------------------------------
+
+    [Fact]
+    public void Delivered_without_pod_notes_unclassified_documents_present()
+    {
+        var docs = new List<AlvysLoadDocument>
+        {
+            new() { Id = "D1", AttachmentType = null },
+            new() { Id = "D2", AttachmentType = "   " },
+        };
+
+        var result = LtlTestFactory.Billing().Evaluate(DeliveredBillable(), docs);
+
+        Assert.Contains(BillingBadge.MissingPod, result.Badges);
+        Assert.Contains(result.Risks, r => r.Contains("2 document(s)") && r.Contains("unrecognized type"));
+    }
+
+    [Fact]
+    public void Delivered_with_recognized_non_pod_document_does_not_note_unclassified_documents()
+    {
+        // A "Rate Confirmation" is a known, classified type — not a POD, but not ambiguous either.
+        var docs = new List<AlvysLoadDocument> { new() { Id = "D1", AttachmentType = "Rate Confirmation" } };
+
+        var result = LtlTestFactory.Billing().Evaluate(DeliveredBillable(), docs);
+
+        Assert.Contains(BillingBadge.MissingPod, result.Badges);
+        Assert.DoesNotContain(result.Risks, r => r.Contains("unrecognized type"));
+    }
+
+    [Fact]
+    public void Delivered_with_no_documents_at_all_does_not_note_unclassified_documents()
+    {
+        var result = LtlTestFactory.Billing().Evaluate(DeliveredBillable(), []);
+
+        Assert.Contains(BillingBadge.MissingPod, result.Badges);
+        Assert.DoesNotContain(result.Risks, r => r.Contains("unrecognized type"));
+    }
 }
