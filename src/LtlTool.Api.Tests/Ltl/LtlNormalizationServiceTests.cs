@@ -141,4 +141,55 @@ public sealed class LtlNormalizationServiceTests
             summary.Exceptions,
             e => e.Code == LtlNormalizationService.PredictedLateExceptionCode);
     }
+
+    [Fact]
+    public void Urgency_score_is_zero_when_no_risk_signals_present()
+    {
+        // FullLoad has rate/weight/customer and no actual delivery recorded, so STALE_UNINVOICED
+        // never fires (no deliveredAt to age) — a clean load scores exactly 0, not "unknown".
+        var summary = LtlTestFactory.Normalizer().Normalize(FullLoad());
+
+        Assert.Equal(0m, summary.UrgencyScore);
+    }
+
+    [Fact]
+    public void Urgency_score_weights_a_blocking_exception()
+    {
+        var load = new AlvysLoad { Id = "L2", Status = "Open" }; // no rate -> MISSING_RATE (blocking)
+
+        var summary = LtlTestFactory.Normalizer().Normalize(load);
+
+        Assert.Contains(summary.Exceptions, e => e.Code == "MISSING_RATE" && e.BlocksBilling);
+        Assert.Equal(500m, summary.UrgencyScore); // default BlockingExceptionWeight
+    }
+
+    [Fact]
+    public void Urgency_score_adds_unpaid_invoice_balance_at_the_dollar_weight()
+    {
+        var load = FullLoad();
+        var invoices = new List<AlvysInvoice>
+        {
+            new() { Id = "I1", Number = "INV-1", Status = "Invoiced", RemainingBalance = 200m },
+        };
+
+        var summary = LtlTestFactory.Normalizer().Normalize(load, invoices: invoices);
+
+        Assert.True(summary.Billing.IsAlreadyInvoiced); // posted invoice confirms invoiced
+        Assert.Equal(200m, summary.UrgencyScore); // 200 unpaid * default DollarWeight(1.0)
+    }
+
+    [Fact]
+    public void Urgency_score_adds_stale_delivered_unbilled_days_and_exception_weight()
+    {
+        var load = FullLoad();
+        // Fixed clock is 2026-06-30 (LtlTestFactory.Now); delivered 10 days ago with no invoice
+        // clears the default 7-day stale threshold, producing a non-blocking STALE_UNINVOICED.
+        load.ActualDeliveryAt = new DateTimeOffset(2026, 6, 20, 0, 0, 0, TimeSpan.Zero);
+
+        var summary = LtlTestFactory.Normalizer().Normalize(load);
+
+        Assert.Contains(summary.Exceptions, e => e.Code == "STALE_UNINVOICED" && !e.BlocksBilling);
+        // 10 stale days * default StaleDayWeight(50) + 1 non-blocking exception * default ExceptionWeight(100).
+        Assert.Equal(600m, summary.UrgencyScore);
+    }
 }

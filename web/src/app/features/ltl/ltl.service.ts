@@ -14,7 +14,9 @@ import {
   LtlLoadSummary,
   LtlSearchQuery,
   LtlSearchResponse,
+  MarginRollupResponse,
   MatchResult,
+  RollupGroupBy,
   SavedView,
   SavedViewCollection,
   SavedViewRequest,
@@ -74,6 +76,25 @@ export class LtlService {
 
   exceptions(): Observable<LtlLoadSummary[]> {
     return this.http.get<LtlLoadSummary[]>(`${this.base}/exceptions`);
+  }
+
+  /**
+   * Read-only margin/exception rollup grouped by customer, rep, or lane. Same normalized load set
+   * as the billing worklist, aggregated. No external BI connection.
+   */
+  marginRollup(groupBy: RollupGroupBy): Observable<MarginRollupResponse> {
+    return this.http.get<MarginRollupResponse>(`${this.base}/reporting/margin-rollup`, {
+      params: new HttpParams().set('groupBy', groupBy),
+    });
+  }
+
+  /**
+   * Absolute URL for the CSV rendering of the margin rollup — for a direct browser download, or
+   * for an external reporting tool (e.g. Power BI's Text/CSV connector) to pull Alvys-derived
+   * data straight from this tool. Same auth and same read-only data as `marginRollup`.
+   */
+  marginRollupExportUrl(groupBy: RollupGroupBy): string {
+    return `${this.base}/reporting/margin-rollup/export?groupBy=${encodeURIComponent(groupBy)}`;
   }
 
   /**

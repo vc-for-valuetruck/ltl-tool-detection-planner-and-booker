@@ -1,5 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { LtlService } from './ltl.service';
@@ -43,7 +43,7 @@ interface Column {
 @Component({
   selector: 'app-ltl-console',
   standalone: true,
-  imports: [DatePipe, FormsModule, RouterLink, LtlNav],
+  imports: [DatePipe, DecimalPipe, FormsModule, RouterLink, LtlNav],
   templateUrl: './ltl-console.html',
   styleUrls: ['./ltl-worklist.css', './ltl-console.css'],
 })
@@ -86,6 +86,7 @@ export class LtlConsole implements OnInit {
     { field: 'RevenuePerMile', label: 'RPM' },
     { field: 'Status', label: 'Status' },
     { field: 'BillingReadiness', label: 'Billing' },
+    { field: 'UrgencyScore', label: 'Urgency' },
   ];
 
   protected readonly assignmentOptions: { value: AssignmentState | ''; label: string }[] = [
@@ -296,6 +297,9 @@ export class LtlConsole implements OnInit {
     { value: 'MissingPod', label: 'Missing POD' },
     { value: 'MissingWeight', label: 'Missing Weight' },
     { value: 'MissingAccessorialReview', label: 'Missing Accessorial Review' },
+    { value: 'PossibleUnbilledAccessorial', label: 'Possible Unbilled Accessorial' },
+    { value: 'CarrierAccessorialMismatch', label: 'Carrier Accessorial Mismatch' },
+    { value: 'InvoiceAmountDrift', label: 'Invoice Amount Drift' },
     { value: 'CustomerReviewNeeded', label: 'Customer Review Needed' },
     { value: 'ExceptionBlockingBilling', label: 'Exception Blocking Billing' },
     { value: 'AlreadyInvoiced', label: 'Already Invoiced' },

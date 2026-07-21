@@ -70,6 +70,31 @@ public enum BillingBadge
     CustomerReviewNeeded,
     ExceptionBlockingBilling,
     AlreadyInvoiced,
+
+    /// <summary>
+    /// Notes/documents contain a keyword-detected accessorial event (detention, layover, lumper,
+    /// reconsignment) but the load carries no customer accessorial charge at all — a likely missed
+    /// accessorial rather than an itemization gap (see <see cref="MissingAccessorialReview"/> for
+    /// that case). Only computed on the detail path, where notes/documents are fetched.
+    /// </summary>
+    PossibleUnbilledAccessorial,
+
+    /// <summary>
+    /// The carrier's accessorial total (from the trip's <c>Carrier.Accessorials</c>) exceeds what
+    /// the customer was billed for accessorials — the carrier was paid for detention/liftgate/
+    /// etc. but that cost was never passed through to the customer. A numeric, higher-confidence
+    /// sibling of <see cref="PossibleUnbilledAccessorial"/> (which is keyword-evidence-based).
+    /// Available anywhere trip economics are fetched (detail and billing worklist).
+    /// </summary>
+    CarrierAccessorialMismatch,
+
+    /// <summary>
+    /// A posted invoice's total differs from the load's quoted revenue by more than
+    /// <see cref="LtlOptions.InvoiceDriftThresholdPercent"/> — a proxy for a reclass/reweigh
+    /// adjustment applied after the quote. Informational only (the load is already invoiced by
+    /// definition); flags the invoice for a supplemental-billing/credit-memo review.
+    /// </summary>
+    InvoiceAmountDrift,
 }
 
 /// <summary>
@@ -177,6 +202,13 @@ public sealed class LtlLoadSummary
     public string? PoNumber { get; init; }
     public string? CustomerId { get; init; }
     public string? CustomerName { get; init; }
+
+    /// <summary>
+    /// Alvys sales-rep id (<c>AlvysLoad.CustomerRepId</c>). Opaque id only — the Alvys load
+    /// projection carries no human-readable rep name field, so the UI must render this as an id,
+    /// never invent a name for it. Used to group the margin rollup by rep.
+    /// </summary>
+    public string? CustomerRepId { get; init; }
 
     public required string Status { get; init; }
     public AssignmentState Assignment { get; init; }
@@ -292,6 +324,15 @@ public sealed class LtlLoadSummary
     public IReadOnlyList<MissingDataFlag> MissingData { get; init; } = [];
     public BillingReadinessResult Billing { get; init; } = new();
     public IReadOnlyList<LtlExceptionFlag> Exceptions { get; init; } = [];
+
+    /// <summary>
+    /// Relative dispatch/billing-attention priority — dollars-at-risk + days-stale-unbilled +
+    /// exception weight combined into one sortable number (see <see cref="LtlUrgencyOptions"/> for
+    /// the weights). It is a ranking score, not a currency amount or an Alvys field: every load
+    /// gets a score (loads with no risk signal at all score exactly 0, meaning "nothing raises
+    /// urgency" — never "unknown"). Always computed, so it is safe to sort/filter on directly.
+    /// </summary>
+    public decimal UrgencyScore { get; init; }
 
     /// <summary>
     /// Where this load sits in the Search → Match → Assign → Bill workflow, with the recommended
@@ -615,6 +656,76 @@ public enum LtlSortField
     Customer,
     Status,
     BillingReadiness,
+    UrgencyScore,
+}
+
+/// <summary>Grouping dimension for the margin rollup (<see cref="MarginRollupRow"/>).</summary>
+public enum RollupGroupBy
+{
+    Customer,
+    Rep,
+    Lane,
+}
+
+/// <summary>
+/// One grouped row in the margin rollup: aggregates already-normalized <see cref="LtlLoadSummary"/>
+/// values by customer, rep, or lane. Every total is null when no load in the group carries the
+/// underlying value — an empty group never reports <c>$0</c>. Read-only, entirely Alvys-derived;
+/// no external BI/reporting connection.
+/// </summary>
+public sealed class MarginRollupRow
+{
+    /// <summary>Stable grouping key (customer id/name, rep id, or lane string).</summary>
+    public required string Key { get; init; }
+
+    /// <summary>Display label. See <see cref="LabelIsId"/> before treating this as a human name.</summary>
+    public required string Label { get; init; }
+
+    /// <summary>
+    /// True when <see cref="Label"/> is only an opaque Alvys id (rep grouping — no human-readable
+    /// rep name exists on the Alvys load projection today) rather than a real name.
+    /// </summary>
+    public bool LabelIsId { get; init; }
+
+    public int LoadCount { get; init; }
+
+    /// <summary>Sum of <see cref="LtlLoadSummary.Revenue"/> across loads with a known revenue. Null if none.</summary>
+    public decimal? TotalRevenue { get; init; }
+
+    /// <summary>Sum of <see cref="LtlLoadSummary.CarrierPayable"/> across loads with a known value. Null if none.</summary>
+    public decimal? TotalCarrierPayable { get; init; }
+
+    /// <summary>
+    /// Sum of <see cref="LtlLoadSummary.GrossMargin"/> across loads where it is known (both revenue
+    /// and carrier payable present) — never a partial sum that mixes a missing side in as zero.
+    /// </summary>
+    public decimal? TotalGrossMargin { get; init; }
+
+    /// <summary>
+    /// TotalGrossMargin over the revenue of the same margin-known loads, as a percent — a
+    /// revenue-weighted rollup, not a naive average of per-load percentages. Null unless
+    /// <see cref="TotalGrossMargin"/> is known and its revenue basis is positive.
+    /// </summary>
+    public decimal? GrossMarginPercent { get; init; }
+
+    /// <summary>Sum of <see cref="BillingReadinessResult.UnpaidBalance"/> across loads with one. Null if none.</summary>
+    public decimal? TotalUnpaidBalance { get; init; }
+
+    /// <summary>Sum of exception counts across loads in this group.</summary>
+    public int ExceptionCount { get; init; }
+
+    /// <summary>Count of loads in this group currently badged Ready to Bill.</summary>
+    public int ReadyToBillCount { get; init; }
+}
+
+/// <summary>Margin rollup response: grouping dimension, rows, and honest sweep-truncation state.</summary>
+public sealed class MarginRollupResponse
+{
+    public required RollupGroupBy GroupBy { get; init; }
+    public IReadOnlyList<MarginRollupRow> Rows { get; init; } = [];
+
+    /// <summary>True when the underlying load sweep hit its bound — same meaning as <see cref="LtlSearchResponse.Truncated"/>.</summary>
+    public bool Truncated { get; init; }
 }
 
 /// <summary>

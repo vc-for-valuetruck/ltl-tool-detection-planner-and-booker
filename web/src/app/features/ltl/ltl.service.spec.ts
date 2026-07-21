@@ -267,4 +267,18 @@ describe('LtlService — yard artifacts', () => {
   it('builds a file URL for streaming a stored photo/PDF', () => {
     expect(service.yardArtifactFileUrl('a1', 'f1')).toBe('/api/ltl/yard-artifacts/a1/files/f1');
   });
+
+  it('calls GET /api/ltl/reporting/margin-rollup with the group-by param', () => {
+    service.marginRollup('Lane').subscribe();
+
+    const req = http.expectOne('/api/ltl/reporting/margin-rollup?groupBy=Lane');
+    expect(req.request.method).toBe('GET');
+    req.flush({ groupBy: 'Lane', rows: [], truncated: false });
+  });
+
+  it('builds a CSV export URL for the margin rollup', () => {
+    expect(service.marginRollupExportUrl('Rep')).toBe(
+      '/api/ltl/reporting/margin-rollup/export?groupBy=Rep',
+    );
+  });
 });

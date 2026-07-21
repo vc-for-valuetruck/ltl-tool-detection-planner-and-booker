@@ -68,26 +68,31 @@ public sealed class LtlLoadService(
         var invoices = await FetchInvoicesForLoadAsync(loadNumber, ct);
         var tripEcon = await FetchTripEconomicsForLoadAsync(loadNumber, ct);
         var (context, visibilityExceptions) = await FetchVisibilityAsync(loadNumber, ct);
+        var accessorialContext = await BuildAccessorialContextAsync(loadNumber, documents, ct);
         var ediEnrichment = tenderEnrichment is null ? null : await tenderEnrichment.EnrichOneAsync(load, ct);
         return normalizer.Normalize(
             load, documents, invoices, context, visibilityExceptions,
             carrierPayable: tripEcon.CarrierPayable,
             driverTripRate: tripEcon.DriverTripRate,
             loadedMiles: tripEcon.LoadedMiles,
-            ediEnrichment: ediEnrichment);
+            ediEnrichment: ediEnrichment,
+            accessorialSignals: accessorialContext,
+            carrierAccessorialsTotal: tripEcon.CarrierAccessorialsTotal);
     }
 
     /// <summary>
-    /// The three trip-derived economic fields the Consolidation Planner + Billing Worklist care
-    /// about: carrier total payable (billing), driver trip rate (dispatch), and loaded miles
-    /// (dispatch). All three come from the same <c>SearchTripsAsync</c> call, so this bundle
-    /// prevents three round-trips when only one is needed. Missing values remain null; nothing
-    /// is inferred.
+    /// The trip-derived economic fields the Consolidation Planner + Billing Worklist care about:
+    /// carrier total payable (billing), driver trip rate (dispatch), loaded miles (dispatch), and
+    /// carrier accessorial total (billing — lets <see cref="BillingReadinessService"/> catch a
+    /// carrier-paid accessorial that never made it onto the customer side). All come from the
+    /// same <c>SearchTripsAsync</c> call, so this bundle prevents extra round-trips. Missing
+    /// values remain null; nothing is inferred.
     /// </summary>
     private readonly record struct TripEconomics(
         decimal? CarrierPayable,
         decimal? DriverTripRate,
-        decimal? LoadedMiles);
+        decimal? LoadedMiles,
+        decimal? CarrierAccessorialsTotal = null);
 
     /// <summary>
     /// Fetches the inbound + outbound visibility history for a single load (read-only) and turns it
@@ -157,7 +162,8 @@ public sealed class LtlLoadService(
         return new TripEconomics(
             CarrierPayable: trip.Carrier?.TotalPayable?.Amount,
             DriverTripRate: trip.TripValue?.Amount,
-            LoadedMiles: trip.LoadedMileage?.Value);
+            LoadedMiles: trip.LoadedMileage?.Value,
+            CarrierAccessorialsTotal: trip.Carrier?.Accessorials?.Amount);
     }
 
     /// <summary>
@@ -235,8 +241,9 @@ public sealed class LtlLoadService(
             var payable = trip.Carrier?.TotalPayable?.Amount;
             var driverRate = trip.TripValue?.Amount;
             var loadedMiles = trip.LoadedMileage?.Value;
-            if (payable is null && driverRate is null && loadedMiles is null) continue;
-            map[trip.LoadNumber!] = new TripEconomics(payable, driverRate, loadedMiles);
+            var carrierAccessorials = trip.Carrier?.Accessorials?.Amount;
+            if (payable is null && driverRate is null && loadedMiles is null && carrierAccessorials is null) continue;
+            map[trip.LoadNumber!] = new TripEconomics(payable, driverRate, loadedMiles, carrierAccessorials);
         }
 
         return map;
@@ -316,7 +323,8 @@ public sealed class LtlLoadService(
                 invoices: InvoicesFor(l, invoicesByLoad),
                 carrierPayable: econ.CarrierPayable,
                 driverTripRate: econ.DriverTripRate,
-                loadedMiles: econ.LoadedMiles);
+                loadedMiles: econ.LoadedMiles,
+                carrierAccessorialsTotal: econ.CarrierAccessorialsTotal);
         });
 
         return normalized
@@ -325,6 +333,40 @@ public sealed class LtlLoadService(
             .OrderByDescending(s => s.Billing.IsReadyToBill)
             .ThenBy(s => s.ScheduledPickupAt ?? DateTimeOffset.MaxValue)
             .ToList();
+    }
+
+    /// <summary>
+    /// Margin/exception rollup grouped by customer, rep, or lane — the profitability-visibility
+    /// counterpart to the billing worklist: same normalized load set (bulk-fetched invoices + trip
+    /// economics, no per-load fan-out), aggregated by <see cref="MarginRollupBuilder"/> instead of
+    /// listed row-by-row. Entirely Alvys-derived; no external BI/reporting connection.
+    /// </summary>
+    public async Task<MarginRollupResponse> GetMarginRollupAsync(RollupGroupBy groupBy, CancellationToken ct)
+    {
+        var (loads, truncated) = await SweepAsync(new LoadSearchRequest { PageSize = _options.AlvysPageSize }, ct);
+
+        var invoicesByLoad = await FetchInvoicesForLoadsAsync(loads, ct);
+        var tripEconByLoad = await FetchTripEconomicsForLoadsAsync(loads, ct);
+
+        var normalized = loads.Select(l =>
+        {
+            var econ = !string.IsNullOrWhiteSpace(l.LoadNumber)
+                && tripEconByLoad.TryGetValue(l.LoadNumber!, out var e) ? e : default;
+            return normalizer.Normalize(
+                l,
+                invoices: InvoicesFor(l, invoicesByLoad),
+                carrierPayable: econ.CarrierPayable,
+                driverTripRate: econ.DriverTripRate,
+                loadedMiles: econ.LoadedMiles,
+                carrierAccessorialsTotal: econ.CarrierAccessorialsTotal);
+        }).ToList();
+
+        return new MarginRollupResponse
+        {
+            GroupBy = groupBy,
+            Rows = MarginRollupBuilder.Build(normalized, groupBy),
+            Truncated = truncated,
+        };
     }
 
     /// <summary>
@@ -669,6 +711,7 @@ public sealed class LtlLoadService(
             LtlSortField.Customer => s => s.CustomerName,
             LtlSortField.Status => s => s.Status,
             LtlSortField.BillingReadiness => s => s.Billing.IsReadyToBill ? 1 : 0,
+            LtlSortField.UrgencyScore => s => s.UrgencyScore,
             _ => s => s.ScheduledPickupAt,
         };
 
@@ -702,13 +745,21 @@ public sealed class LtlLoadService(
         if (load is null) return null;
 
         var loadNumber = load.LoadNumber ?? idOrNumber;
+        var documents = await alvys.ListLoadDocumentsAsync(loadNumber, ct);
+        return await BuildAccessorialContextAsync(loadNumber, documents, ct);
+    }
 
-        var notesTask = alvys.ListLoadNotesAsync(loadNumber, ct);
-        var documentsTask = alvys.ListLoadDocumentsAsync(loadNumber, ct);
-        await Task.WhenAll(notesTask, documentsTask);
-
-        var notes = await notesTask;
-        var documents = await documentsTask;
+    /// <summary>
+    /// Fetches notes for a load and builds the accessorial-signal context (deterministic keyword
+    /// extraction, plus AI supplement when enabled) against the caller's already-fetched
+    /// documents. Shared by <see cref="GetAccessorialSignalsAsync"/> and <see cref="GetDetailAsync"/>
+    /// so the detail path does not re-fetch documents just to fold this signal into billing
+    /// readiness.
+    /// </summary>
+    private async Task<AccessorialReviewContext> BuildAccessorialContextAsync(
+        string loadNumber, IReadOnlyList<AlvysLoadDocument> documents, CancellationToken ct)
+    {
+        var notes = await alvys.ListLoadNotesAsync(loadNumber, ct);
 
         // Deterministic keyword extraction (always runs, synchronous, pure).
         var context = accessorialAnalyzer.BuildContext(notes, documents);

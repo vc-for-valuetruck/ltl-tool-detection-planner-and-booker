@@ -90,6 +90,8 @@ defensible recommendations, and revenue protection.
 - `GET  /api/ltl/consolidation/plan/audits?parentLoadId={id}` — Phase 1 pilot: audit history for one parent (or all when parentLoadId omitted).
 - `GET  /api/ltl/notifications?max={n}` — Phase 6: recent workflow notifications (newest first) + lifetime count + per-channel config state. Read-only.
 - `GET  /api/ltl/notifications/channels` — Phase 6: honest per-channel configuration snapshot (in-app always on; Teams/email config-gated).
+- `GET  /api/ltl/reporting/margin-rollup?groupBy={Customer|Rep|Lane}` — read-only margin/exception rollup over the same normalized load set as the billing worklist, aggregated by customer, rep (Alvys id only — no rep-name field exists), or lane (derived from origin/destination). No external BI connection.
+- `GET  /api/ltl/reporting/margin-rollup/export?groupBy={Customer|Rep|Lane}` — CSV rendering of the same margin rollup, for external reporting tools (e.g. Power BI's Text/CSV connector) to pull Alvys-derived data directly from this tool. Same auth, same read-only data — only the response shape changes.
 
 Angular `/ltl` provides Search, Billing Worklist, Exceptions, detail drawer,
 recommended matches, assignment validation, billing readiness, visibility, saved views.

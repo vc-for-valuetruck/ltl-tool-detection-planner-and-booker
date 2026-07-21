@@ -157,6 +157,124 @@ public sealed class LtlLoadServiceTests
     }
 
     [Fact]
+    public async Task Detail_flags_carrier_accessorial_mismatch_from_trip_carrier_pay()
+    {
+        var client = new FakeAlvysClient
+        {
+            LoadDetail = new AlvysLoad
+            {
+                Id = "L1", LoadNumber = "100", Status = "Delivered",
+                CustomerRate = 1000m, Weight = 1000m, CustomerAccessorials = 50m,
+            },
+            Trips =
+            [
+                new AlvysTrip
+                {
+                    Id = "T1", LoadNumber = "100",
+                    Carrier = new AlvysPartyPay
+                    {
+                        TotalPayable = new AlvysMoney { Amount = 1200m },
+                        Accessorials = new AlvysMoney { Amount = 300m },
+                    },
+                },
+            ],
+        };
+
+        var summary = await Build(client).GetDetailAsync("100", default);
+
+        Assert.NotNull(summary);
+        Assert.Contains(BillingBadge.CarrierAccessorialMismatch, summary!.Billing.Badges);
+        Assert.False(summary.Billing.IsReadyToBill);
+    }
+
+    [Fact]
+    public async Task BillingWorklist_surfaces_carrier_accessorial_mismatch_from_bulk_trip_fetch()
+    {
+        var client = new FakeAlvysClient
+        {
+            Loads =
+            [
+                new AlvysLoad
+                {
+                    Id = "L1", LoadNumber = "100", Status = "Delivered",
+                    CustomerRate = 1000m, Weight = 1000m, ActualDeliveryAt = LtlTestFactory.Now,
+                },
+            ],
+            Trips =
+            [
+                new AlvysTrip
+                {
+                    Id = "T1", LoadNumber = "100",
+                    Carrier = new AlvysPartyPay { Accessorials = new AlvysMoney { Amount = 200m } },
+                },
+            ],
+        };
+
+        var body = await Build(client).BillingWorklistAsync(null, default);
+
+        var l1 = Assert.Single(body, s => s.Id == "L1");
+        Assert.Contains(BillingBadge.CarrierAccessorialMismatch, l1.Billing.Badges);
+    }
+
+    [Fact]
+    public async Task MarginRollup_groups_the_bulk_swept_and_normalized_loads_by_customer()
+    {
+        var client = new FakeAlvysClient
+        {
+            Loads =
+            [
+                new AlvysLoad { Id = "L1", LoadNumber = "100", Status = "Delivered", CustomerName = "Acme", CustomerRate = 1000m, Weight = 1000m },
+                new AlvysLoad { Id = "L2", LoadNumber = "200", Status = "Delivered", CustomerName = "Acme", CustomerRate = 500m, Weight = 500m },
+                new AlvysLoad { Id = "L3", LoadNumber = "300", Status = "Delivered", CustomerName = "Globex", CustomerRate = 300m, Weight = 300m },
+            ],
+        };
+
+        var response = await Build(client).GetMarginRollupAsync(RollupGroupBy.Customer, default);
+
+        Assert.Equal(RollupGroupBy.Customer, response.GroupBy);
+        Assert.False(response.Truncated);
+        var acme = Assert.Single(response.Rows, r => r.Label == "Acme");
+        Assert.Equal(2, acme.LoadCount);
+        Assert.Equal(1500m, acme.TotalRevenue);
+        var globex = Assert.Single(response.Rows, r => r.Label == "Globex");
+        Assert.Equal(1, globex.LoadCount);
+    }
+
+    [Fact]
+    public async Task MarginRollup_uses_bulk_trip_fetch_for_carrier_payable_and_accessorials()
+    {
+        var client = new FakeAlvysClient
+        {
+            Loads =
+            [
+                new AlvysLoad { Id = "L1", LoadNumber = "100", Status = "Delivered", CustomerName = "Acme", CustomerRate = 1000m, Weight = 1000m, CustomerAccessorials = 50m },
+            ],
+            Trips =
+            [
+                new AlvysTrip
+                {
+                    Id = "T1", LoadNumber = "100",
+                    Carrier = new AlvysPartyPay
+                    {
+                        TotalPayable = new AlvysMoney { Amount = 700m },
+                        Accessorials = new AlvysMoney { Amount = 200m },
+                    },
+                },
+            ],
+        };
+
+        var response = await Build(client).GetMarginRollupAsync(RollupGroupBy.Customer, default);
+
+        var row = Assert.Single(response.Rows);
+        Assert.Equal(700m, row.TotalCarrierPayable);
+        Assert.Equal(300m, row.TotalGrossMargin); // 1000 - 700
+        // The carrier-accessorial-mismatch badge (Carrier 200 > Customer 50) makes this load not
+        // ready to bill, and contributes an exception — confirms bulk trip data reached billing.
+        Assert.Equal(0, row.ReadyToBillCount);
+        Assert.True(row.ExceptionCount > 0);
+    }
+
+    [Fact]
     public async Task Exceptions_surfaces_visibility_failures_within_the_enrich_bound()
     {
         var client = new FakeAlvysClient

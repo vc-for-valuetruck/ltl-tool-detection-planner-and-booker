@@ -1,0 +1,105 @@
+<app-ltl-nav active="reporting" />
+
+<div class="worklist page-shell">
+  <div class="worklist-head">
+    <h1>Margin &amp; exception rollup</h1>
+    <span class="worklist-sub">
+      Profitability visibility over the same normalized loads as the billing worklist — grouped by
+      customer, rep, or lane. Read-only; entirely Alvys-derived; nothing is written to Alvys.
+      Use "Export CSV" to pull this feed into Power BI or another reporting tool — the ingestion
+      is Alvys-sourced, never a separate data path.
+    </span>
+  </div>
+
+  <div class="filter-row">
+    <span class="filter-label">Group by:</span>
+    @for (opt of groupByOptions; track opt.value) {
+      <button
+        type="button"
+        class="badge-filter"
+        [class.selected]="groupBy() === opt.value"
+        [attr.data-testid]="'reporting-groupby-' + opt.value"
+        (click)="selectGroupBy(opt.value)"
+      >
+        {{ opt.label }}
+      </button>
+    }
+    @if (!loading() && !error()) {
+      <span class="filter-count" data-testid="reporting-count">
+        {{ rows().length }} groups
+        @if (truncated()) {
+          · <span data-testid="reporting-truncated">totals reflect a bounded scan, not full Alvys history</span>
+        }
+      </span>
+    }
+    <a class="badge-filter" [href]="exportUrl()" target="_blank" rel="noopener" data-testid="reporting-export-csv">
+      Export CSV
+    </a>
+  </div>
+
+  @if (loading()) {
+    <div class="state" data-testid="reporting-loading">Loading margin rollup from Alvys…</div>
+  } @else if (error()) {
+    <div class="state state-error" data-testid="reporting-error">
+      <strong>Couldn't reach Alvys.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="load()">Retry</button>
+    </div>
+  } @else if (!hasRows()) {
+    <div class="state" data-testid="reporting-empty">
+      No loads match right now. Nothing is fabricated when Alvys returns none.
+    </div>
+  } @else {
+    <div class="card">
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th>Loads</th>
+              <th>Revenue</th>
+              <th>Carrier payable</th>
+              <th>Gross margin</th>
+              <th>Margin %</th>
+              <th>Unpaid balance</th>
+              <th>Exceptions</th>
+              <th>Ready to bill</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of rows(); track row.key) {
+              <tr data-testid="reporting-row">
+                <td>
+                  <div class="load-cell">
+                    <strong>{{ row.label }}</strong>
+                    @if (row.labelIsId) {
+                      <span class="load-tag">Alvys id — no rep name on file</span>
+                    }
+                  </div>
+                </td>
+                <td>{{ row.loadCount }}</td>
+                <td>{{ formatCurrency(row.totalRevenue) }}</td>
+                <td>{{ formatCurrency(row.totalCarrierPayable) }}</td>
+                <td>{{ formatCurrency(row.totalGrossMargin) }}</td>
+                <td><span [class]="marginClass(row)">{{ formatPercent(row.grossMarginPercent) }}</span></td>
+                <td>
+                  @if (row.totalUnpaidBalance !== null) {
+                    <span class="chip chip-danger">{{ formatCurrency(row.totalUnpaidBalance) }}</span>
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
+                <td>{{ row.exceptionCount }}</td>
+                <td>{{ row.readyToBillCount }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="worklist-footer" data-testid="reporting-footer">
+      Source: Live Alvys · Margin rollup · Read-only
+    </div>
+  }
+</div>

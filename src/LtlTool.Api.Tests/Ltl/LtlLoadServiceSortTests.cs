@@ -83,4 +83,15 @@ public sealed class LtlLoadServiceSortTests
         // Populated mileage ascends (300, 400, 500); D's null trails at the bottom.
         Assert.Equal(new[] { "B", "C", "A", "D" }, order);
     }
+
+    [Fact]
+    public async Task UrgencyScore_sort_descending_surfaces_the_missing_rate_load_first()
+    {
+        // "B" has no rate -> a blocking MISSING_RATE exception -> the highest urgency score of the set.
+        // The rest carry a rate and no other risk signal, so they all score 0 and tie.
+        var response = await Build(WithLoads()).SearchAsync(
+            new LtlSearchQuery { Sort = LtlSortField.UrgencyScore, SortDescending = true }, default);
+
+        Assert.Equal("B", response.Items[0].LoadNumber);
+    }
 }

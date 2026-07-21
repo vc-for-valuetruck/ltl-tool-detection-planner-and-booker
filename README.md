@@ -356,6 +356,8 @@ flags billing readiness and exceptions.
 | `GET /api/ltl/loads/{idOrNumber}/assignments` | internal assignment audit trail for a load |
 | `GET /api/ltl/billing/worklist?badge=` | loads needing billing attention, readiness-first |
 | `GET /api/ltl/exceptions` | loads carrying operational/billing exceptions |
+| `GET /api/ltl/reporting/margin-rollup?groupBy=` | margin/exception rollup grouped by customer, rep, or lane |
+| `GET /api/ltl/reporting/margin-rollup/export?groupBy=` | CSV rendering of the same rollup — point Power BI's Text/CSV connector (or any spreadsheet) at this URL; same auth, same Alvys-derived data, only the shape changes |
 | `GET /api/ltl/agent/commands` | tool-style catalog of the read-only agent commands (schema discovery) |
 | `POST /api/ltl/agent/commands/{command}` | dispatch one read-only agent command (feature-gated; 404 when disabled) |
 
@@ -415,6 +417,10 @@ The Angular `/ltl` route (`web/src/app/features/ltl/`) is a tabbed enterprise co
   loading/error/empty states, and pagination.
 - **Billing** — the `billing/worklist` endpoint with a badge filter, readiness-first ordering.
 - **Exceptions** — loads carrying operational/billing exceptions.
+- **Reporting** — margin/exception rollup by customer, rep, or lane, with an "Export CSV" link
+  for external reporting tools (Power BI's Text/CSV connector, or any spreadsheet). The exported
+  data is exactly the same Alvys-derived rollup — no separate ingestion path, no BI-tool
+  connection into this codebase, just a read-only feed out.
 
 Selecting a load opens a detail drawer that loads explainable match recommendations on demand
 (expandable per-factor breakdown, including an **Equipment availability** factor that reads
