@@ -16,7 +16,8 @@ namespace LtlTool.Api.Features.Ltl;
 /// </summary>
 public sealed class MatchService(
     IAlvysClient alvys, MatchScoringService scorer, EquipmentEventAnalyzer equipmentEvents,
-    IOptions<LtlOptions> options)
+    WindowFeasibilityAnalyzer windowFeasibility, EquipmentEventCache eventCache,
+    IAlvysDriverPredictionProvider prediction, IOptions<LtlOptions> options)
 {
     private readonly LtlOptions _options = options.Value;
 
@@ -32,14 +33,140 @@ public sealed class MatchService(
         var take = top > 0 ? top : _options.DefaultMatchResults;
         var candidates = await AssembleCandidatesAsync(ct);
         var events = await FetchEquipmentEventsAsync(load, candidates, ct);
+        var windowCtx = await FetchWindowFeasibilityAsync(load, candidates, ct);
 
-        return candidates
-            .Select(c => scorer.Score(load, c, AssessCandidate(load, c, events)))
-            // No hard disqualifier first, then by score; both descending so the best is on top.
-            .OrderByDescending(r => r.Disqualifiers.Count == 0)
-            .ThenByDescending(r => r.Score)
-            .Take(take)
+        // Consult Alvys' beta best-driver prediction first (ROADMAP Phase 2). When unavailable — the
+        // default today — fall back to the deterministic factor ranking, labeling every result so the
+        // fallback is never mistaken for a prediction-backed ranking.
+        var predicted = await prediction.PredictAsync(load, candidates, ct);
+        var basis = predicted.Available ? predicted.Basis : AlvysDriverPrediction.Unavailable.Basis;
+        var rank = predicted.Available
+            ? predicted.RankedDriverIds
+                .Select((id, i) => (id, i))
+                .ToDictionary(x => x.id, x => x.i, StringComparer.OrdinalIgnoreCase)
+            : null;
+
+        var scored = candidates
+            .Select(c => scorer.Score(
+                load, c, AssessCandidate(load, c, events), AssessWindow(c, windowCtx), basis));
+
+        // Prediction ranking (when available) leads; then no-hard-disqualifier, then our factor score.
+        // Both fallbacks descending so the best candidate is on top.
+        var ordered = rank is null
+            ? scored.OrderByDescending(r => r.Disqualifiers.Count == 0).ThenByDescending(r => r.Score)
+            : scored
+                .OrderBy(r => r.DriverId is { Length: > 0 } d && rank.TryGetValue(d, out var i) ? i : int.MaxValue)
+                .ThenByDescending(r => r.Disqualifiers.Count == 0)
+                .ThenByDescending(r => r.Score);
+
+        return ordered.Take(take).ToList();
+    }
+
+    /// <summary>
+    /// Builds a window-feasibility assessment for one candidate from a pre-fetched trip-commitment
+    /// context. Returns <see cref="WindowFeasibilityAssessment.NotEvaluated"/> when the load has no
+    /// pickup instant or no active-trip search was issued (so absent data never reads as "feasible").
+    /// </summary>
+    public WindowFeasibilityAssessment AssessWindow(MatchCandidate candidate, TripCommitmentContext context)
+    {
+        if (!context.Evaluated) return WindowFeasibilityAssessment.NotEvaluated;
+
+        string? tripId = null;
+        foreach (var id in CandidateIds(candidate))
+        {
+            if (context.TripByEquipmentOrDriver.TryGetValue(id, out var found)) { tripId = found; break; }
+        }
+
+        var clearsAt = tripId is { Length: > 0 } && context.ClearsAtByTrip.TryGetValue(tripId, out var c)
+            ? c : null;
+
+        return windowFeasibility.Assess(
+            context.PickupAt, evaluated: true, context.Truncated, tripId, clearsAt);
+    }
+
+    /// <summary>
+    /// One bounded active-trip sweep for a whole candidate set: finds each candidate's current
+    /// committed trip (by truck/trailer/driver id) and, for up to
+    /// <see cref="LtlOptions.MaxWindowFeasibilityTripFetches"/> distinct trips, fetches its stops to
+    /// learn when it clears. Returns a not-evaluated context when the load has no pickup instant.
+    /// </summary>
+    public async Task<TripCommitmentContext> FetchWindowFeasibilityAsync(
+        LtlLoadSummary load, IReadOnlyList<MatchCandidate> candidates, CancellationToken ct)
+    {
+        var pickupAt = load.ScheduledPickupAt;
+        if (pickupAt is null) return TripCommitmentContext.NotEvaluated;
+
+        var request = new TripSearchRequest
+        {
+            Page = 0,
+            PageSize = _options.AlvysPageSize,
+            Status = _options.ActiveTripStatuses,
+        };
+        var response = await alvys.SearchTripsAsync(request, ct);
+        var trips = response.Items ?? [];
+        var truncated = response.Total > trips.Count;
+
+        // id (truck/trailer/driver) → the committed trip carrying it.
+        var tripById = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var trip in trips)
+        {
+            if (string.IsNullOrWhiteSpace(trip.Id)) continue;
+            foreach (var id in TripEquipmentAndDriverIds(trip))
+                tripById.TryAdd(id, trip.Id);
+        }
+
+        // Only the trips actually referenced by a candidate need their stops fetched.
+        var candidateIds = candidates.SelectMany(CandidateIds).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var neededTripIds = tripById
+            .Where(kv => candidateIds.Contains(kv.Key))
+            .Select(kv => kv.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(_options.MaxWindowFeasibilityTripFetches)
             .ToList();
+
+        var clearsAt = new Dictionary<string, DateTimeOffset?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tripId in neededTripIds)
+        {
+            var stops = await alvys.ListTripStopsAsync(tripId, ct);
+            clearsAt[tripId] = ComputeClearsAt(stops);
+        }
+
+        return new TripCommitmentContext
+        {
+            Evaluated = true,
+            Truncated = truncated,
+            PickupAt = pickupAt,
+            TripByEquipmentOrDriver = tripById,
+            ClearsAtByTrip = clearsAt,
+        };
+    }
+
+    /// <summary>The latest stop window end on a trip — when it is expected to be fully clear.</summary>
+    private static DateTimeOffset? ComputeClearsAt(IReadOnlyList<AlvysTripStopDetail> stops)
+    {
+        DateTimeOffset? latest = null;
+        foreach (var stop in stops)
+        {
+            var end = stop.StopWindow?.End ?? stop.AppointmentDate;
+            if (end is { } e && (latest is null || e > latest)) latest = e;
+        }
+        return latest;
+    }
+
+    private static IEnumerable<string> CandidateIds(MatchCandidate candidate)
+    {
+        if (candidate.Truck?.Id is { Length: > 0 } t) yield return t;
+        if (candidate.Trailer?.Id is { Length: > 0 } tr) yield return tr;
+        if (candidate.Driver?.Id is { Length: > 0 } d) yield return d;
+    }
+
+    private static IEnumerable<string> TripEquipmentAndDriverIds(AlvysTrip trip)
+    {
+        if (trip.Truck?.Id is { Length: > 0 } t) yield return t;
+        if (trip.Trailer?.Id is { Length: > 0 } tr) yield return tr;
+        if (trip.Driver?.Id is { Length: > 0 } d) yield return d;
+        if (trip.Driver1?.Id is { Length: > 0 } d1) yield return d1;
+        if (trip.Driver2?.Id is { Length: > 0 } d2) yield return d2;
     }
 
     /// <summary>
@@ -77,29 +204,35 @@ public sealed class MatchService(
 
         var truckIds = candidates
             .Select(c => c.Truck?.Id).Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id!)
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(id => id, StringComparer.Ordinal).ToList();
         var trailerIds = candidates
             .Select(c => c.Trailer?.Id).Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id!)
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(id => id, StringComparer.Ordinal).ToList();
 
         if (truckIds.Count == 0 && trailerIds.Count == 0) return EquipmentEventBatch.NotEvaluated;
 
-        var truckTask = truckIds.Count > 0
-            ? alvys.SearchTruckEventsAsync(
-                new TruckEventSearchRequest { StartDate = start, EndDate = end, TruckIds = truckIds }, ct)
-            : Task.FromResult<IReadOnlyList<AlvysTruckEvent>>([]);
-        var trailerTask = trailerIds.Count > 0
-            ? alvys.SearchTrailerEventsAsync(
-                new TrailerEventSearchRequest { StartDate = start, EndDate = end, TrailerIds = trailerIds }, ct)
-            : Task.FromResult<IReadOnlyList<AlvysTrailerEvent>>([]);
-
-        await Task.WhenAll(truckTask, trailerTask);
-        return new EquipmentEventBatch
+        // Warm-up/memoization: re-opening the same load's drawer within the TTL reuses this batch
+        // instead of re-issuing the two Alvys event searches. Key is window + exact equipment set.
+        var key = $"eqevents:{start:o}:{end:o}:T={string.Join(",", truckIds)}:R={string.Join(",", trailerIds)}";
+        return await eventCache.GetOrFetchAsync(key, async () =>
         {
-            Evaluated = true,
-            TruckEvents = await truckTask,
-            TrailerEvents = await trailerTask,
-        };
+            var truckTask = truckIds.Count > 0
+                ? alvys.SearchTruckEventsAsync(
+                    new TruckEventSearchRequest { StartDate = start, EndDate = end, TruckIds = truckIds }, ct)
+                : Task.FromResult<IReadOnlyList<AlvysTruckEvent>>([]);
+            var trailerTask = trailerIds.Count > 0
+                ? alvys.SearchTrailerEventsAsync(
+                    new TrailerEventSearchRequest { StartDate = start, EndDate = end, TrailerIds = trailerIds }, ct)
+                : Task.FromResult<IReadOnlyList<AlvysTrailerEvent>>([]);
+
+            await Task.WhenAll(truckTask, trailerTask);
+            return new EquipmentEventBatch
+            {
+                Evaluated = true,
+                TruckEvents = await truckTask,
+                TrailerEvents = await trailerTask,
+            };
+        });
     }
 
     /// <summary>
@@ -174,7 +307,14 @@ public sealed class MatchService(
             var trailer = Lookup(trailers, pref.TrailerId);
             if (driver is null && truck is null && trailer is null) continue;
 
-            candidates.Add(new MatchCandidate { Driver = driver, Truck = truck, Trailer = trailer });
+            candidates.Add(new MatchCandidate
+            {
+                Driver = driver,
+                Truck = truck,
+                Trailer = trailer,
+                Preference = pref,
+                CoDriver = Lookup(drivers, pref.Driver2Id),
+            });
             if (driver is not null) seenDrivers.Add(driver.Id);
         }
 

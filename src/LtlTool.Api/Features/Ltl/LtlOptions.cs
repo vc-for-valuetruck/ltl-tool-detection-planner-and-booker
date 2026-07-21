@@ -283,6 +283,37 @@ public sealed class LtlMatchOptions
     /// </summary>
     public double EquipmentEventsWeight { get; set; } = 15;
 
+    /// <summary>
+    /// Weight of the window-feasibility factor (can the candidate's current Alvys trip commitment
+    /// clear before this load's pickup?). Only scored when the active-trip search was actually
+    /// issued for a known pickup instant — otherwise not-scored and excluded from the denominator,
+    /// never an implicit penalty.
+    /// </summary>
+    public double WindowFeasibilityWeight { get; set; } = 15;
+
+    /// <summary>
+    /// Weight of the dispatch-preference affinity factor (the candidate matches a dispatcher-curated
+    /// driver/truck/trailer pairing). A positive-only signal: absence of a preference is not-scored,
+    /// never a penalty.
+    /// </summary>
+    public double DispatchPreferenceWeight { get; set; } = 10;
+
+    /// <summary>
+    /// Alvys trip statuses (case-insensitive) treated as an active/committed trip when assessing
+    /// window feasibility — a candidate on such a trip is not free until it clears. Observed Alvys
+    /// status vocabulary; tune per environment rather than inventing states in code.
+    /// </summary>
+    public List<string> ActiveTripStatuses { get; set; } =
+        ["Dispatched", "In Transit", "InTransit", "Covered", "Assigned", "At Shipper", "At Consignee"];
+
+    /// <summary>
+    /// Upper bound on how many distinct active trips have their stop detail fetched
+    /// (<c>ListTripStopsAsync</c>) when assessing window feasibility for one match request. Bounds
+    /// the extra upstream calls; candidates on trips past the cap keep an unavailable feasibility
+    /// factor rather than a guessed one.
+    /// </summary>
+    public int MaxWindowFeasibilityTripFetches { get; set; } = 25;
+
     /// <summary>Score (0–100) at/above which a candidate is an Excellent Match.</summary>
     public int ExcellentThreshold { get; set; } = 85;
     public int GoodThreshold { get; set; } = 70;

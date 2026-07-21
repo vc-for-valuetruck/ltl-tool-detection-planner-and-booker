@@ -13,6 +13,18 @@ public sealed class MatchCandidate
     public AlvysDriver? Driver { get; init; }
     public AlvysTruck? Truck { get; init; }
     public AlvysTrailerEquipment? Trailer { get; init; }
+
+    /// <summary>
+    /// The dispatcher-curated preference this candidate was assembled from, when any. Presence is a
+    /// positive affinity signal for the dispatch-preference factor; absence is never a penalty.
+    /// </summary>
+    public AlvysDispatchPreference? Preference { get; init; }
+
+    /// <summary>
+    /// The resolved co-driver (Driver2) when this candidate came from a team preference. Used only to
+    /// surface a non-blocking co-driver constraint warning; it does not enter the score.
+    /// </summary>
+    public AlvysDriver? CoDriver { get; init; }
 }
 
 /// <summary>
@@ -28,10 +40,14 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
     private readonly LtlMatchOptions _match = options.Value.Match;
 
     public MatchResult Score(
-        LtlLoadSummary load, MatchCandidate candidate, EquipmentEventAssessment? events = null)
+        LtlLoadSummary load, MatchCandidate candidate,
+        EquipmentEventAssessment? events = null,
+        WindowFeasibilityAssessment? windowFeasibility = null,
+        string? predictionBasis = null)
     {
         var factors = new List<MatchFactor>();
         var disqualifiers = new List<string>();
+        var warnings = new List<string>();
         var now = clock.GetUtcNow();
 
         factors.Add(ScoreEquipment(load, candidate.Trailer));
@@ -40,15 +56,22 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
         factors.Add(ScoreFleetAlignment(load, candidate));
         factors.Add(ScoreGeography(load, candidate.Driver));
         factors.Add(ScoreEquipmentEvents(events));
+        var windowFactor = ScoreWindowFeasibility(windowFeasibility);
+        factors.Add(windowFactor);
+        factors.Add(ScoreDispatchPreference(candidate.Preference));
         factors.Add(NotScored("Hours of Service", "HOS data is not available in this slice."));
         factors.Add(NotScored("Historical performance", "Lane/driver history is not available in this slice."));
+
+        AddCoDriverWarning(candidate.CoDriver, now, warnings);
+        var windowInfeasible = windowFeasibility is { Evaluated: true, Infeasible: true };
+        if (windowInfeasible) warnings.Add(windowFactor.Detail);
 
         var earned = factors.Sum(f => f.Points);
         var availableMax = factors.Sum(f => f.MaxPoints);
         var score = availableMax > 0 ? (int)Math.Round(earned / availableMax * 100) : 0;
 
-        var label = ResolveLabel(score, disqualifiers.Count > 0, availableMax > 0);
-        var summary = BuildSummary(label, factors, disqualifiers);
+        var label = ResolveLabel(score, disqualifiers.Count > 0, availableMax > 0, windowInfeasible);
+        var summary = BuildSummary(label, factors, disqualifiers, windowInfeasible);
 
         return new MatchResult
         {
@@ -64,6 +87,8 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
             Summary = summary,
             Factors = factors,
             Disqualifiers = disqualifiers,
+            Warnings = warnings,
+            PredictionBasis = predictionBasis,
         };
     }
 
@@ -74,16 +99,18 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
             return NotScored(name, "Load required-equipment or trailer equipment type is unavailable.");
 
         var trailerType = trailer.EquipmentType!;
+        var raw = $"trailer {trailerType} vs required {string.Join("/", load.Equipment)}";
+        var w = _match.EquipmentWeight;
         var exact = load.Equipment.Any(e => string.Equals(e, trailerType, StringComparison.OrdinalIgnoreCase));
         if (exact)
-            return new MatchFactor { Name = name, Status = MatchFactorStatus.Strong, Detail = $"Trailer is {trailerType}, matching required equipment.", Points = _match.EquipmentWeight, MaxPoints = _match.EquipmentWeight };
+            return new MatchFactor { Name = name, Status = MatchFactorStatus.Strong, Detail = $"Trailer is {trailerType}, matching required equipment.", RawValue = raw, Weight = w, Points = w, MaxPoints = w };
 
         var partial = load.Equipment.Any(e =>
             e.Contains(trailerType, StringComparison.OrdinalIgnoreCase)
             || trailerType.Contains(e, StringComparison.OrdinalIgnoreCase));
         return partial
-            ? new MatchFactor { Name = name, Status = MatchFactorStatus.Neutral, Detail = $"Trailer {trailerType} partially matches required {string.Join("/", load.Equipment)}.", Points = _match.EquipmentWeight * 0.5, MaxPoints = _match.EquipmentWeight }
-            : new MatchFactor { Name = name, Status = MatchFactorStatus.Weak, Detail = $"Trailer {trailerType} does not match required {string.Join("/", load.Equipment)}.", Points = 0, MaxPoints = _match.EquipmentWeight };
+            ? new MatchFactor { Name = name, Status = MatchFactorStatus.Neutral, Detail = $"Trailer {trailerType} partially matches required {string.Join("/", load.Equipment)}.", RawValue = raw, Weight = w, Points = w * 0.5, MaxPoints = w }
+            : new MatchFactor { Name = name, Status = MatchFactorStatus.Weak, Detail = $"Trailer {trailerType} does not match required {string.Join("/", load.Equipment)}.", RawValue = raw, Weight = w, Points = 0, MaxPoints = w };
     }
 
     private MatchFactor ScoreWeightCapacity(
@@ -95,16 +122,18 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
             return NotScored(name, "Load weight or trailer weight capacity is unavailable.");
 
         var ratio = load.WeightLbs.Value / capacity.Value;
+        var raw = $"{load.WeightLbs:n0} lb / {capacity:n0} lb capacity ({ratio:p0})";
+        var w = _match.WeightCapacityWeight;
         if (ratio > 1)
         {
             disqualifiers.Add($"Load weight {load.WeightLbs:n0} lbs exceeds trailer capacity {capacity:n0} lbs.");
-            return new MatchFactor { Name = name, Status = MatchFactorStatus.Weak, Detail = $"Over capacity ({ratio:p0}).", Points = 0, MaxPoints = _match.WeightCapacityWeight };
+            return new MatchFactor { Name = name, Status = MatchFactorStatus.Weak, Detail = $"Over capacity ({ratio:p0}).", RawValue = raw, Weight = w, Points = 0, MaxPoints = w };
         }
 
         // Comfortable fit (<=80%) is best; tight fit (80–100%) is neutral.
         return ratio <= 0.8m
-            ? new MatchFactor { Name = name, Status = MatchFactorStatus.Strong, Detail = $"Comfortable fit ({ratio:p0} of capacity).", Points = _match.WeightCapacityWeight, MaxPoints = _match.WeightCapacityWeight }
-            : new MatchFactor { Name = name, Status = MatchFactorStatus.Neutral, Detail = $"Tight fit ({ratio:p0} of capacity).", Points = _match.WeightCapacityWeight * 0.6, MaxPoints = _match.WeightCapacityWeight };
+            ? new MatchFactor { Name = name, Status = MatchFactorStatus.Strong, Detail = $"Comfortable fit ({ratio:p0} of capacity).", RawValue = raw, Weight = w, Points = w, MaxPoints = w }
+            : new MatchFactor { Name = name, Status = MatchFactorStatus.Neutral, Detail = $"Tight fit ({ratio:p0} of capacity).", RawValue = raw, Weight = w, Points = w * 0.6, MaxPoints = w };
     }
 
     private MatchFactor ScoreDriverReadiness(AlvysDriver? driver, DateTimeOffset now, List<string> disqualifiers)
@@ -134,8 +163,9 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
             ? MatchFactorStatus.Strong
             : earned > 0 ? MatchFactorStatus.Neutral : MatchFactorStatus.Weak;
         var detail = notes.Count > 0 ? string.Join(" ", notes) : "Active with valid credentials.";
+        var raw = driver.IsActive == true ? "active driver" : "driver";
 
-        return new MatchFactor { Name = name, Status = status, Detail = detail, Points = earned, MaxPoints = _match.DriverReadinessWeight };
+        return new MatchFactor { Name = name, Status = status, Detail = detail, RawValue = raw, Weight = _match.DriverReadinessWeight, Points = earned, MaxPoints = _match.DriverReadinessWeight };
     }
 
     private void CheckExpiry(
@@ -170,14 +200,15 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
 
         // We can't reliably map customer↔subsidiary here, so treat presence of consistent
         // subsidiary data across driver+equipment as a mild positive signal.
+        var w = _match.FleetAlignmentWeight;
         if (!string.IsNullOrWhiteSpace(equipmentSubsidiary)
             && !string.IsNullOrWhiteSpace(driverSubsidiary)
             && string.Equals(equipmentSubsidiary, driverSubsidiary, StringComparison.OrdinalIgnoreCase))
         {
-            return new MatchFactor { Name = name, Status = MatchFactorStatus.Strong, Detail = "Driver and equipment share a subsidiary.", Points = _match.FleetAlignmentWeight, MaxPoints = _match.FleetAlignmentWeight };
+            return new MatchFactor { Name = name, Status = MatchFactorStatus.Strong, Detail = "Driver and equipment share a subsidiary.", RawValue = $"driver/equipment subsidiary {driverSubsidiary}", Weight = w, Points = w, MaxPoints = w };
         }
 
-        return new MatchFactor { Name = name, Status = MatchFactorStatus.Neutral, Detail = "Subsidiary data present but not cross-confirmed.", Points = _match.FleetAlignmentWeight * 0.5, MaxPoints = _match.FleetAlignmentWeight };
+        return new MatchFactor { Name = name, Status = MatchFactorStatus.Neutral, Detail = "Subsidiary data present but not cross-confirmed.", RawValue = $"subsidiary {subsidiary}", Weight = w, Points = w * 0.5, MaxPoints = w };
     }
 
     private MatchFactor ScoreEquipmentEvents(EquipmentEventAssessment? events)
@@ -189,14 +220,17 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
         if (events is not { Evaluated: true })
             return NotScored(name, "Truck/trailer event data was not available for the load window.");
 
+        var w = _match.EquipmentEventsWeight;
         if (events.HasConflict)
             return new MatchFactor
             {
                 Name = name,
                 Status = MatchFactorStatus.Weak,
                 Detail = $"Equipment event conflict: {string.Join(" ", events.Conflicts)}",
+                RawValue = $"{events.Conflicts.Count} conflicting event(s)",
+                Weight = w,
                 Points = 0,
-                MaxPoints = _match.EquipmentEventsWeight,
+                MaxPoints = w,
             };
 
         return new MatchFactor
@@ -204,10 +238,96 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
             Name = name,
             Status = MatchFactorStatus.Strong,
             Detail = "No repair/maintenance events overlap the load window.",
-            Points = _match.EquipmentEventsWeight,
-            MaxPoints = _match.EquipmentEventsWeight,
+            RawValue = "0 conflicting events",
+            Weight = w,
+            Points = w,
+            MaxPoints = w,
         };
     }
+
+    private MatchFactor ScoreWindowFeasibility(WindowFeasibilityAssessment? assessment)
+    {
+        const string name = "Window feasibility";
+        var w = _match.WindowFeasibilityWeight;
+
+        // No pickup instant or the active-trip search was not issued → unavailable (never a penalty).
+        if (assessment is not { Evaluated: true })
+            return NotScored(name, "No pickup instant or active-trip signal was available.", w);
+
+        // Candidate is free — a complete active-trip search found no conflicting commitment.
+        if (assessment.CommittedTripId is null)
+            return new MatchFactor
+            {
+                Name = name,
+                Status = MatchFactorStatus.Strong,
+                Detail = "No active trip commitment conflicts this load's pickup.",
+                RawValue = assessment.PickupAt is { } p ? $"pickup {p:yyyy-MM-dd HH:mm}, no committed trip" : "no committed trip",
+                Weight = w,
+                Points = w,
+                MaxPoints = w,
+            };
+
+        var raw = $"current trip clears {assessment.ClearsAt:yyyy-MM-dd HH:mm} vs pickup {assessment.PickupAt:yyyy-MM-dd HH:mm}";
+        return assessment.Infeasible
+            ? new MatchFactor
+            {
+                Name = name,
+                Status = MatchFactorStatus.Weak,
+                Detail = $"Current trip clears {assessment.ClearsAt:yyyy-MM-dd HH:mm}, after this load's {assessment.PickupAt:yyyy-MM-dd HH:mm} pickup — not free in time.",
+                RawValue = raw,
+                Weight = w,
+                Points = 0,
+                MaxPoints = w,
+            }
+            : new MatchFactor
+            {
+                Name = name,
+                Status = MatchFactorStatus.Strong,
+                Detail = $"Current trip clears {assessment.ClearsAt:yyyy-MM-dd HH:mm}, before this load's {assessment.PickupAt:yyyy-MM-dd HH:mm} pickup.",
+                RawValue = raw,
+                Weight = w,
+                Points = w,
+                MaxPoints = w,
+            };
+    }
+
+    private MatchFactor ScoreDispatchPreference(AlvysDispatchPreference? preference)
+    {
+        const string name = "Dispatch preference";
+        var w = _match.DispatchPreferenceWeight;
+
+        // Positive-only: a preference match is a plus; its absence is not a penalty (unavailable).
+        if (preference is null)
+            return NotScored(name, "Candidate is not from a dispatcher-curated preference pairing.", w);
+
+        return new MatchFactor
+        {
+            Name = name,
+            Status = MatchFactorStatus.Strong,
+            Detail = "Matches a dispatcher-curated driver/truck/trailer preference.",
+            RawValue = $"preference updated {preference.UpdatedAt:yyyy-MM-dd}",
+            Weight = w,
+            Points = w,
+            MaxPoints = w,
+        };
+    }
+
+    private void AddCoDriverWarning(AlvysDriver? coDriver, DateTimeOffset now, List<string> warnings)
+    {
+        if (coDriver is null) return;
+
+        if (coDriver.TerminatedAt is not null && coDriver.TerminatedAt <= now)
+            warnings.Add($"Co-driver {CoDriverLabel(coDriver)} is terminated — verify the team pairing.");
+        else if (coDriver.IsActive == false)
+            warnings.Add($"Co-driver {CoDriverLabel(coDriver)} is not active — verify the team pairing.");
+        else if (coDriver.LicenseExpiresAt is { } lic && lic <= now)
+            warnings.Add($"Co-driver {CoDriverLabel(coDriver)} license expired {lic:yyyy-MM-dd} — verify the team pairing.");
+        else if (coDriver.MedicalExpiresAt is { } med && med <= now)
+            warnings.Add($"Co-driver {CoDriverLabel(coDriver)} medical expired {med:yyyy-MM-dd} — verify the team pairing.");
+    }
+
+    private static string CoDriverLabel(AlvysDriver coDriver) =>
+        !string.IsNullOrWhiteSpace(coDriver.Name) ? coDriver.Name! : coDriver.Id ?? "co-driver";
 
     private MatchFactor ScoreGeography(LtlLoadSummary load, AlvysDriver? driver)
     {
@@ -217,25 +337,34 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
         if (string.IsNullOrWhiteSpace(originState) || string.IsNullOrWhiteSpace(driverState))
             return NotScored(name, "Load origin state or driver home state is unavailable.");
 
+        var w = _match.GeographyWeight;
         return string.Equals(originState, driverState, StringComparison.OrdinalIgnoreCase)
-            ? new MatchFactor { Name = name, Status = MatchFactorStatus.Strong, Detail = $"Driver is based in the origin state ({originState}).", Points = _match.GeographyWeight, MaxPoints = _match.GeographyWeight }
-            : new MatchFactor { Name = name, Status = MatchFactorStatus.Neutral, Detail = $"Driver home ({driverState}) differs from origin ({originState}).", Points = _match.GeographyWeight * 0.4, MaxPoints = _match.GeographyWeight };
+            ? new MatchFactor { Name = name, Status = MatchFactorStatus.Strong, Detail = $"Driver is based in the origin state ({originState}).", RawValue = $"driver {driverState} vs origin {originState}", Weight = w, Points = w, MaxPoints = w }
+            : new MatchFactor { Name = name, Status = MatchFactorStatus.Neutral, Detail = $"Driver home ({driverState}) differs from origin ({originState}).", RawValue = $"driver {driverState} vs origin {originState}", Weight = w, Points = w * 0.4, MaxPoints = w };
     }
 
-    private MatchLabel ResolveLabel(int score, bool hasDisqualifier, bool anyFactorAvailable)
+    private MatchLabel ResolveLabel(int score, bool hasDisqualifier, bool anyFactorAvailable, bool windowInfeasible)
     {
         // A hard disqualifier caps the label at Not Recommended regardless of points.
         if (hasDisqualifier) return MatchLabel.NotRecommended;
         if (!anyFactorAvailable) return MatchLabel.NotRecommended;
 
-        if (score >= _match.ExcellentThreshold) return MatchLabel.Excellent;
-        if (score >= _match.GoodThreshold) return MatchLabel.Good;
-        if (score >= _match.PossibleThreshold) return MatchLabel.Possible;
-        if (score >= _match.RiskyThreshold) return MatchLabel.Risky;
-        return MatchLabel.NotRecommended;
+        var label = score >= _match.ExcellentThreshold ? MatchLabel.Excellent
+            : score >= _match.GoodThreshold ? MatchLabel.Good
+            : score >= _match.PossibleThreshold ? MatchLabel.Possible
+            : score >= _match.RiskyThreshold ? MatchLabel.Risky
+            : MatchLabel.NotRecommended;
+
+        // An affirmatively-infeasible pickup window caps the label at Possible with a stated reason —
+        // it never *raises* a label, and (unlike Unavailable feasibility) is a real, data-backed signal.
+        if (windowInfeasible && label < MatchLabel.Possible)
+            label = MatchLabel.Possible;
+
+        return label;
     }
 
-    private static string BuildSummary(MatchLabel label, List<MatchFactor> factors, List<string> disqualifiers)
+    private static string BuildSummary(
+        MatchLabel label, List<MatchFactor> factors, List<string> disqualifiers, bool windowInfeasible)
     {
         if (disqualifiers.Count > 0)
             return $"{LabelText(label)}: {string.Join(" ", disqualifiers)}";
@@ -246,11 +375,12 @@ public sealed class MatchScoringService(IOptions<LtlOptions> options, TimeProvid
         if (strong.Count > 0) parts.Add($"strong on {string.Join(", ", strong)}");
         if (weak.Count > 0) parts.Add($"weak on {string.Join(", ", weak)}");
         var body = parts.Count > 0 ? string.Join("; ", parts) : "scored on available data";
-        return $"{LabelText(label)}: {body}.";
+        var capped = windowInfeasible ? " Capped to Possible: pickup window not feasible." : string.Empty;
+        return $"{LabelText(label)}: {body}.{capped}";
     }
 
-    private static MatchFactor NotScored(string name, string detail) =>
-        new() { Name = name, Status = MatchFactorStatus.Unavailable, Detail = detail, Points = 0, MaxPoints = 0 };
+    private static MatchFactor NotScored(string name, string detail, double weight = 0) =>
+        new() { Name = name, Status = MatchFactorStatus.Unavailable, Detail = detail, Weight = weight, Points = 0, MaxPoints = 0 };
 
     private static string LabelText(MatchLabel label) => label switch
     {

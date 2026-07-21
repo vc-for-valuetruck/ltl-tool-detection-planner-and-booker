@@ -151,4 +151,114 @@ public sealed class MatchScoringServiceTests
         Assert.Equal(MatchFactorStatus.Strong, factor.Status);
         Assert.Equal(factor.MaxPoints, factor.Points);
     }
+
+    [Fact]
+    public void Window_feasibility_is_unavailable_when_not_evaluated_and_excluded_from_denominator()
+    {
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = GoodTrailer() };
+
+        var result = LtlTestFactory.Scorer().Score(
+            Load(), candidate, events: null, windowFeasibility: WindowFeasibilityAssessment.NotEvaluated);
+
+        var factor = Assert.Single(result.Factors, f => f.Name == "Window feasibility");
+        Assert.Equal(MatchFactorStatus.Unavailable, factor.Status);
+        Assert.Equal(0, factor.MaxPoints); // never a penalty
+        Assert.Equal(MatchLabel.Excellent, result.Label); // absent feasibility must not cap the label
+    }
+
+    [Fact]
+    public void Window_feasibility_free_when_no_committed_trip_scores_strong()
+    {
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = GoodTrailer() };
+        var window = new WindowFeasibilityAssessment
+        {
+            Evaluated = true,
+            PickupAt = new DateTimeOffset(2026, 7, 1, 8, 0, 0, TimeSpan.Zero),
+        };
+
+        var result = LtlTestFactory.Scorer().Score(Load(), candidate, events: null, windowFeasibility: window);
+
+        var factor = Assert.Single(result.Factors, f => f.Name == "Window feasibility");
+        Assert.Equal(MatchFactorStatus.Strong, factor.Status);
+        Assert.Equal(factor.MaxPoints, factor.Points);
+    }
+
+    [Fact]
+    public void Infeasible_pickup_window_caps_the_label_at_possible_with_a_stated_reason()
+    {
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = GoodTrailer() };
+        var window = new WindowFeasibilityAssessment
+        {
+            Evaluated = true,
+            CommittedTripId = "TRIP-1",
+            ClearsAt = new DateTimeOffset(2026, 7, 2, 12, 0, 0, TimeSpan.Zero),
+            PickupAt = new DateTimeOffset(2026, 7, 1, 8, 0, 0, TimeSpan.Zero),
+            Infeasible = true,
+        };
+
+        var result = LtlTestFactory.Scorer().Score(Load(), candidate, events: null, windowFeasibility: window);
+
+        Assert.Equal(MatchLabel.Possible, result.Label);
+        var factor = Assert.Single(result.Factors, f => f.Name == "Window feasibility");
+        Assert.Equal(MatchFactorStatus.Weak, factor.Status);
+        Assert.Contains("not feasible", result.Summary);
+        Assert.Contains(result.Warnings, w => w.Contains("Current trip clears"));
+    }
+
+    [Fact]
+    public void Dispatch_preference_presence_scores_strong_positive()
+    {
+        var candidate = new MatchCandidate
+        {
+            Driver = GoodDriver(),
+            Trailer = GoodTrailer(),
+            Preference = new AlvysDispatchPreference { UpdatedAt = LtlTestFactory.Now },
+        };
+
+        var result = LtlTestFactory.Scorer().Score(Load(), candidate);
+
+        var factor = Assert.Single(result.Factors, f => f.Name == "Dispatch preference");
+        Assert.Equal(MatchFactorStatus.Strong, factor.Status);
+        Assert.Equal(factor.MaxPoints, factor.Points);
+    }
+
+    [Fact]
+    public void Dispatch_preference_absence_is_unavailable_never_a_penalty()
+    {
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = GoodTrailer() };
+
+        var result = LtlTestFactory.Scorer().Score(Load(), candidate);
+
+        var factor = Assert.Single(result.Factors, f => f.Name == "Dispatch preference");
+        Assert.Equal(MatchFactorStatus.Unavailable, factor.Status);
+        Assert.Equal(0, factor.MaxPoints);
+    }
+
+    [Fact]
+    public void Terminated_co_driver_raises_a_non_blocking_warning()
+    {
+        var coDriver = GoodDriver();
+        coDriver.Id = "DR2";
+        coDriver.Name = "Pat Codriver";
+        coDriver.TerminatedAt = new DateTimeOffset(2026, 5, 1, 0, 0, 0, TimeSpan.Zero);
+
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = GoodTrailer(), CoDriver = coDriver };
+
+        var result = LtlTestFactory.Scorer().Score(Load(), candidate);
+
+        Assert.Contains(result.Warnings, w => w.Contains("Co-driver") && w.Contains("terminated"));
+        // A co-driver warning is not a hard disqualifier — the primary candidate is still clean.
+        Assert.Empty(result.Disqualifiers);
+    }
+
+    [Fact]
+    public void Prediction_basis_is_recorded_on_the_result()
+    {
+        var candidate = new MatchCandidate { Driver = GoodDriver(), Trailer = GoodTrailer() };
+
+        var result = LtlTestFactory.Scorer().Score(
+            Load(), candidate, events: null, windowFeasibility: null, predictionBasis: "AlvysPredictionUnavailable");
+
+        Assert.Equal("AlvysPredictionUnavailable", result.PredictionBasis);
+    }
 }

@@ -1,6 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Tests.Ltl;
@@ -46,6 +47,24 @@ internal static class LtlTestFactory
 
     public static EquipmentEventAnalyzer EquipmentEvents(LtlOptions? options = null) =>
         new(Options(options));
+
+    /// <summary>
+    /// Builds a <see cref="MatchService"/> over a fake Alvys client with a fresh in-memory event
+    /// cache and (by default) the honest Null prediction provider — so ranking falls back to the
+    /// deterministic factor scorer, clearly labeled.
+    /// </summary>
+    public static MatchService Matcher(
+        IAlvysClient alvys,
+        IAlvysDriverPredictionProvider? prediction = null,
+        LtlOptions? options = null) =>
+        new(
+            alvys,
+            Scorer(options),
+            EquipmentEvents(options),
+            new WindowFeasibilityAnalyzer(),
+            new EquipmentEventCache(new MemoryCache(new MemoryCacheOptions())),
+            prediction ?? new NullAlvysDriverPredictionProvider(),
+            Options(options));
 }
 
 /// <summary>
@@ -96,7 +115,15 @@ internal class FakeAlvysClient : IAlvysClient
     public List<AlvysTrailerEvent> TrailerEvents { get; set; } = [];
     public List<AlvysCustomer> Customers { get; set; } = [];
     public List<AlvysTender> Tenders { get; set; } = [];
+
+    /// <summary>Trip id → its stops, served by <see cref="ListTripStopsAsync"/>.</summary>
+    public Dictionary<string, List<AlvysTripStopDetail>> TripStops { get; set; } = [];
+
     public int SearchCustomersCallCount { get; private set; }
+    public int ListTripStopsCallCount { get; private set; }
+    public int SearchTripsCallCount { get; private set; }
+    public int SearchTruckEventsCallCount { get; private set; }
+    public int SearchTrailerEventsCallCount { get; private set; }
 
     public Task<AlvysLoadsResponse> SearchLoadsAsync(
         int page = 1, int pageSize = 100, string? status = null, CancellationToken ct = default)
@@ -140,13 +167,20 @@ internal class FakeAlvysClient : IAlvysClient
         DispatchPreferenceSearchRequest request, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AlvysDispatchPreference>>(DispatchPreferences);
 
-    // Unused read paths in the LTL layer.
     public Task<AlvysTrip?> GetTripAsync(TripLookup lookup, CancellationToken ct = default)
-        => throw new NotSupportedException();
+        => Task.FromResult(Trips.FirstOrDefault(t => string.Equals(t.Id, lookup.Id, StringComparison.OrdinalIgnoreCase)));
     public Task<IReadOnlyList<AlvysTripStopDetail>> ListTripStopsAsync(string tripId, CancellationToken ct = default)
-        => throw new NotSupportedException();
+    {
+        ListTripStopsCallCount++;
+        var stops = TripStops.TryGetValue(tripId, out var found) ? found : [];
+        return Task.FromResult<IReadOnlyList<AlvysTripStopDetail>>(stops);
+    }
     public Task<AlvysTripsResponse> SearchTripsAsync(TripSearchRequest request, CancellationToken ct = default)
-        => Task.FromResult(new AlvysTripsResponse { Total = Trips.Count, Items = Trips });
+    {
+        SearchTripsCallCount++;
+        return Task.FromResult(new AlvysTripsResponse { Total = Trips.Count, Items = Trips });
+    }
+    // Unused read paths in the LTL layer.
     public Task<AlvysLocationsResponse> SearchLocationsAsync(LocationSearchRequest request, CancellationToken ct = default)
         => throw new NotSupportedException();
     public Task<AlvysCustomersResponse> SearchCustomersAsync(CustomerSearchRequest request, CancellationToken ct = default)
@@ -194,7 +228,13 @@ internal class FakeAlvysClient : IAlvysClient
     public Task<IReadOnlyList<AlvysVisibilityHistoryEvent>> ListOutboundVisibilityHistoryAsync(string loadNumber, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AlvysVisibilityHistoryEvent>>(OutboundVisibility);
     public Task<IReadOnlyList<AlvysTruckEvent>> SearchTruckEventsAsync(TruckEventSearchRequest request, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<AlvysTruckEvent>>(TruckEvents);
+    {
+        SearchTruckEventsCallCount++;
+        return Task.FromResult<IReadOnlyList<AlvysTruckEvent>>(TruckEvents);
+    }
     public Task<IReadOnlyList<AlvysTrailerEvent>> SearchTrailerEventsAsync(TrailerEventSearchRequest request, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<AlvysTrailerEvent>>(TrailerEvents);
+    {
+        SearchTrailerEventsCallCount++;
+        return Task.FromResult<IReadOnlyList<AlvysTrailerEvent>>(TrailerEvents);
+    }
 }

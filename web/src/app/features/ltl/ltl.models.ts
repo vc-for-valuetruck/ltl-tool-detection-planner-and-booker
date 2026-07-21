@@ -322,6 +322,8 @@ export interface MatchFactor {
   detail: string;
   points: number;
   maxPoints: number;
+  rawValue?: string | null;
+  weight?: number;
 }
 
 export interface MatchResult {
@@ -337,6 +339,8 @@ export interface MatchResult {
   summary: string;
   factors: MatchFactor[];
   disqualifiers: string[];
+  warnings?: string[];
+  predictionBasis?: string | null;
 }
 
 export type AssignmentIssueSeverity = 'Block' | 'Warn';

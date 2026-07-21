@@ -1,6 +1,6 @@
 import { LtlLoadDetail } from './ltl-load-detail';
 import { LtlService } from './ltl.service';
-import { LtlLoadSummary, LtlPlace } from './ltl.models';
+import { LtlLoadSummary, LtlPlace, MatchFactor, MatchResult } from './ltl.models';
 import { YardArtifactView } from './yard-artifacts.models';
 import { ActivatedRoute } from '@angular/router';
 import { TestBed } from '@angular/core/testing';
@@ -16,8 +16,12 @@ function load(partial: Partial<LtlLoadSummary>): LtlLoadSummary {
 
 describe('LtlLoadDetail', () => {
   function build(loadNumber: string | null, stub: Partial<LtlService>): LtlLoadDetail {
-    // Artifacts are supplementary; default to an empty feed unless a test overrides it.
-    const withArtifacts: Partial<LtlService> = { yardArtifacts: () => of([]), ...stub };
+    // Artifacts + matches are supplementary; default to empty feeds unless a test overrides them.
+    const withArtifacts: Partial<LtlService> = {
+      yardArtifacts: () => of([]),
+      getMatches: () => of([]),
+      ...stub,
+    };
     TestBed.configureTestingModule({
       providers: [
         { provide: LtlService, useValue: withArtifacts },
@@ -126,6 +130,96 @@ describe('LtlLoadDetail', () => {
     c.ngOnInit();
     expect(c['hasLoad']()).toBeTrue();
     expect(c['artifacts']()).toEqual([]);
+  });
+
+  function factor(overrides: Partial<MatchFactor>): MatchFactor {
+    return {
+      name: 'Equipment match',
+      status: 'Strong',
+      detail: 'Trailer is Reefer, matching required equipment.',
+      points: 30,
+      maxPoints: 30,
+      rawValue: 'trailer Reefer vs required Reefer',
+      weight: 30,
+      ...overrides,
+    };
+  }
+
+  function match(overrides: Partial<MatchResult>): MatchResult {
+    return {
+      driverId: 'd1',
+      driverName: 'Jane Doe',
+      truckId: 't1',
+      truckNumber: 'TR-1',
+      trailerId: 'r1',
+      trailerNumber: 'RL-1',
+      label: 'Excellent',
+      labelText: 'Excellent Match',
+      score: 92,
+      summary: 'Excellent Match: strong on Equipment match.',
+      factors: [factor({})],
+      disqualifiers: [],
+      warnings: [],
+      predictionBasis: 'AlvysPredictionUnavailable',
+      ...overrides,
+    } as MatchResult;
+  }
+
+  it('fetches and exposes ranked matches for the load', () => {
+    let asked: string | undefined;
+    const c = build('L-100234', {
+      getLoad: () => of(load({ loadNumber: 'L-100234', id: 'ID-1' })),
+      getMatches: (ref) => {
+        asked = ref;
+        return of([match({})]);
+      },
+    });
+    c.ngOnInit();
+    expect(asked).toBe('L-100234');
+    expect(c['matches']().length).toBe(1);
+    expect(c['matchesLoading']()).toBeFalse();
+    expect(c['matchesError']()).toBeNull();
+  });
+
+  it('keeps the load visible when the matches fetch fails', () => {
+    const c = build('L-1', {
+      getLoad: () => of(load({ loadNumber: 'L-1' })),
+      getMatches: () => throwError(() => ({ message: 'boom' })),
+    });
+    c.ngOnInit();
+    expect(c['hasLoad']()).toBeTrue();
+    expect(c['matches']()).toEqual([]);
+    expect(c['matchesError']()).toBe('boom');
+  });
+
+  it('reports an Unavailable factor as "not scored", never a zero contribution', () => {
+    const c = build('L-1', { getLoad: () => of(load({})) });
+    expect(c['factorContribution'](factor({ status: 'Unavailable', points: 0, maxPoints: 0 }))).toBe('not scored');
+    expect(c['factorContribution'](factor({ status: 'Strong', points: 30, maxPoints: 30 }))).toBe('30 / 30 pts');
+  });
+
+  it('builds an audit-friendly clipboard breakdown including factors, warnings and basis', () => {
+    const c = build('L-1', { getLoad: () => of(load({})) });
+    const text = c['matchClipboardText'](
+      match({
+        warnings: ['Co-driver John is terminated — verify the team pairing.'],
+        disqualifiers: [],
+        factors: [factor({}), factor({ name: 'Window feasibility', status: 'Unavailable', points: 0, maxPoints: 0, rawValue: null })],
+      }),
+    );
+    expect(text).toContain('Excellent Match (92/100) — Jane Doe');
+    expect(text).toContain('- Equipment match (Strong, 30 / 30 pts)');
+    expect(text).toContain('- Window feasibility (Unavailable, not scored)');
+    expect(text).toContain('Co-driver John is terminated');
+    expect(text).toContain('Ranking basis: AlvysPredictionUnavailable');
+  });
+
+  it('maps match labels to chip classes', () => {
+    const c = build('L-1', { getLoad: () => of(load({})) });
+    expect(c['matchLabelClass']('Excellent')).toBe('chip chip-good');
+    expect(c['matchLabelClass']('Possible')).toBe('chip chip-neutral');
+    expect(c['matchLabelClass']('Risky')).toBe('chip chip-warn');
+    expect(c['matchLabelClass']('NotRecommended')).toBe('chip chip-danger');
   });
 
   it('classifies artifact status chips and formats verified dims', () => {

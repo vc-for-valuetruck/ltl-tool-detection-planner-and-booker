@@ -123,6 +123,81 @@
       </div>
     }
 
+    <div class="card detail-card" data-testid="recommended-matches">
+      <h2>Recommended matches</h2>
+      @if (matchesLoading()) {
+        <div class="state" data-testid="matches-loading">Ranking fleet candidates…</div>
+      } @else if (matchesError()) {
+        <div class="state state-error" data-testid="matches-error">
+          <span>{{ matchesError() }}</span>
+        </div>
+      } @else if (matches().length) {
+        @for (m of matches(); track matchKey(m, $index)) {
+          <div class="match-card" data-testid="match-card">
+            <div class="match-head">
+              <div class="match-identity">
+                <span [class]="matchLabelClass(m.label)" data-testid="match-label">{{ m.labelText }}</span>
+                <span class="match-score" data-testid="match-score">{{ m.score }}/100</span>
+                <span class="match-who">{{ m.driverName ?? m.driverId ?? 'Unnamed driver' }}</span>
+                @if (m.truckNumber) { <span class="match-equip">Truck {{ m.truckNumber }}</span> }
+                @if (m.trailerNumber) { <span class="match-equip">Trailer {{ m.trailerNumber }}</span> }
+              </div>
+              <button
+                type="button"
+                class="copy-btn"
+                data-testid="match-copy"
+                (click)="copyMatch(m, $index)"
+                title="Copy this recommendation and its factor breakdown"
+              >
+                {{ copiedMatchKey() === matchKey(m, $index) ? 'Copied ✓' : 'Copy breakdown' }}
+              </button>
+            </div>
+
+            <p class="match-summary">{{ m.summary }}</p>
+
+            @if (m.disqualifiers.length) {
+              <div class="chip-row" data-testid="match-disqualifiers">
+                @for (d of m.disqualifiers; track d) {
+                  <span class="chip chip-danger" [title]="d">{{ d }}</span>
+                }
+              </div>
+            }
+
+            @if (m.warnings?.length) {
+              <div class="chip-row" data-testid="match-warnings">
+                @for (w of m.warnings; track w) {
+                  <span class="chip chip-warn" [title]="w">{{ w }}</span>
+                }
+              </div>
+            }
+
+            <table class="factor-table" data-testid="match-factors">
+              <thead>
+                <tr><th>Factor</th><th>Value</th><th>Weight</th><th>Contribution</th><th>Why</th></tr>
+              </thead>
+              <tbody>
+                @for (f of m.factors; track f.name) {
+                  <tr [class]="factorRowClass(f.status)">
+                    <td>{{ f.name }}</td>
+                    <td>{{ f.rawValue ?? '—' }}</td>
+                    <td>{{ f.weight ? f.weight : '—' }}</td>
+                    <td>{{ factorContribution(f) }}</td>
+                    <td>{{ f.detail }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+
+            @if (m.predictionBasis) {
+              <p class="detail-note" data-testid="match-basis">Ranking basis: {{ m.predictionBasis }}</p>
+            }
+          </div>
+        }
+      } @else {
+        <p class="muted" data-testid="matches-empty">No fleet candidates could be ranked for this load.</p>
+      }
+    </div>
+
     @if (artifacts().length) {
       <div class="card detail-card" data-testid="yard-artifacts">
         <h2>Yard artifacts</h2>
