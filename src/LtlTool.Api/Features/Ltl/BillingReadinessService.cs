@@ -60,14 +60,19 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
     /// (a load with no CustomerRate but a FuelSurcharge/CustomerAccessorials-derived revenue
     /// must not silently skip margin evaluation). <paramref name="carrierPayable"/> is optional
     /// (fetched from the load's trip); when supplied alongside a known revenue it enables a
-    /// gross-margin risk signal.
+    /// gross-margin risk signal. <paramref name="accessorialSignals"/> is optional (fetched from
+    /// the load's notes/documents on the detail path only); when it carries an evaluated,
+    /// typed signal (detention/layover/lumper/reconsignment) and the load has no customer
+    /// accessorial charge at all, it flags a likely missed accessorial rather than the narrower
+    /// itemization gap <see cref="BillingBadge.MissingAccessorialReview"/> already covers.
     /// </summary>
     public BillingReadinessResult Evaluate(
         AlvysLoad load,
         IReadOnlyList<AlvysLoadDocument>? documents = null,
         IReadOnlyList<AlvysInvoice>? invoices = null,
         decimal? resolvedRevenue = null,
-        decimal? carrierPayable = null)
+        decimal? carrierPayable = null,
+        AccessorialReviewContext? accessorialSignals = null)
     {
         var badges = new List<BillingBadge>();
         var missing = new List<MissingDataFlag>();
@@ -165,6 +170,26 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
             risks.Add("Accessorial total present but no itemized detail to review.");
         }
 
+        // Accessorial signal detected in notes/documents (detention/layover/lumper/reconsignment)
+        // but no customer accessorial charge exists at all — a likely missed accessorial, distinct
+        // from the itemization-gap check above. Only ever evaluated on the detail path, where
+        // notes/documents are fetched; absent elsewhere, so this never fires as a false negative.
+        var unbilledAccessorialTypes = accessorialSignals is { Evaluated: true }
+            ? accessorialSignals.Signals
+                .Where(s => s.Type != AccessorialSignalType.Other)
+                .Select(s => s.Type)
+                .Distinct()
+                .ToList()
+            : [];
+        var possibleUnbilledAccessorial =
+            unbilledAccessorialTypes.Count > 0 && load.CustomerAccessorials is null or <= 0;
+        if (possibleUnbilledAccessorial)
+        {
+            risks.Add(
+                $"Notes/documents indicate possible {string.Join(", ", unbilledAccessorialTypes)} "
+                + "accessorial activity, but the load carries no customer accessorial charge.");
+        }
+
         // POD — only when delivered, and only when documents were supplied to look at.
         var podEvaluated = documents is not null;
         var podMissing = false;
@@ -191,6 +216,7 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
         if (load.Weight is null or <= 0) badges.Add(BillingBadge.MissingWeight);
         if (podMissing) badges.Add(BillingBadge.MissingPod);
         if (accessorialReviewNeeded) badges.Add(BillingBadge.MissingAccessorialReview);
+        if (possibleUnbilledAccessorial) badges.Add(BillingBadge.PossibleUnbilledAccessorial);
         if (missing.Contains(MissingDataFlag.Customer)) badges.Add(BillingBadge.CustomerReviewNeeded);
         if (blocked) badges.Add(BillingBadge.ExceptionBlockingBilling);
 
@@ -201,6 +227,7 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
             && hasRate
             && load.Weight is > 0
             && !accessorialReviewNeeded
+            && !possibleUnbilledAccessorial
             && !blocked
             && !missing.Contains(MissingDataFlag.Customer)
             && (!podEvaluated || !podMissing);
@@ -313,6 +340,16 @@ public sealed class BillingReadinessService(IOptions<LtlOptions> options, TimePr
             {
                 Code = "ACCESSORIAL_REVIEW",
                 Message = "Accessorial charges need review before billing.",
+                BlocksBilling = false,
+            });
+        }
+
+        if (billing.Badges.Contains(BillingBadge.PossibleUnbilledAccessorial))
+        {
+            exceptions.Add(new LtlExceptionFlag
+            {
+                Code = "POSSIBLE_UNBILLED_ACCESSORIAL",
+                Message = "Notes/documents suggest an accessorial event occurred, but no accessorial charge is on the load.",
                 BlocksBilling = false,
             });
         }

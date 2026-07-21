@@ -53,7 +53,9 @@ public sealed class LtlNormalizationService(
     /// driver-facing rate (<c>Trip.TripValue.Amount</c>) and loaded miles
     /// (<c>Trip.LoadedMileage.Distance.Value</c>) — the two inputs to the driver-RPM math the
     /// Consolidation Planner needs (Reuben 2026-07-17 sync, 15:55 + 33:06). Both optional; null
-    /// on the list/search path where trips are not fetched.
+    /// on the list/search path where trips are not fetched. <paramref name="accessorialSignals"/>
+    /// is optional (fetched from the load's notes/documents on the detail path only) and is
+    /// folded into billing readiness to catch a likely missed accessorial.
     /// </summary>
     public LtlLoadSummary Normalize(
         AlvysLoad load,
@@ -66,7 +68,8 @@ public sealed class LtlNormalizationService(
         decimal? loadedMiles = null,
         LtlEdiEnrichment? ediEnrichment = null,
         LtlLateDelivery? lateDelivery = null,
-        LtlStuckStop? stuckStop = null)
+        LtlStuckStop? stuckStop = null,
+        AccessorialReviewContext? accessorialSignals = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -110,7 +113,7 @@ public sealed class LtlNormalizationService(
 
         var (isLtl, classification) = ClassifyLtl(load, equipment);
 
-        var billingResult = billing.Evaluate(load, documents, invoices, revenue, carrierPayable);
+        var billingResult = billing.Evaluate(load, documents, invoices, revenue, carrierPayable, accessorialSignals);
         var grossMargin = revenue is not null && carrierPayable is not null
             ? revenue.Value - carrierPayable.Value
             : (decimal?)null;

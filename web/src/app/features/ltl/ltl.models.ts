@@ -32,7 +32,8 @@ export type BillingBadge =
   | 'MissingWeight'
   | 'CustomerReviewNeeded'
   | 'ExceptionBlockingBilling'
-  | 'AlreadyInvoiced';
+  | 'AlreadyInvoiced'
+  | 'PossibleUnbilledAccessorial';
 
 export type AssignmentState = 'Unassigned' | 'Assigned' | 'Unknown';
 

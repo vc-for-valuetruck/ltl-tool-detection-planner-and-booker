@@ -296,6 +296,7 @@ export class LtlConsole implements OnInit {
     { value: 'MissingPod', label: 'Missing POD' },
     { value: 'MissingWeight', label: 'Missing Weight' },
     { value: 'MissingAccessorialReview', label: 'Missing Accessorial Review' },
+    { value: 'PossibleUnbilledAccessorial', label: 'Possible Unbilled Accessorial' },
     { value: 'CustomerReviewNeeded', label: 'Customer Review Needed' },
     { value: 'ExceptionBlockingBilling', label: 'Exception Blocking Billing' },
     { value: 'AlreadyInvoiced', label: 'Already Invoiced' },

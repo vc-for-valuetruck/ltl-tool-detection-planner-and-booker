@@ -264,4 +264,80 @@ public sealed class BillingReadinessServiceTests
         Assert.Null(result.AgingBucket);
         Assert.Null(result.AgingDays);
     }
+
+    private static AccessorialReviewContext DetentionSignal() => new()
+    {
+        Evaluated = true,
+        Signals =
+        [
+            new AccessorialSignal
+            {
+                Type = AccessorialSignalType.Detention,
+                EvidenceQuote = "driver waited 3 hours at the dock",
+                SourceId = "N1",
+                SourceType = "Note",
+            },
+        ],
+    };
+
+    [Fact]
+    public void Accessorial_signal_with_no_customer_accessorial_charge_flags_possible_unbilled_accessorial()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = null;
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], accessorialSignals: DetentionSignal());
+
+        Assert.Contains(BillingBadge.PossibleUnbilledAccessorial, result.Badges);
+        Assert.Contains(result.Risks, r => r.Contains("Detention") && r.Contains("no customer accessorial charge"));
+        Assert.False(result.IsReadyToBill);
+    }
+
+    [Fact]
+    public void Accessorial_signal_with_an_existing_customer_accessorial_charge_is_not_flagged()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = 150m;
+        load.CustomerAccessorialsDetails =
+            [new AlvysAccessorialDetail { Type = "Detention", Amount = 150m }];
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], accessorialSignals: DetentionSignal());
+
+        Assert.DoesNotContain(BillingBadge.PossibleUnbilledAccessorial, result.Badges);
+    }
+
+    [Fact]
+    public void No_accessorial_signal_never_flags_possible_unbilled_accessorial()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = null;
+
+        var result = LtlTestFactory.Billing().Evaluate(load, [], accessorialSignals: AccessorialReviewContext.NotEvaluated);
+
+        Assert.DoesNotContain(BillingBadge.PossibleUnbilledAccessorial, result.Badges);
+    }
+
+    [Fact]
+    public void Accessorial_signals_not_supplied_never_flags_possible_unbilled_accessorial()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = null;
+
+        var result = LtlTestFactory.Billing().Evaluate(load, []);
+
+        Assert.DoesNotContain(BillingBadge.PossibleUnbilledAccessorial, result.Badges);
+    }
+
+    [Fact]
+    public void Possible_unbilled_accessorial_badge_produces_a_non_blocking_exception()
+    {
+        var load = DeliveredBillable();
+        load.CustomerAccessorials = null;
+
+        var billing = LtlTestFactory.Billing();
+        var result = billing.Evaluate(load, [], accessorialSignals: DetentionSignal());
+        var exceptions = billing.DeriveExceptions(load, result);
+
+        Assert.Contains(exceptions, e => e.Code == "POSSIBLE_UNBILLED_ACCESSORIAL" && !e.BlocksBilling);
+    }
 }

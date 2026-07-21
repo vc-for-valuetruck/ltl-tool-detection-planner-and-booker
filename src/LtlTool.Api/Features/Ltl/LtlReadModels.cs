@@ -70,6 +70,14 @@ public enum BillingBadge
     CustomerReviewNeeded,
     ExceptionBlockingBilling,
     AlreadyInvoiced,
+
+    /// <summary>
+    /// Notes/documents contain a keyword-detected accessorial event (detention, layover, lumper,
+    /// reconsignment) but the load carries no customer accessorial charge at all — a likely missed
+    /// accessorial rather than an itemization gap (see <see cref="MissingAccessorialReview"/> for
+    /// that case). Only computed on the detail path, where notes/documents are fetched.
+    /// </summary>
+    PossibleUnbilledAccessorial,
 }
 
 /// <summary>

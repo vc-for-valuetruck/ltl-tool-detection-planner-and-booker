@@ -68,13 +68,15 @@ public sealed class LtlLoadService(
         var invoices = await FetchInvoicesForLoadAsync(loadNumber, ct);
         var tripEcon = await FetchTripEconomicsForLoadAsync(loadNumber, ct);
         var (context, visibilityExceptions) = await FetchVisibilityAsync(loadNumber, ct);
+        var accessorialContext = await BuildAccessorialContextAsync(loadNumber, documents, ct);
         var ediEnrichment = tenderEnrichment is null ? null : await tenderEnrichment.EnrichOneAsync(load, ct);
         return normalizer.Normalize(
             load, documents, invoices, context, visibilityExceptions,
             carrierPayable: tripEcon.CarrierPayable,
             driverTripRate: tripEcon.DriverTripRate,
             loadedMiles: tripEcon.LoadedMiles,
-            ediEnrichment: ediEnrichment);
+            ediEnrichment: ediEnrichment,
+            accessorialSignals: accessorialContext);
     }
 
     /// <summary>
@@ -702,13 +704,21 @@ public sealed class LtlLoadService(
         if (load is null) return null;
 
         var loadNumber = load.LoadNumber ?? idOrNumber;
+        var documents = await alvys.ListLoadDocumentsAsync(loadNumber, ct);
+        return await BuildAccessorialContextAsync(loadNumber, documents, ct);
+    }
 
-        var notesTask = alvys.ListLoadNotesAsync(loadNumber, ct);
-        var documentsTask = alvys.ListLoadDocumentsAsync(loadNumber, ct);
-        await Task.WhenAll(notesTask, documentsTask);
-
-        var notes = await notesTask;
-        var documents = await documentsTask;
+    /// <summary>
+    /// Fetches notes for a load and builds the accessorial-signal context (deterministic keyword
+    /// extraction, plus AI supplement when enabled) against the caller's already-fetched
+    /// documents. Shared by <see cref="GetAccessorialSignalsAsync"/> and <see cref="GetDetailAsync"/>
+    /// so the detail path does not re-fetch documents just to fold this signal into billing
+    /// readiness.
+    /// </summary>
+    private async Task<AccessorialReviewContext> BuildAccessorialContextAsync(
+        string loadNumber, IReadOnlyList<AlvysLoadDocument> documents, CancellationToken ct)
+    {
+        var notes = await alvys.ListLoadNotesAsync(loadNumber, ct);
 
         // Deterministic keyword extraction (always runs, synchronous, pure).
         var context = accessorialAnalyzer.BuildContext(notes, documents);
