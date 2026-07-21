@@ -25,6 +25,34 @@ export type AlvysOperationEligibility =
 
 export type AlvysSyncOutcome = 'Unknown' | 'Success' | 'Failure';
 
+/**
+ * Post-write reconciliation state for a document upload. `Confirmed` means the attachment was seen on
+ * an independent re-fetch; `Mismatch` means it was not and needs human review (never silently retried);
+ * `Pending` means no read-listing endpoint is wired for that document target; `NotApplicable` for
+ * non-reconciled operations. Mirrors AlvysReconciliationState on the API.
+ */
+export type AlvysReconciliationState =
+  | 'NotApplicable'
+  | 'Pending'
+  | 'Confirmed'
+  | 'Mismatch';
+
+/**
+ * The Alvys-documented DocumentType values accepted by the load-document upload endpoint. Kept in
+ * sync with AlvysLoadDocumentTypes on the API — the server re-validates, so this list only shapes the
+ * dropdown; an out-of-list value is refused with 400.
+ */
+export const ALVYS_LOAD_DOCUMENT_TYPES: readonly string[] = [
+  'Customer Rate and Load Confirmation',
+  'Customer Load Confirmation',
+  'Customer Rate Confirmation',
+  'Signed Customer Rate Confirmation',
+  'Proof of Delivery',
+  'Proof of Pickup',
+  'Bill of Lading',
+  'Shipping Labels',
+];
+
 /** Static catalogue entry describing a write-oriented operation and its live-execution support. */
 export interface AlvysWriteOperationDescriptor {
   code: string;
@@ -147,8 +175,38 @@ export interface AlvysOperationRecordView {
   lastError?: string | null;
   attemptCount: number;
   correlationId: string;
+  /** Post-write reconciliation state (uploads); NotApplicable for non-reconciled ops. */
+  reconciliationState: AlvysReconciliationState;
+  reconciliationDetail?: string | null;
+  /** Non-secret upstream result reference (e.g. an uploaded attachment path), when present. */
+  resultReference?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Read-only admin projection of a received Alvys webhook event, shown on the ops panel so an operator
+ * can see recent deliveries and their background-processing state. Carries no secrets.
+ */
+export interface AlvysWebhookEventView {
+  eventId: string;
+  eventType: string;
+  timestamp: number;
+  attempt?: number | null;
+  loadNumber?: string | null;
+  processingState: string;
+  processingError?: string | null;
+  receivedAt: string;
+  processedAt?: string | null;
+}
+
+/** The webhook admin snapshot: recent events plus honest receiver configuration state. */
+export interface AlvysWebhookAdminView {
+  events: AlvysWebhookEventView[];
+  totalReceived: number;
+  secretConfigured: boolean;
+  toleranceSeconds: number;
+  autoDisableThreshold: number;
 }
 
 /**

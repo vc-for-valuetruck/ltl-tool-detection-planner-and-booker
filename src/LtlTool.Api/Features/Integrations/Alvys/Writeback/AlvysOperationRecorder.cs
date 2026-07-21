@@ -71,21 +71,39 @@ public sealed class AlvysOperationRecorder(
     IAlvysOperationStore store,
     TimeProvider clock,
     IAlvysWriteClient writeClient,
-    IAlvysInternalWriteClient internalWriteClient) : IAlvysOperationRecorder
+    IAlvysInternalWriteClient internalWriteClient,
+    IAlvysDocumentUploadClient uploadClient,
+    IAlvysUploadReconciler reconciler) : IAlvysOperationRecorder
 {
     /// <summary>Upper bound on the stored payload preview so a row can never grow unbounded.</summary>
     private const int MaxPreviewLength = 4000;
 
     /// <summary>
-    /// Convenience overload for callers/tests that only exercise the Public-API surface. Internal
-    /// dispatch is never reached (internal eligibility requires the internal API to be armed).
+    /// Convenience overload for callers/tests that only exercise the Public-API JSON surface (no
+    /// document uploads, no internal API). Uploads/internal dispatch are never reached.
     /// </summary>
     public AlvysOperationRecorder(
         IAlvysWriteGateway gateway,
         IAlvysOperationStore store,
         TimeProvider clock,
         IAlvysWriteClient writeClient)
-        : this(gateway, store, clock, writeClient, new NoOpAlvysInternalWriteClient())
+        : this(gateway, store, clock, writeClient, new NoOpAlvysInternalWriteClient(),
+            new NoOpAlvysDocumentUploadClient(), new NoOpAlvysUploadReconciler())
+    {
+    }
+
+    /// <summary>
+    /// Convenience overload for callers/tests that exercise the Public-API JSON surface plus the
+    /// internal API, but not document uploads.
+    /// </summary>
+    public AlvysOperationRecorder(
+        IAlvysWriteGateway gateway,
+        IAlvysOperationStore store,
+        TimeProvider clock,
+        IAlvysWriteClient writeClient,
+        IAlvysInternalWriteClient internalWriteClient)
+        : this(gateway, store, clock, writeClient, internalWriteClient,
+            new NoOpAlvysDocumentUploadClient(), new NoOpAlvysUploadReconciler())
     {
     }
 
@@ -175,7 +193,7 @@ public sealed class AlvysOperationRecorder(
                 if (existing.Status == AlvysOperationRecordStatus.Blocked
                     && outcome.SandboxExecutionEligible && outcome.Payload is not null)
                 {
-                    var replayedOutcome = await DispatchAndApplyAsync(operationCode, request, outcome, existing, ct);
+                    var replayedOutcome = await DispatchSandboxAsync(operationCode, request, outcome, existing, ct);
                     return new AlvysRecordResult
                     {
                         Outcome = replayedOutcome,
@@ -212,7 +230,7 @@ public sealed class AlvysOperationRecorder(
         // Dispatch the live sandbox call when the gateway signals eligibility.
         if (outcome.SandboxExecutionEligible && outcome.Payload is not null)
         {
-            outcome = await DispatchAndApplyAsync(operationCode, request, outcome, record, ct);
+            outcome = await DispatchSandboxAsync(operationCode, request, outcome, record, ct);
         }
         // Or dispatch the internal-API call when the gateway signals internal eligibility.
         else if (outcome.InternalExecutionEligible && outcome.Payload is not null)
@@ -226,6 +244,67 @@ public sealed class AlvysOperationRecorder(
             Disposition = AlvysRecordDisposition.Created,
             Record = record,
         };
+    }
+
+    /// <summary>True when the operation carries raw file bytes and dispatches as a multipart upload.</summary>
+    private static bool IsDocumentUpload(AlvysWriteOperationKind kind) => kind
+        is AlvysWriteOperationKind.UploadLoadDocument
+        or AlvysWriteOperationKind.UploadTripDocument
+        or AlvysWriteOperationKind.CreateCarrierInvoice;
+
+    /// <summary>
+    /// Routes a sandbox-eligible operation to the correct transport: multipart upload (+post-write
+    /// reconciliation) for document/invoice ops, or the JSON write client for everything else.
+    /// </summary>
+    private Task<AlvysOperationOutcome> DispatchSandboxAsync(
+        string operationCode, AlvysOperationRequest request, AlvysOperationOutcome outcome,
+        AlvysOperationRecord record, CancellationToken ct)
+    {
+        var op = AlvysWriteOperationRegistry.Find(operationCode)!;
+        return IsDocumentUpload(op.Kind)
+            ? DispatchUploadAndApplyAsync(op, request, outcome, record, ct)
+            : DispatchAndApplyAsync(operationCode, request, outcome, record, ct);
+    }
+
+    /// <summary>
+    /// Issues the live multipart upload, records the non-secret attachment reference, then reconciles
+    /// by re-fetching the resource. A successful upload whose re-fetch does not confirm the attachment
+    /// is stored as <see cref="AlvysReconciliationState.Mismatch"/> and surfaced — never coerced to
+    /// success, never auto-retried. Upload transport failures map to SandboxFailed (HTTP 502).
+    /// </summary>
+    private async Task<AlvysOperationOutcome> DispatchUploadAndApplyAsync(
+        AlvysWriteOperationDescriptor op, AlvysOperationRequest request, AlvysOperationOutcome outcome,
+        AlvysOperationRecord record, CancellationToken ct)
+    {
+        var uploadResult = await uploadClient.UploadAsync(op, request, outcome.Payload!, ct);
+
+        record.UpdatedAt = clock.GetUtcNow();
+        if (!uploadResult.IsSuccess)
+        {
+            record.Status = AlvysOperationRecordStatus.Blocked;
+            record.LastError = uploadResult.Error;
+            record.ReconciliationState = AlvysReconciliationState.NotApplicable;
+            store.Update(record);
+            return WithExecution(outcome, executed: false, AlvysOperationDisposition.SandboxFailed,
+                $"Document upload failed: {uploadResult.Error ?? "the Alvys sandbox rejected the upload"}.");
+        }
+
+        var reconciliation = await reconciler.ReconcileAsync(op, request, uploadResult, ct);
+
+        record.Status = AlvysOperationRecordStatus.Recorded;
+        record.LastError = null;
+        record.ResultReference = uploadResult.AttachmentPath ?? uploadResult.AttachmentId;
+        record.ReconciliationState = reconciliation.State;
+        record.ReconciliationDetail = reconciliation.Detail;
+        store.Update(record);
+
+        var message = reconciliation.State switch
+        {
+            AlvysReconciliationState.Confirmed => "Document uploaded to the Alvys sandbox and confirmed on re-fetch.",
+            AlvysReconciliationState.Mismatch => $"Document uploaded but not confirmed on re-fetch: {reconciliation.Detail}",
+            _ => "Document uploaded to the Alvys sandbox; confirmation pending.",
+        };
+        return WithExecution(outcome, executed: true, AlvysOperationDisposition.SandboxExecuted, message);
     }
 
     /// <summary>
@@ -329,6 +408,9 @@ public sealed class AlvysOperationRecorder(
             AlvysWriteOperationKind.TripAssign => $"trip:{request.TripId}",
             AlvysWriteOperationKind.TripDispatch => $"trip:{request.TripId}",
             AlvysWriteOperationKind.CarrierStatusUpdate => $"carrier:{request.CarrierId}",
+            AlvysWriteOperationKind.UploadLoadDocument => $"load:{request.LoadNumber}",
+            AlvysWriteOperationKind.UploadTripDocument => $"trip:{request.TripId}",
+            AlvysWriteOperationKind.CreateCarrierInvoice => $"trip:{request.TripId}",
             AlvysWriteOperationKind.AddExtendedStop => $"trip:{request.TripId}",
             AlvysWriteOperationKind.ZeroChildDispatchMiles => $"trip:{request.TripId}",
             AlvysWriteOperationKind.SetTripReferences => $"trip:{request.TripId}",
@@ -397,6 +479,9 @@ public sealed class AlvysOperationRecorder(
             AlvysWriteOperationKind.TripAssign => ("trip", request.TripId),
             AlvysWriteOperationKind.TripDispatch => ("trip", request.TripId),
             AlvysWriteOperationKind.CarrierStatusUpdate => ("carrier", request.CarrierId),
+            AlvysWriteOperationKind.UploadLoadDocument => ("load", request.LoadNumber),
+            AlvysWriteOperationKind.UploadTripDocument => ("trip", request.TripId),
+            AlvysWriteOperationKind.CreateCarrierInvoice => ("trip", request.TripId),
             AlvysWriteOperationKind.AddExtendedStop => ("trip", request.TripId),
             AlvysWriteOperationKind.ZeroChildDispatchMiles => ("trip", request.TripId),
             AlvysWriteOperationKind.SetTripReferences => ("trip", request.TripId),

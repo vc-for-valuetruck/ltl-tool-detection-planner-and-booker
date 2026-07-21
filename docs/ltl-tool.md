@@ -15,11 +15,16 @@ principle this record implements:
 
 Sandbox writeback is fully implemented, not a stub:
 
-- All eight operations in `AlvysWriteOperationRegistry`
+- The operations in `AlvysWriteOperationRegistry`
   (`src/LtlTool.Api/Features/Integrations/Alvys/Writeback/AlvysWriteOperations.cs`) are
   `AlvysLiveSupport.Supported` — `create-load-note`, `tender-accept`,
   `trip-stop-arrival`, `trip-stop-departure`, `load-update` (only `OrderNumber`
-  writable), `trip-assign`, `trip-dispatch`, `carrier-status-update`.
+  writable), `trip-assign`, `trip-dispatch`, `carrier-status-update`, and the
+  2026-07-21 Public-API document/invoice writes `upload-load-document`,
+  `upload-trip-document`, `create-carrier-invoice` (the last additionally flag-gated by
+  `Alvys:Writeback:EnableCarrierInvoice`). The document/invoice uploads send
+  multipart/form-data via the Public-API client-credentials transport and never place
+  file bytes in the outbox, logs, or idempotency hash.
 - `AlvysHttpWriteClient`
   (`src/LtlTool.Api/Features/Integrations/Alvys/Writeback/AlvysWriteClient.cs`) sends
   real HTTP requests (POST/PUT/PATCH per operation) with bearer auth, `If-Match` for
@@ -66,11 +71,16 @@ change is made to let a write reach a production Alvys tenant:
 
 | Operation | Contract confirmed (link/doc) | Approved by | Date | Production gate implemented |
 |---|---|---|---|---|
-| _(none yet)_ | | | | |
+| `upload-load-document` | Public API `POST /loads/{loadNumber}/document` (docs.alvys.com, verified 2026-07-21; see [ALVYS_API_DECISIONS.md](./ALVYS_API_DECISIONS.md)) | _(pending)_ | | No |
+| `upload-trip-document` | Public API `POST /trips/{tripId}/document` (docs.alvys.com, verified 2026-07-21) | _(pending)_ | | No |
+| `create-carrier-invoice` | Public API `POST /invoices/carrier-invoice` (docs.alvys.com, verified 2026-07-21) | _(pending)_ | | No |
 
-No row above means no operation is approved for production. Do not implement
-production execution for an operation until its row is filled in and the gating
-mechanism (item 3) exists in code.
+No filled-in row above means no operation is approved for production. The rows for the
+2026-07-21 document/invoice operations record that Alvys **contracted** the endpoints, but
+the contract confirmation is not the same as business sign-off: production execution stays
+off (the operations run sandbox/audit-only today) until the Approved-by/Date columns are
+filled AND the independent production gate (item 3) exists in code. Do not implement
+production execution for an operation until its row is complete.
 
 ## Post-write reconciliation (sandbox now, reusable for production)
 

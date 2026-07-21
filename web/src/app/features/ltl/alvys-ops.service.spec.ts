@@ -94,4 +94,30 @@ describe('AlvysOpsService', () => {
     expect(req.request.method).toBe('POST');
     req.flush({ writebackMode: 'Disabled', operations: [] } as Partial<AlvysReadinessStatus>);
   });
+
+  it('uploads a load document as multipart form-data with the file, load number and type', () => {
+    const file = new File([new Uint8Array([1, 2, 3])], 'pod.pdf', { type: 'application/pdf' });
+    service.uploadLoadDocument('L-1001', 'Proof of Delivery', file, 'late POD', 'idem-9').subscribe();
+
+    const req = http.expectOne('/api/alvys/ops/upload-load-document');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.headers.get('Idempotency-Key')).toBe('idem-9');
+    const body = req.request.body as FormData;
+    expect(body instanceof FormData).toBeTrue();
+    expect(body.get('LoadNumber')).toBe('L-1001');
+    expect(body.get('DocumentType')).toBe('Proof of Delivery');
+    expect(body.get('Reason')).toBe('late POD');
+    expect(body.get('File')).toBeTruthy();
+    req.flush({
+      outcome: { operationCode: 'upload-load-document', disposition: 'AuditOnly', executed: false },
+      replayed: false,
+    } as Partial<AlvysOperationResponse>);
+  });
+
+  it('reads the webhook admin snapshot with a max', () => {
+    service.webhookEvents(10).subscribe();
+    const req = http.expectOne('/api/alvys/webhooks/events?max=10');
+    expect(req.request.method).toBe('GET');
+    req.flush({ events: [], totalReceived: 0, secretConfigured: false });
+  });
 });

@@ -147,9 +147,10 @@ public static class LtlServiceCollectionExtensions
         // Read-only against Alvys; combine records the consolidation audit only.
         services.AddScoped<Dock.DockService>();
 
-        // Internal, non-Alvys assignment audit. Singleton in-memory store for this slice;
-        // swap for a persistent IAssignmentAuditStore in production.
-        services.AddSingleton<IAssignmentAuditStore, InMemoryAssignmentAuditStore>();
+        // Internal, non-Alvys assignment audit. Durable EF Core store (AppDbContext) so decisions
+        // survive restarts and back the filterable /ltl/assignments history page. Scoped to the
+        // DbContext lifetime. Still records AlvysWriteback = NotPerformed — nothing pushed to Alvys.
+        services.AddScoped<IAssignmentAuditStore, EfAssignmentAuditStore>();
 
         // Tool-local dispatcher saved views, persisted durably in AppDbContext (server-side, never
         // browser storage). Scoped to match the DbContext lifetime. Owner-scoped; no Alvys writeback.
