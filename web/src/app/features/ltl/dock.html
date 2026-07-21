@@ -42,7 +42,13 @@
         }
         <div class="tap-grid">
           @for (w of warehouses(); track w.code) {
-            <button type="button" class="tap-card" (click)="pickWarehouse(w)">
+            <button
+              type="button"
+              class="tap-card"
+              data-testid="dock-warehouse-card"
+              [attr.data-testid-code]="w.code"
+              (click)="pickWarehouse(w)"
+            >
               <span class="tap-title">{{ w.name }}</span>
               <span class="tap-sub">{{ w.code }} · {{ w.state }}</span>
             </button>
@@ -69,6 +75,7 @@
             <button
               type="button"
               class="tap-card arrival"
+              data-testid="dock-arrival-card"
               [class.disabled]="!canBeParent(a)"
               [disabled]="!canBeParent(a)"
               (click)="pickParent(a)"
@@ -109,6 +116,7 @@
             <button
               type="button"
               class="tap-card sibling"
+              data-testid="dock-candidate-card"
               [class.selected]="isSelected(c)"
               [class.disabled]="c.isBlocked"
               [disabled]="c.isBlocked"
@@ -168,10 +176,10 @@
             </div>
             <div class="selected-actions">
               <!-- One-tap happy path: combine directly (audit + BOL + click card + notify), no dialog. -->
-              <button type="button" class="btn-primary" [disabled]="loading()" (click)="combine()">
+              <button type="button" class="btn-primary" data-testid="dock-combine" [disabled]="loading()" (click)="combine()">
                 Combine {{ selectedSiblingIds().length + 1 }} loads
               </button>
-              <button type="button" class="btn-ghost" (click)="goToReview()">Review first</button>
+              <button type="button" class="btn-ghost" data-testid="dock-review-first" (click)="goToReview()">Review first</button>
             </div>
           </div>
         }
@@ -198,7 +206,7 @@
         </div>
         <div class="review-actions">
           <button type="button" class="btn-ghost" (click)="backToSiblings()">← Back to siblings</button>
-          <button type="button" class="btn-primary" [disabled]="loading()" (click)="combine()">
+          <button type="button" class="btn-primary" data-testid="dock-review-combine" [disabled]="loading()" (click)="combine()">
             Combine {{ selectedSiblingIds().length + 1 }} loads
           </button>
         </div>
@@ -211,7 +219,7 @@
 
     <!-- ===================== Step 5: result ===================== -->
     @if (step() === 'result' && plan(); as p) {
-      <section class="panel result">
+      <section class="panel result" data-testid="dock-result">
         <div class="result-head">
           <div>
             <h2>Combine recorded</h2>
@@ -221,17 +229,17 @@
             </p>
           </div>
           <div class="result-print-actions">
-            <button type="button" class="btn" (click)="print('bol')">Print BOL packet</button>
-            <button type="button" class="btn" (click)="print('clickcard')">Print click card</button>
+            <button type="button" class="btn" data-testid="dock-print-bol" (click)="print('bol')">Print BOL packet</button>
+            <button type="button" class="btn" data-testid="dock-print-clickcard" (click)="print('clickcard')">Print click card</button>
           </div>
         </div>
 
         <!-- One-tap Undo (no confirmation dialog) + honest notification state / retry chip -->
-        <div class="result-bar">
+        <div class="result-bar" data-testid="dock-notify">
           @if (undone()) {
-            <span class="undo-chip undone">Combine undone — a retraction audit was recorded.</span>
+            <span class="undo-chip undone" data-testid="dock-undone">Combine undone — a retraction audit was recorded.</span>
           } @else if (undoAvailable()) {
-            <button type="button" class="btn-undo" [disabled]="undoing()" (click)="undoCombine()">
+            <button type="button" class="btn-undo" data-testid="dock-undo" [disabled]="undoing()" (click)="undoCombine()">
               ↩ Undo combine ({{ undoSecondsLeft() }}s)
             </button>
           }

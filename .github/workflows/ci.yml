@@ -279,6 +279,30 @@ jobs:
           CI: '1' # strips the visual-pause between steps (see e2e/demo-workflow.spec.ts)
         run: npm run test:e2e:ci
 
+      # Dock stakeholder demo (e2e/dock-demo.spec.ts). Runs as its own project so the recorded
+      # .webm lands at a predictable path (web/test-results/dock-demo/) for the artifact upload
+      # below. `video: 'on'` in playwright.config.ts produces the recording. Kept non-blocking
+      # like the rest of this job (continue-on-error at the job level) — a live-data skip or an
+      # Alvys blip must not fail a main-branch merge.
+      - name: Run dock stakeholder demo (video)
+        if: steps.check-secret.outputs.has_secret == 'true'
+        working-directory: web
+        env:
+          WEB_URL: http://localhost:4200
+          API_URL: http://localhost:5072
+          CI: '1'
+        run: npx playwright test --project=dock-demo
+
+      - name: Upload dock demo video
+        if: always() && steps.check-secret.outputs.has_secret == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dock-demo-video
+          path: |
+            web/test-results/dock-demo
+          retention-days: 14
+          if-no-files-found: warn
+
       # Always upload the Playwright report + test-results — not just on failure. The
       # test-results/tour/ folder contains the demo-tour PNGs (see web/e2e/demo-tour.spec.ts),
       # which operators + leadership use to review the demo without booting the stack.

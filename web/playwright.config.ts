@@ -36,7 +36,24 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      // The dock stakeholder demo runs as its own project (slowMo + a predictable video path),
+      // so keep it out of the primary suite to avoid running it twice.
+      testIgnore: '**/dock-demo.spec.ts',
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // Dock stakeholder demo (see e2e/dock-demo.spec.ts). Larger viewport so the tablet-first
+      // dock flow reads well on a projector; slowMo (DOCK_DEMO_SLOWMO ms) paces the walkthrough
+      // for a human audience; a dedicated outputDir lands the recorded .webm at a predictable
+      // path so `npm run demo:dock` and the CI artifact upload can find it deterministically.
+      name: 'dock-demo',
+      testMatch: '**/dock-demo.spec.ts',
+      outputDir: 'test-results/dock-demo',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+        launchOptions: { slowMo: Number(process.env.DOCK_DEMO_SLOWMO ?? 0) },
+      },
     },
   ],
 });

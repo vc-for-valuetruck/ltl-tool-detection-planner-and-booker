@@ -11,7 +11,8 @@
     "test:e2e": "playwright test --headed --project=chromium",
     "test:e2e:ci": "playwright test --project=chromium",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:install": "playwright install --with-deps chromium"
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "demo:dock": "bash ../scripts/demo-up.sh && DOCK_DEMO_SLOWMO=${DOCK_DEMO_SLOWMO:-700} playwright test --project=dock-demo --headed"
   },
   "private": true,
   "dependencies": {
