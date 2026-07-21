@@ -280,4 +280,71 @@ public sealed class LtlLoadServiceTests
         Assert.Equal(2, context.SampleSize);
         Assert.Null(context.MedianRpm);
     }
+
+    [Fact]
+    public async Task Exceptions_unions_active_transit_sweep_so_in_transit_late_delivery_surfaces()
+    {
+        // The general recency-ordered sweep does NOT return this in-transit load (it fell outside
+        // the bounded window); only the explicit active-transit sweep does. The union must still
+        // surface its trip-stop late-delivery exception — the Item 2 live gap.
+        var lateDeliveryStop = new AlvysTripStop
+        {
+            Id = "d-1004253",
+            StopType = "Delivery",
+            Sequence = 1,
+            Address = new AlvysAddress { City = "Laredo", State = "TX" },
+            // Two days before the fixed test clock, no arrival recorded.
+            AppointmentDate = LtlTestFactory.Now.AddDays(-2),
+        };
+        var client = new StatusRoutingAlvysClient
+        {
+            Loads = [], // general sweep window misses it
+            ActiveTransitLoads =
+            [
+                new AlvysLoad { Id = "ACT", LoadNumber = "1004253", Status = "In Transit", CustomerRate = 500m, Weight = 1000m },
+            ],
+            Trips =
+            [
+                new AlvysTrip
+                {
+                    LoadNumber = "1004253",
+                    Stops = [new AlvysTripStop { StopType = "Pickup", Sequence = 0 }, lateDeliveryStop],
+                },
+            ],
+        };
+
+        var body = await Build(client).ExceptionsAsync(default);
+
+        var summary = Assert.Single(body, s => s.Id == "ACT");
+        Assert.NotNull(summary.LateDelivery);
+        Assert.Contains(summary.Exceptions, e => e.Code == LtlNormalizationService.LateDeliveryExceptionCode);
+    }
+
+    /// <summary>
+    /// Fake that routes the exception sweep's two passes to different load sets: the bare (general)
+    /// sweep returns <see cref="FakeAlvysClient.Loads"/>; the active-transit sweep (whose Status
+    /// equals <see cref="LoadSearchRequest.ActiveTransitStatuses"/>) returns
+    /// <see cref="ActiveTransitLoads"/>. Lets a test prove the union covers loads the general pass
+    /// misses.
+    /// </summary>
+    private sealed class StatusRoutingAlvysClient : FakeAlvysClient
+    {
+        public List<AlvysLoad> ActiveTransitLoads { get; set; } = [];
+
+        public override Task<AlvysLoadsResponse> SearchLoadsAsync(
+            LoadSearchRequest request, CancellationToken ct = default)
+        {
+            var isActiveTransit = request.Status is not null
+                && request.Status.SequenceEqual(LoadSearchRequest.ActiveTransitStatuses);
+            var source = isActiveTransit ? ActiveTransitLoads : Loads;
+            var items = source.Skip(request.Page * request.PageSize).Take(request.PageSize).ToList();
+            return Task.FromResult(new AlvysLoadsResponse
+            {
+                Page = request.Page,
+                PageSize = request.PageSize,
+                Total = source.Count,
+                Items = items,
+            });
+        }
+    }
 }

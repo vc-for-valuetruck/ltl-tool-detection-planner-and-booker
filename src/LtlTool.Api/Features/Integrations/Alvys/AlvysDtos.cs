@@ -102,6 +102,17 @@ public sealed class LoadSearchRequest
     ];
 
     /// <summary>
+    /// Statuses of loads that are dispatched but not yet delivered — the population where the
+    /// trip-stop exception signals (actual-late DELIVERY, stuck-at-stop) are meaningful. Swept
+    /// explicitly on the exceptions path so these loads are reliably scanned even when the
+    /// broader recency-ordered all-statuses sweep would leave them outside its bounded window.
+    /// </summary>
+    public static readonly List<string> ActiveTransitStatuses =
+    [
+        "Dispatched", "In Transit", "En-Route", "Covered",
+    ];
+
+    /// <summary>
     /// True when the request already carries at least one of the conditional filters
     /// Alvys requires (Status/OrderNumbers/LoadNumbers/PONumbers/CustomerId/UpdatedBy).
     /// A request with none is rejected server-side (returns 0), so a bare paged sweep
