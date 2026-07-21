@@ -55,6 +55,43 @@ public sealed class AlvysClientTests
     }
 
     [Fact]
+    public async Task SearchLoads_defaults_statuses_when_bare_request_has_no_conditional_filter()
+    {
+        // Regression: a bare paged sweep (the exceptions/billing worklist path) carries no
+        // conditional filter. Alvys rejects that with an empty result, so the primary overload
+        // must apply the full-status default — otherwise the live Exceptions tab shows nothing.
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Items":[]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchLoadsAsync(new LoadSearchRequest { PageSize = 100 });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"Status\":[", body);        // full status list applied
+        Assert.Contains("\"In Transit\"", body);      // includes the in-transit late/stuck loads
+    }
+
+    [Fact]
+    public async Task SearchLoads_does_not_add_status_when_load_numbers_filter_is_present()
+    {
+        // GetLoadByNumberAsync posts a LoadNumbers lookup, which already satisfies Alvys'
+        // conditional-filter requirement. It must not be widened to an all-status sweep.
+        var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"Items":[]}"""),
+        });
+        var client = Build(handler, new CapturingLogger<AlvysClient>());
+
+        await client.SearchLoadsAsync(new LoadSearchRequest { PageSize = 1, LoadNumbers = ["100"] });
+
+        var body = handler.Calls[0].Body;
+        Assert.Contains("\"LoadNumbers\":[\"100\"]", body);
+        Assert.DoesNotContain("Status", body);        // no spurious status default
+    }
+
+    [Fact]
     public async Task SearchLoads_returns_empty_on_server_error_without_throwing()
     {
         var handler = new StubHttpMessageHandler((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError));
