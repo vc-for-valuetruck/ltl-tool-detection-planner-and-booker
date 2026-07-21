@@ -327,3 +327,63 @@ describe('LtlService — yard artifacts', () => {
     );
   });
 });
+
+describe('LtlService — signals', () => {
+  let service: LtlService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: RUNTIME_CONFIG,
+          useValue: { tenantId: '', clientId: '', apiScope: '', apiBaseUrl: '/api' },
+        },
+      ],
+    });
+    service = TestBed.inject(LtlService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('POSTs the ingest request to /api/ltl/signals/ingest', () => {
+    service
+      .ingestSignals({ sourceType: 'email', sourceId: 'msg-1', text: 'Driver was detained.', loadNumber: '100' })
+      .subscribe();
+
+    const req = http.expectOne('/api/ltl/signals/ingest');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.sourceType).toBe('email');
+    req.flush({ count: 1, signals: [] });
+  });
+
+  it('GETs /api/ltl/signals with only the supplied filters', () => {
+    service.signals({ status: 'Pending', max: 100 }).subscribe();
+
+    const req = http.expectOne('/api/ltl/signals?status=Pending&max=100');
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('GETs /api/ltl/signals/extractor', () => {
+    service.signalExtractor().subscribe();
+    const req = http.expectOne('/api/ltl/signals/extractor');
+    expect(req.request.method).toBe('GET');
+    req.flush({ name: 'deterministic-keyword' });
+  });
+
+  it('POSTs accept and reject to the per-signal routes', () => {
+    service.acceptSignal('s1').subscribe();
+    const accept = http.expectOne('/api/ltl/signals/s1/accept');
+    expect(accept.request.method).toBe('POST');
+    accept.flush({});
+
+    service.rejectSignal('s2').subscribe();
+    const reject = http.expectOne('/api/ltl/signals/s2/reject');
+    expect(reject.request.method).toBe('POST');
+    reject.flush({});
+  });
+});
