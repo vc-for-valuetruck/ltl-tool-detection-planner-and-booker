@@ -1,0 +1,33 @@
+# LTL API surface manifest — the single checked-in source of truth for the endpoints
+# documented in CLAUDE.md § "Current API surface (preserve)".
+#
+# Format:  <HTTP-METHOD> <route-template>
+#   - route parameters are normalized to {} (a param rename is not a consumer-visible
+#     contract change, so it must not fail the check)
+#   - the query string is omitted (query params are not part of the routed template)
+#
+# LtlApiSurfaceManifestTests reflects over the live ASP.NET route table and asserts every
+# line below is still mapped with the stated verb. A rename, verb change, or accidental
+# deletion of any documented route drops the match and fails CI in the
+# "Verify API Surface Contract" job.
+#
+# If the surface intentionally evolves, update THIS file AND CLAUDE.md together in the
+# same PR — that paired edit is the deliberate-change signal.
+
+GET  api/ltl/search
+GET  api/ltl/loads/{}
+GET  api/ltl/loads/{}/matches
+GET  api/ltl/loads/{}/billing-readiness
+POST api/ltl/loads/{}/assign/validate
+POST api/ltl/loads/{}/assign
+GET  api/ltl/loads/{}/assignments
+GET  api/ltl/billing/worklist
+GET  api/ltl/exceptions
+GET  api/ltl/consolidation/candidates
+POST api/ltl/consolidation/plan
+POST api/ltl/consolidation/plan/audit
+GET  api/ltl/consolidation/plan/audits
+GET  api/ltl/notifications
+GET  api/ltl/notifications/channels
+GET  api/ltl/reporting/margin-rollup
+GET  api/ltl/reporting/margin-rollup/export

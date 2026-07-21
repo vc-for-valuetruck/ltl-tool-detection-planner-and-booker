@@ -5,6 +5,7 @@ using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Features.Ltl.SavedViews;
+using LtlTool.Api.Features.Ltl.Signals;
 using LtlTool.Api.Features.Ltl.YardArtifacts;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -173,6 +174,11 @@ public static class LtlServiceCollectionExtensions
         // Phase 6 workflow notifications: idempotent in-app feed (always-on) plus config-gated
         // Teams/email adapters and the background trigger poller. Read-only against Alvys.
         services.AddLtlNotifications(configuration);
+
+        // Phase 6 inbound signal ingestion: fail-closed email/note/transcript → typed signals via a
+        // pluggable extractor (deterministic keyword default), durable store, accept/reject. The
+        // inbound half of the mail plumbing; read-only against Alvys.
+        services.AddLtlSignals();
 
         return services;
     }
