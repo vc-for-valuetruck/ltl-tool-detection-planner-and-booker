@@ -12,8 +12,34 @@
   <div class="filter-row">
     @if (!loading() && !error()) {
       <span class="filter-count" data-testid="exceptions-count">
-        {{ loads().length }} loads · {{ blockingCount() }} blocking billing
+        {{ filteredLoads().length }} loads · {{ blockingCount() }} blocking billing
       </span>
+      <div class="chip-row" role="group" aria-label="Filter by exception type">
+        <button
+          type="button"
+          [class]="typeFilter() === 'all' ? 'chip chip-active' : 'chip'"
+          data-testid="exceptions-filter-all"
+          (click)="setFilter('all')"
+        >
+          All · {{ loads().length }}
+        </button>
+        <button
+          type="button"
+          [class]="typeFilter() === 'LateDelivery' ? 'chip chip-active' : 'chip'"
+          data-testid="exceptions-filter-late-delivery"
+          (click)="setFilter('LateDelivery')"
+        >
+          Late delivery · {{ lateDeliveryCount() }}
+        </button>
+        <button
+          type="button"
+          [class]="typeFilter() === 'StuckAtStop' ? 'chip chip-active' : 'chip'"
+          data-testid="exceptions-filter-stuck-at-stop"
+          (click)="setFilter('StuckAtStop')"
+        >
+          Stuck at stop · {{ stuckStopCount() }}
+        </button>
+      </div>
     }
   </div>
 
@@ -27,7 +53,11 @@
     </div>
   } @else if (!hasLoads()) {
     <div class="state" data-testid="exceptions-empty">
-      No loads with exceptions right now. Your Alvys pipeline is clean on this front.
+      @if (loads().length > 0) {
+        No loads match this exception-type filter.
+      } @else {
+        No loads with exceptions right now. Your Alvys pipeline is clean on this front.
+      }
     </div>
   } @else {
     <div class="card">
@@ -44,7 +74,7 @@
             </tr>
           </thead>
           <tbody>
-            @for (load of loads(); track load.id) {
+            @for (load of filteredLoads(); track load.id) {
               <tr data-testid="exceptions-row">
                 <td>
                   <div class="load-cell">
@@ -79,11 +109,20 @@
                         [class]="ex.blocksBilling ? 'chip chip-danger' : 'chip chip-warn'"
                         [title]="ex.message"
                         [attr.data-testid]="
-                          ex.code === 'LateDelivery' ? 'exceptions-late-delivery' : null
+                          ex.code === 'LateDelivery'
+                            ? 'exceptions-late-delivery'
+                            : ex.code === 'StuckAtStop'
+                              ? 'exceptions-stuck-at-stop'
+                              : null
                         "
                       >
                         {{ ex.message }}@if (ex.code === 'LateDelivery' && load.lateDelivery) {
-                          · {{ load.lateDelivery.hoursOverdue }}h overdue }@if (ex.blocksBilling) {
+                          · {{ load.lateDelivery.hoursOverdue }}h overdue }@if (
+                          ex.code === 'StuckAtStop' && load.stuckStop
+                        ) {
+                          · {{ load.stuckStop.hoursSinceArrival }}h since arrival }@if (
+                          ex.blocksBilling
+                        ) {
                           · blocks billing }
                       </span>
                     } @empty {

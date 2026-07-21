@@ -109,6 +109,8 @@ public sealed class NotificationTriggerEngine(
                 await dispatcher.DispatchAsync(ToPredictedLateTrigger(load), ct);
             if (load.LateDelivery is not null)
                 await dispatcher.DispatchAsync(ToLateDeliveryTrigger(load), ct);
+            if (load.StuckStop is not null)
+                await dispatcher.DispatchAsync(ToStuckStopTrigger(load), ct);
         }
     }
 
@@ -135,6 +137,35 @@ public sealed class NotificationTriggerEngine(
             LoadNumber = load.LoadNumber,
             LinkPath = $"/ltl/loads/{Uri.EscapeDataString(loadLabel)}",
             OccurredAt = late.WindowEnd,
+        };
+    }
+
+    /// <summary>
+    /// Maps a stuck-at-stop signal to a T8 exception trigger. <c>SourceKey</c> is
+    /// <c>{loadId}:{stopId}:stuck</c> (distinct from the late-delivery key on the same stop) and
+    /// <c>OccurredAt</c> is the recorded arrival, so the dispatcher idempotency key is
+    /// one-per-(load, stop, condition) — a still-stuck stop seen on every poll fires exactly once.
+    /// Exposed for unit testing the mapping in isolation.
+    /// </summary>
+    public static NotificationTrigger ToStuckStopTrigger(LtlLoadSummary load)
+    {
+        var loadLabel = load.LoadNumber ?? load.Id;
+        var stuck = load.StuckStop!;
+        var where = FormatPlace(stuck.City, stuck.State);
+        var at = where is null ? string.Empty : $" at {where}";
+
+        return new NotificationTrigger
+        {
+            Stage = NotificationStage.ExceptionRaised,
+            SourceKey = $"{load.Id}:{stuck.StopId}:stuck",
+            Title = $"Stuck at stop · {loadLabel}",
+            Summary =
+                $"Load {loadLabel} has been at its stop{at} for {stuck.HoursSinceArrival:0.#}h "
+                + $"with no departure recorded. {stuck.Message}.",
+            LoadId = load.Id,
+            LoadNumber = load.LoadNumber,
+            LinkPath = $"/ltl/loads/{Uri.EscapeDataString(loadLabel)}",
+            OccurredAt = stuck.ArrivedAt,
         };
     }
 

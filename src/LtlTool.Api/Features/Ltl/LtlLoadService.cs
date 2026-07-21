@@ -254,6 +254,20 @@ public sealed class LtlLoadService(
         return map;
     }
 
+    private IReadOnlyDictionary<string, LtlStuckStop> BuildStuckStopMap(IReadOnlyList<AlvysTrip> trips)
+    {
+        var now = clock.GetUtcNow();
+        var map = new Dictionary<string, LtlStuckStop>(StringComparer.OrdinalIgnoreCase);
+        foreach (var trip in trips)
+        {
+            if (string.IsNullOrWhiteSpace(trip.LoadNumber) || map.ContainsKey(trip.LoadNumber!)) continue;
+            var stuck = StuckAtStopDetector.Detect(trip, now, _options.StuckAtStopThresholdHours);
+            if (stuck is not null) map[trip.LoadNumber!] = stuck;
+        }
+
+        return map;
+    }
+
     /// <summary>Raw + documents resolution used by detail and matching.</summary>
     public async Task<AlvysLoad?> ResolveLoadAsync(string idOrNumber, CancellationToken ct)
     {
@@ -317,13 +331,15 @@ public sealed class LtlLoadService(
     {
         var (loads, _) = await SweepAsync(new LoadSearchRequest { PageSize = _options.AlvysPageSize }, ct);
 
-        // One trip sweep feeds two exception signals: trip economics (loaded miles → the
-        // predicted-delivery ETA, so a predicted-late arrival surfaces before it actually goes late)
-        // and actual-late DELIVERY detection (delivery-stop window passed with no arrival recorded).
+        // One trip sweep feeds three exception signals: trip economics (loaded miles → the
+        // predicted-delivery ETA, so a predicted-late arrival surfaces before it actually goes late),
+        // actual-late DELIVERY detection (delivery-stop window passed with no arrival recorded), and
+        // stuck-at-stop detection (arrived with no departure past the dwell threshold).
         // Missing data simply yields no signal — never a guess.
         var trips = await SweepTripsForLoadsAsync(loads, ct);
         var tripEconByLoad = BuildEconomicsMap(trips);
         var lateDeliveryByLoad = BuildLateDeliveryMap(trips);
+        var stuckStopByLoad = BuildStuckStopMap(trips);
 
         var enrichLimit = Math.Max(0, _options.MaxVisibilityEnriched);
         var summaries = new List<LtlLoadSummary>(loads.Count);
@@ -340,6 +356,10 @@ public sealed class LtlLoadService(
                 && lateDeliveryByLoad.TryGetValue(loadNumber, out var ld)
                 ? ld
                 : null;
+            var stuckStop = !string.IsNullOrWhiteSpace(loadNumber)
+                && stuckStopByLoad.TryGetValue(loadNumber, out var ss)
+                ? ss
+                : null;
 
             if (enriched < enrichLimit && !string.IsNullOrWhiteSpace(loadNumber))
             {
@@ -349,7 +369,8 @@ public sealed class LtlLoadService(
                     carrierPayable: econ.CarrierPayable,
                     driverTripRate: econ.DriverTripRate,
                     loadedMiles: econ.LoadedMiles,
-                    lateDelivery: lateDelivery));
+                    lateDelivery: lateDelivery,
+                    stuckStop: stuckStop));
                 enriched++;
             }
             else
@@ -359,7 +380,8 @@ public sealed class LtlLoadService(
                     carrierPayable: econ.CarrierPayable,
                     driverTripRate: econ.DriverTripRate,
                     loadedMiles: econ.LoadedMiles,
-                    lateDelivery: lateDelivery));
+                    lateDelivery: lateDelivery,
+                    stuckStop: stuckStop));
             }
         }
 

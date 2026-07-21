@@ -177,4 +177,64 @@ public sealed class NotificationTriggerEngineTests
 
         Assert.Equal("/ltl/loads/L-late-del", trigger.LinkPath);
     }
+
+    private static readonly DateTimeOffset ArrivedAt = new(2026, 7, 14, 3, 0, 0, TimeSpan.Zero);
+
+    private static LtlLoadSummary StuckStopLoad(
+        string id = "L-stuck",
+        string? loadNumber = "1003339",
+        string stopId = "stop-9",
+        string? city = "Williamston",
+        string? state = "NC") => new()
+    {
+        Id = id,
+        LoadNumber = loadNumber,
+        Status = "In Transit",
+        StuckStop = new LtlStuckStop
+        {
+            StopId = stopId,
+            StopType = "Delivery",
+            City = city,
+            State = state,
+            ArrivedAt = ArrivedAt,
+            HoursSinceArrival = 164.8,
+            Message = "Stuck at stop — Delivery in Williamston, NC arrived Jul 14, 2026 3:00 AM "
+                + "UTC+00:00, no departure recorded after 164.8h. Per Alvys stop status — driver "
+                + "may not have closed the stop",
+        },
+    };
+
+    [Fact]
+    public void ToStuckStopTrigger_dedupes_on_load_and_stop_and_condition()
+    {
+        // SourceKey = {loadId}:{stopId}:stuck and OccurredAt = arrival, so a still-stuck stop seen
+        // on every poll produces one stable idempotency key distinct from the late-delivery key.
+        var trigger = NotificationTriggerEngine.ToStuckStopTrigger(StuckStopLoad());
+
+        Assert.Equal(NotificationStage.ExceptionRaised, trigger.Stage);
+        Assert.Equal("L-stuck:stop-9:stuck", trigger.SourceKey);
+        Assert.Equal("L-stuck", trigger.LoadId);
+        Assert.Equal(ArrivedAt, trigger.OccurredAt);
+    }
+
+    [Fact]
+    public void ToStuckStopTrigger_links_to_load_number_and_names_hours_place_and_caveat()
+    {
+        var trigger = NotificationTriggerEngine.ToStuckStopTrigger(StuckStopLoad(loadNumber: "1003339"));
+
+        Assert.Equal("/ltl/loads/1003339", trigger.LinkPath);
+        Assert.Contains("1003339", trigger.Title);
+        Assert.Contains("164.8h", trigger.Summary);
+        Assert.Contains("Williamston, NC", trigger.Summary);
+        Assert.Contains("driver may not have closed the stop", trigger.Summary);
+    }
+
+    [Fact]
+    public void ToStuckStopTrigger_falls_back_to_load_id_when_number_missing()
+    {
+        var trigger = NotificationTriggerEngine.ToStuckStopTrigger(
+            StuckStopLoad(id: "L-stuck", loadNumber: null));
+
+        Assert.Equal("/ltl/loads/L-stuck", trigger.LinkPath);
+    }
 }

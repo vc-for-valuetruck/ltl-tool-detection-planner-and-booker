@@ -212,6 +212,14 @@ public sealed class LtlLoadSummary
     /// </summary>
     public LtlLateDelivery? LateDelivery { get; init; }
 
+    /// <summary>
+    /// Stuck-at-stop signal for an in-transit trip: a stop the truck arrived at but never recorded a
+    /// departure from, dwelling past a configured threshold. Null when no such stop exists. Derived
+    /// only from live Alvys stop status and — critically — always carries the honest caveat that this
+    /// may just be an unclosed stop, not a stranded truck. See <see cref="LtlStuckStop"/>.
+    /// </summary>
+    public LtlStuckStop? StuckStop { get; init; }
+
     public IReadOnlyList<string> Equipment { get; init; } = [];
     public decimal? WeightLbs { get; init; }
     public decimal? Volume { get; init; }
@@ -365,6 +373,35 @@ public sealed class LtlLateDelivery
     public required double HoursOverdue { get; init; }
 
     /// <summary>Honest, fixed operator-facing wording shown on the Exceptions worklist.</summary>
+    public required string Message { get; init; }
+}
+
+/// <summary>
+/// A stuck-at-stop signal, derived only from live Alvys trip-stop status: the truck recorded an
+/// arrival at the stop but no departure, and has now dwelled past a configured threshold. This is a
+/// data-quality-sensitive signal — a long dwell very often means the driver simply never closed the
+/// stop in Alvys, NOT that the truck is physically stranded. The <see cref="Message"/> therefore
+/// always carries the honest caveat "Per Alvys stop status — driver may not have closed the stop".
+/// Feeds the Exceptions worklist chip and the T8 exception notification (deduped on load + stop).
+/// </summary>
+public sealed class LtlStuckStop
+{
+    /// <summary>Alvys stop id — the stop identity half of the notification dedupe key.</summary>
+    public required string StopId { get; init; }
+
+    /// <summary>Stop type as reported by Alvys (e.g. "Pickup"/"Delivery").</summary>
+    public string? StopType { get; init; }
+
+    public string? City { get; init; }
+    public string? State { get; init; }
+
+    /// <summary>The recorded arrival instant the dwell is measured from.</summary>
+    public required DateTimeOffset ArrivedAt { get; init; }
+
+    /// <summary>Whole/decimal hours since arrival with no recorded departure, as of evaluation.</summary>
+    public required double HoursSinceArrival { get; init; }
+
+    /// <summary>Honest operator-facing wording — always includes the "may not have closed" caveat.</summary>
     public required string Message { get; init; }
 }
 

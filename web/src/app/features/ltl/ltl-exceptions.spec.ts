@@ -1,6 +1,6 @@
 import { LtlExceptions } from './ltl-exceptions';
 import { LtlService } from './ltl.service';
-import { LtlLoadSummary, LtlExceptionFlag, LtlLateDelivery } from './ltl.models';
+import { LtlLoadSummary, LtlExceptionFlag, LtlLateDelivery, LtlStuckStop } from './ltl.models';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
@@ -97,6 +97,90 @@ describe('LtlExceptions', () => {
       const link = el.querySelector('[data-testid="exceptions-load-link"]') as HTMLAnchorElement;
       expect(link).not.toBeNull();
       expect(link.getAttribute('href')).toBe('/ltl/loads/1004253');
+    });
+  });
+
+  describe('stuck-at-stop rendering', () => {
+    const stuckMessage =
+      'Stuck at stop — Delivery in Williamston, NC arrived Jul 14, 2026 3:00 AM UTC+00:00, ' +
+      'no departure recorded after 164.8h. Per Alvys stop status — driver may not have closed the stop';
+
+    function stuckLoad(): LtlLoadSummary {
+      const stuck: LtlStuckStop = {
+        stopId: 'stop-1003339',
+        stopType: 'Delivery',
+        city: 'Williamston',
+        state: 'NC',
+        arrivedAt: '2026-07-14T03:00:00Z',
+        hoursSinceArrival: 164.8,
+        message: stuckMessage,
+      };
+      return {
+        id: 'L-1003339',
+        loadNumber: '1003339',
+        exceptions: [{ code: 'StuckAtStop', message: stuckMessage, blocksBilling: false }],
+        stuckStop: stuck,
+        workflow: { stageLabel: 'Bill' },
+      } as unknown as LtlLoadSummary;
+    }
+
+    it('renders the honest stuck-at-stop chip with the caveat, hours, and a drill-through link', () => {
+      TestBed.configureTestingModule({
+        providers: [
+          provideRouter([]),
+          { provide: LtlService, useValue: { exceptions: () => of([stuckLoad()]) } },
+        ],
+      });
+      const fixture = TestBed.createComponent(LtlExceptions);
+      fixture.detectChanges();
+      const el: HTMLElement = fixture.nativeElement;
+
+      const chip = el.querySelector('[data-testid="exceptions-stuck-at-stop"]');
+      expect(chip).not.toBeNull();
+      expect(chip!.textContent).toContain('driver may not have closed the stop');
+      expect(chip!.textContent).toContain('164.8h since arrival');
+
+      const link = el.querySelector('[data-testid="exceptions-load-link"]') as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toBe('/ltl/loads/1003339');
+    });
+  });
+
+  describe('type filter chips', () => {
+    function lateOnly(): LtlLoadSummary {
+      return {
+        id: 'late',
+        loadNumber: 'L1',
+        exceptions: [{ code: 'LateDelivery', message: 'm', blocksBilling: false }],
+        workflow: { stageLabel: 'Bill' },
+      } as unknown as LtlLoadSummary;
+    }
+    function stuckOnly(): LtlLoadSummary {
+      return {
+        id: 'stuck',
+        loadNumber: 'L2',
+        exceptions: [{ code: 'StuckAtStop', message: 'm', blocksBilling: false }],
+        workflow: { stageLabel: 'Bill' },
+      } as unknown as LtlLoadSummary;
+    }
+
+    it('counts each exception type and filters the rows on chip selection', () => {
+      const c = build({ exceptions: () => of([lateOnly(), stuckOnly()]) });
+      c.ngOnInit();
+
+      expect(c['lateDeliveryCount']()).toBe(1);
+      expect(c['stuckStopCount']()).toBe(1);
+      expect(c['filteredLoads']().length).toBe(2);
+
+      c['setFilter']('StuckAtStop');
+      expect(c['filteredLoads']().length).toBe(1);
+      expect(c['filteredLoads']()[0].id).toBe('stuck');
+
+      c['setFilter']('LateDelivery');
+      expect(c['filteredLoads']().length).toBe(1);
+      expect(c['filteredLoads']()[0].id).toBe('late');
+
+      c['setFilter']('all');
+      expect(c['filteredLoads']().length).toBe(2);
     });
   });
 });

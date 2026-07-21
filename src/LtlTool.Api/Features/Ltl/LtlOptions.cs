@@ -73,6 +73,14 @@ public sealed class LtlOptions
     /// </summary>
     public int LateDeliveryGraceMinutes { get; set; } = 30;
 
+    /// <summary>
+    /// Dwell threshold (hours) past a stop's recorded arrival, with no recorded departure, before an
+    /// in-transit trip is flagged as stuck at that stop. Defaults to 6h. Deliberately conservative
+    /// because a long dwell very often just means the driver never closed the stop in Alvys, not that
+    /// the truck is physically stranded — the surfaced signal always carries that honest caveat.
+    /// </summary>
+    public int StuckAtStopThresholdHours { get; set; } = 6;
+
     /// <summary>Match scoring weights/thresholds.</summary>
     public LtlMatchOptions Match { get; set; } = new();
 
