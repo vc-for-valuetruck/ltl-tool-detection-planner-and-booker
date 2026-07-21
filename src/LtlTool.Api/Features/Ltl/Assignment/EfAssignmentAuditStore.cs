@@ -77,12 +77,13 @@ public sealed class EfAssignmentAuditStore(AppDbContext db) : IAssignmentAuditSt
 
     public IReadOnlyList<AssignmentAudit> Query(AssignmentAuditQuery query)
     {
-        // RecordedBy and ReasonType translate to SQL; the UTC-day filter and ordering run in memory
-        // (SQLite, used by tests, cannot ORDER BY / date-extract over DateTimeOffset).
+        // ReasonType (an exact enum-string match) translates to SQL. RecordedBy is matched
+        // case-insensitively in AssignmentAuditQueryFilter.Apply, not here: a SQL `==` prefilter is
+        // case-sensitive on SQLite but case-insensitive on SQL Server, so pushing it down would give
+        // provider-dependent results. The UTC-day filter and ordering also run in memory (SQLite
+        // cannot ORDER BY / date-extract over DateTimeOffset).
         var q = db.AssignmentAudits.AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(query.RecordedBy))
-            q = q.Where(r => r.RecordedBy == query.RecordedBy);
         if (query.ReasonType is { } reason)
             q = q.Where(r => r.ReasonType == reason);
 
