@@ -2,8 +2,15 @@ import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { Dock } from './dock';
 import { DockService } from './dock.service';
+import { ConsolidationService } from './consolidation.service';
+import { DispatchPlannerService } from './dispatch-planner.service';
+import { DispatchPreferenceView } from './dispatch-planner.models';
 import { LaredoArrival, LaredoArrivalsBoard } from './arrivals.models';
-import { ConsolidationCandidate, ConsolidationCandidateResponse } from './consolidation.models';
+import {
+  ConsolidationCandidate,
+  ConsolidationCandidateResponse,
+  ConsolidationPlanResponse,
+} from './consolidation.models';
 import { DockCombineResponse, DockNotificationResult, DockUndoResponse } from './dock.models';
 
 function arrival(overrides: Partial<LaredoArrival>): LaredoArrival {
@@ -54,8 +61,16 @@ function candidate(overrides: Partial<ConsolidationCandidate>): ConsolidationCan
   };
 }
 
+function plan(overrides: Partial<ConsolidationPlanResponse>): ConsolidationPlanResponse {
+  return { blockers: [], clickCard: {}, ...overrides } as unknown as ConsolidationPlanResponse;
+}
+
 describe('Dock', () => {
-  function build(stub: Partial<DockService>): Dock {
+  function build(
+    stub: Partial<DockService>,
+    planStub?: Partial<ConsolidationService>,
+    plannerStub?: Partial<DispatchPlannerService>,
+  ): Dock {
     const defaults: Partial<DockService> = {
       getWarehouses: () =>
         of({ warehouses: [{ code: 'LAREDO', name: 'Laredo', state: 'TX', nearbyCities: [] }] }),
@@ -77,8 +92,21 @@ describe('Dock', () => {
       recordCombineMetric: () => of(undefined),
       ...stub,
     };
+    const consolidationDefaults: Partial<ConsolidationService> = {
+      buildPlan: () => of(plan({ blockers: [] })),
+      ...planStub,
+    };
+    const plannerDefaults: Partial<DispatchPlannerService> = {
+      getPreferredPairing: () =>
+        of({ resolved: false, source: 'test' } as DispatchPreferenceView),
+      ...plannerStub,
+    };
     TestBed.configureTestingModule({
-      providers: [{ provide: DockService, useValue: defaults }],
+      providers: [
+        { provide: DockService, useValue: defaults },
+        { provide: ConsolidationService, useValue: consolidationDefaults },
+        { provide: DispatchPlannerService, useValue: plannerDefaults },
+      ],
     });
     return TestBed.runInInjectionContext(() => new Dock());
   }
@@ -223,6 +251,82 @@ describe('Dock', () => {
     c['selectedSiblingIds'].set([]);
     c['combine']();
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('surfaces plan blockers at the review step and disables combine', () => {
+    const buildPlanSpy = jasmine.createSpy('buildPlan').and.returnValue(
+      of(plan({ blockers: ['Parent load is outside the Laredo→Dallas corridor.'] })),
+    );
+    const combineSpy = jasmine.createSpy('combine');
+    const c = build({ combine: combineSpy }, { buildPlan: buildPlanSpy });
+    c['parent'].set(arrival({ loadNumber: 'L-OFF' }));
+    c['selectedSiblingIds'].set(['L-2']);
+
+    c['goToReview']();
+    expect(c['step']()).toBe('review');
+    expect(buildPlanSpy).toHaveBeenCalled();
+    expect(c['hasBlockers']()).toBeTrue();
+    expect(c['previewBlockers']()).toContain('Parent load is outside the Laredo→Dallas corridor.');
+
+    // A blocked plan must not combine — the button is disabled and the guard is a no-op.
+    c['combine']();
+    expect(combineSpy).not.toHaveBeenCalled();
+  });
+
+  it('review with a clean plan allows combine', () => {
+    const c = build({}, { buildPlan: () => of(plan({ blockers: [] })) });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+    c['goToReview']();
+    expect(c['hasBlockers']()).toBeFalse();
+  });
+
+  it('loads the parent equipment preferred pairing at review from the dispatch planner', () => {
+    const getPreferredPairing = jasmine.createSpy('getPreferredPairing').and.returnValue(
+      of({ resolved: true, driver1Id: 'D-9', truckId: 'TRK-1', trailerId: 'TRL-7', source: 't' }),
+    );
+    const c = build({}, undefined, { getPreferredPairing });
+    c['parent'].set(
+      arrival({
+        loadNumber: 'L1',
+        truck: { id: 'TRK-1', unit: '101', equipmentType: null, lengthFeet: null, fleetName: null, ownership: 'Unknown' },
+        trailer: { id: 'TRL-7', unit: '900', equipmentType: null, lengthFeet: null, fleetName: null, ownership: 'Unknown' },
+      }),
+    );
+    c['selectedSiblingIds'].set(['L-2']);
+
+    c['goToReview']();
+
+    expect(getPreferredPairing).toHaveBeenCalledWith({ truckId: 'TRK-1', trailerId: 'TRL-7' });
+    expect(c['hasPreferredPairing']()).toBeTrue();
+    expect(c['preferredPairing']()?.driver1Id).toBe('D-9');
+  });
+
+  it('does not query the planner when the parent has no truck or trailer id', () => {
+    const getPreferredPairing = jasmine.createSpy('getPreferredPairing');
+    const c = build({}, undefined, { getPreferredPairing });
+    c['parent'].set(arrival({ loadNumber: 'L1', truck: null, trailer: null }));
+    c['selectedSiblingIds'].set(['L-2']);
+
+    c['goToReview']();
+
+    expect(getPreferredPairing).not.toHaveBeenCalled();
+    expect(c['preferredPairing']()).toBeNull();
+  });
+
+  it('routes a 422 blocked-plan combine back to review with its blockers', () => {
+    const blocked = plan({ blockers: ['A sibling is Never-consolidate.'] });
+    const combineSpy = jasmine
+      .createSpy('combine')
+      .and.returnValue(throwError(() => ({ status: 422, error: blocked })));
+    const c = build({ combine: combineSpy });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+
+    c['combine']();
+    expect(c['step']()).toBe('review');
+    expect(c['previewBlockers']()).toContain('A sibling is Never-consolidate.');
+    expect(c['loading']()).toBeFalse();
   });
 
   it('formats missing values honestly as an em dash', () => {

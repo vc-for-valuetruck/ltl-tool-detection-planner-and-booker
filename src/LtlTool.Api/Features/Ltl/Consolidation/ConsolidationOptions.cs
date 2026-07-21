@@ -127,6 +127,14 @@ public sealed class ConsolidationWarehouseOptions
     /// prefix / substring match against the load's origin/destination place.
     /// </summary>
     public List<string> NearbyCities { get; set; } = [];
+
+    /// <summary>
+    /// Optional Alvys location id used to enrich this yard's picker card / printed BOL packet with
+    /// live location metadata (name, type, physical address) via the Alvys Public API. Left blank in
+    /// the Phase 1 pilot config; when absent the yard degrades to the static <see cref="Name"/> /
+    /// <see cref="State"/> strings — never fabricated geography.
+    /// </summary>
+    public string? AlvysLocationId { get; set; }
 }
 
 /// <summary>A pilot consolidation corridor pairing an origin and destination warehouse.</summary>

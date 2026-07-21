@@ -253,6 +253,10 @@ export interface WarehouseSummary {
   name: string;
   state: string;
   nearbyCities: string[];
+  /** Live Alvys location type ("Warehouse"/"Yard") when the yard config carries an Alvys id; else absent. */
+  locationType?: string | null;
+  /** Live Alvys physical-address label when resolvable; absent → UI falls back to name/state. */
+  addressLabel?: string | null;
 }
 
 /**

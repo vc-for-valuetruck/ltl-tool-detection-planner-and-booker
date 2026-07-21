@@ -3,7 +3,6 @@ import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { LtlService } from './ltl.service';
 import { LtlLoadSummary } from './ltl.models';
-import { LtlNav } from './ltl-nav';
 
 /**
  * Exceptions tab (issue #79). Read-only view over `GET /api/ltl/exceptions` — loads carrying one
@@ -13,7 +12,7 @@ import { LtlNav } from './ltl-nav';
 @Component({
   selector: 'app-ltl-exceptions',
   standalone: true,
-  imports: [DatePipe, RouterLink, LtlNav],
+  imports: [DatePipe, RouterLink],
   templateUrl: './ltl-exceptions.html',
   styleUrls: ['./ltl-worklist.css'],
 })

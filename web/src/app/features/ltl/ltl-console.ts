@@ -19,7 +19,6 @@ import {
   filtersToSnapshot,
   snapshotToFilterState,
 } from './saved-views';
-import { LtlNav } from './ltl-nav';
 
 type BoolFilterKey = 'readyToBill' | 'missingBillingData' | 'exceptionsOnly' | 'blockedOnly' | 'ltlOnly';
 
@@ -43,7 +42,7 @@ interface Column {
 @Component({
   selector: 'app-ltl-console',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, FormsModule, RouterLink, LtlNav],
+  imports: [DatePipe, DecimalPipe, FormsModule, RouterLink],
   templateUrl: './ltl-console.html',
   styleUrls: ['./ltl-worklist.css', './ltl-console.css'],
 })

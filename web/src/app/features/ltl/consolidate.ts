@@ -4,7 +4,6 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { catchError, of } from 'rxjs';
 import { ConsolidationService } from './consolidation.service';
-import { LtlNav } from './ltl-nav';
 import { LtlParentChildBadge } from './ltl-parent-child-badge';
 import { LtlEdiEnrichment, LtlLoadSummary } from './ltl.models';
 import {
@@ -143,7 +142,7 @@ export function chooseDefaultSelection(
 @Component({
   selector: 'app-consolidate',
   standalone: true,
-  imports: [CommonModule, FormsModule, LtlNav, LtlParentChildBadge],
+  imports: [CommonModule, FormsModule, LtlParentChildBadge],
   templateUrl: './consolidate.html',
   styleUrls: ['./consolidate.css'],
 })

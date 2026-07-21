@@ -2,7 +2,6 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { LtlService } from './ltl.service';
 import { BillingBadge, LtlLoadSummary, MissingDataFlag } from './ltl.models';
-import { LtlNav } from './ltl-nav';
 
 interface BadgeFilter {
   value: BillingBadge | null;
@@ -18,7 +17,7 @@ interface BadgeFilter {
 @Component({
   selector: 'app-ltl-billing',
   standalone: true,
-  imports: [DatePipe, LtlNav],
+  imports: [DatePipe],
   templateUrl: './ltl-billing.html',
   styleUrls: ['./ltl-worklist.css'],
 })

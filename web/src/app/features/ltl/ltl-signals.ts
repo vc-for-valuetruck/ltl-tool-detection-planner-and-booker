@@ -2,7 +2,6 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LtlService } from './ltl.service';
-import { LtlNav } from './ltl-nav';
 import {
   LtlSurface,
   SignalSourceType,
@@ -22,7 +21,7 @@ import {
 @Component({
   selector: 'app-ltl-signals',
   standalone: true,
-  imports: [DatePipe, FormsModule, LtlNav],
+  imports: [DatePipe, FormsModule],
   templateUrl: './ltl-signals.html',
   styleUrls: ['./ltl-signals.css'],
 })

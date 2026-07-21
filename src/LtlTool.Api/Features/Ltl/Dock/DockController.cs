@@ -28,7 +28,8 @@ public sealed class DockController(DockService dock, ILogger<DockController> log
     /// </summary>
     [HttpGet("warehouses")]
     [ProducesResponseType(typeof(DockWarehousesResponse), StatusCodes.Status200OK)]
-    public ActionResult<DockWarehousesResponse> GetWarehouses() => Ok(_dock.ListWarehouses());
+    public async Task<ActionResult<DockWarehousesResponse>> GetWarehouses(CancellationToken ct) =>
+        Ok(await _dock.ListWarehousesAsync(ct));
 
     /// <summary>
     /// Trucks/loads at or inbound to the given warehouse on the given day, reusing the Arrivals Board.
@@ -76,6 +77,7 @@ public sealed class DockController(DockService dock, ILogger<DockController> log
     /// </summary>
     [HttpPost("combine")]
     [ProducesResponseType(typeof(DockCombineResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ConsolidationPlanResponse), StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<DockCombineResponse>> Combine(
         [FromBody] DockCombineRequest request,
@@ -84,6 +86,11 @@ public sealed class DockController(DockService dock, ILogger<DockController> log
         try
         {
             return Ok(await _dock.CombineAsync(request, CurrentUser(), ct));
+        }
+        catch (ConsolidationPlanBlockedException ex)
+        {
+            // Blocked plan: record nothing, return the plan so the UI can surface its blockers.
+            return UnprocessableEntity(ex.Plan);
         }
         catch (InvalidOperationException ex)
         {
