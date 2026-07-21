@@ -43,6 +43,9 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/reporting/margin-rollup?groupBy=Rep")]
     [InlineData("/api/ltl/reporting/margin-rollup/export")]
     [InlineData("/api/ltl/reporting/margin-rollup/export?groupBy=Lane")]
+    [InlineData("/api/ltl/signals")]
+    [InlineData("/api/ltl/signals?status=Pending")]
+    [InlineData("/api/ltl/signals/extractor")]
     public async Task Ltl_get_routes_are_mapped_and_protected(string route)
     {
         var client = _factory.CreateClient();
@@ -59,6 +62,9 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/loads/100/assign")]
     [InlineData("/api/ltl/consolidation/plan")]
     [InlineData("/api/ltl/consolidation/plan/audit")]
+    [InlineData("/api/ltl/signals/ingest")]
+    [InlineData("/api/ltl/signals/abc123/accept")]
+    [InlineData("/api/ltl/signals/abc123/reject")]
     public async Task Ltl_post_routes_are_mapped_and_protected(string route)
     {
         var client = _factory.CreateClient();
