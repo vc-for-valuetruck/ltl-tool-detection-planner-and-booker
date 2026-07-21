@@ -19,11 +19,15 @@ public sealed class ConsolidationController(
     ConsolidationCandidateService candidates,
     ConsolidationPlanService plans,
     IConsolidationAuditStore audits,
+    ILaneTemplateStore laneTemplates,
     IOptions<ConsolidationOptions> options,
-    CorridorHealthCache corridorHealth) : ControllerBase
+    CorridorHealthCache corridorHealth,
+    ILogger<ConsolidationController> logger) : ControllerBase
 {
     private readonly ConsolidationOptions _options = options.Value;
     private readonly CorridorHealthCache _corridorHealth = corridorHealth;
+    private readonly ILaneTemplateStore _laneTemplates = laneTemplates;
+    private readonly ILogger<ConsolidationController> _logger = logger;
 
     /// <summary>
     /// Lists the consolidation corridors the planner recognises today, joined with each
@@ -159,6 +163,22 @@ public sealed class ConsolidationController(
         try
         {
             var response = await plans.BuildAsync(request, ct);
+
+            // Effectiveness metrics (Phase 4): status-only, no PII. Lets leadership see how many
+            // plans the tool generates, how many carried blockers / red-RPM warnings / accessorial
+            // pre-checks, and (via plan/audit) how many were acted on — the adoption denominator.
+            _logger.LogInformation(
+                "Consolidation metric: plan_generated corridor={Corridor} siblings={SiblingCount} "
+                + "blockers={BlockerCount} rpmWarning={RpmWarningStatus} accessorialPreChecks={PreCheckCount} "
+                + "likelyAccessorials={LikelyAccessorialCount}",
+                response.CorridorCode,
+                response.Siblings.Count,
+                response.Blockers.Count,
+                response.RpmWarning?.Status.ToString() ?? "None",
+                response.AccessorialPreChecks.Count,
+                response.AccessorialPreChecks.Sum(p => p.Candidates.Count(
+                    c => c.Status == AccessorialCandidateStatus.Likely)));
+
             return Ok(response);
         }
         catch (InvalidOperationException ex)
@@ -184,6 +204,17 @@ public sealed class ConsolidationController(
         {
             var plan = await plans.BuildAsync(request, ct);
             var record = audits.Record(plan, CurrentUser());
+
+            // Effectiveness metric (Phase 4): a plan that was acted on (recorded to the audit
+            // trail). Status-only, no PII — the recording user is not logged here.
+            _logger.LogInformation(
+                "Consolidation metric: plan_audited corridor={Corridor} siblings={SiblingCount} "
+                + "hadBlockers={HadBlockers} combinedRpmKnown={CombinedRpmKnown}",
+                record.CorridorCode,
+                record.SiblingLoadIds.Count,
+                record.Blockers.Count > 0,
+                record.CombinedRevenuePerMile is not null);
+
             return Ok(record);
         }
         catch (InvalidOperationException ex)
@@ -204,6 +235,130 @@ public sealed class ConsolidationController(
         }
         return Ok(audits.ForParent(parentLoadId));
     }
+
+    /// <summary>
+    /// Combined-RPM billing view (Phase 4) for a load that was recorded as a consolidation parent.
+    /// Billing detail must show the plan's combined revenue and combined driver miles/RPM — not the
+    /// parent's inflated stand-alone RPM. Sourced from the most-recent audit for the parent; 200 with
+    /// <c>Found=false</c> when the load has no consolidation audit (the SPA then shows the normal
+    /// single-load billing view). Read-only; every value is echoed from the audit, never re-derived.
+    /// </summary>
+    [HttpGet("plan/combined-rpm")]
+    [ProducesResponseType(typeof(CombinedPlanBillingView), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult<CombinedPlanBillingView> GetCombinedRpm([FromQuery] string loadId)
+    {
+        if (string.IsNullOrWhiteSpace(loadId))
+        {
+            return BadRequest(new { error = "loadId query parameter is required." });
+        }
+
+        var record = audits.ForParent(loadId).FirstOrDefault();
+        if (record is null)
+        {
+            return Ok(new CombinedPlanBillingView { Found = false });
+        }
+
+        return Ok(new CombinedPlanBillingView
+        {
+            Found = true,
+            AuditId = record.Id,
+            CorridorCode = record.CorridorCode,
+            ParentLoadId = record.ParentLoadId,
+            ParentLoadNumber = record.ParentLoadNumber,
+            SiblingLoadNumbers = record.SiblingLoadNumbers,
+            CombinedRevenue = record.CombinedRevenue,
+            DriverLoadedMiles = record.DriverLoadedMiles,
+            CombinedDriverTripValue = record.CombinedDriverTripValue,
+            CombinedRevenuePerMile = record.CombinedRevenuePerMile,
+            RecordedAt = record.RecordedAt,
+        });
+    }
+
+    /// <summary>
+    /// Effectiveness metric (Phase 4): the dispatcher copied a plan's click card. Fire-and-forget
+    /// status-only signal — no plan body, no PII — so leadership can see how many generated plans
+    /// actually reached the "paste into Alvys" step (candidates surfaced vs acted on).
+    /// </summary>
+    [HttpPost("plan/metrics/click-card-copied")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public IActionResult RecordClickCardCopied([FromBody] ClickCardCopiedRequest? request)
+    {
+        _logger.LogInformation(
+            "Consolidation metric: click_card_copied corridor={Corridor} siblings={SiblingCount}",
+            string.IsNullOrWhiteSpace(request?.CorridorCode) ? "unknown" : request!.CorridorCode,
+            request?.SiblingCount ?? 0);
+        return NoContent();
+    }
+
+    /// <summary>
+    /// Saves a recurring-lane template (Phase 2.5): a named note of a corridor/customer/cadence the
+    /// dispatcher expects to run again. Internal Value Truck data — never an Alvys write, never a live
+    /// load id. 400 on missing name/corridor.
+    /// </summary>
+    [HttpPost("plan/templates")]
+    [ProducesResponseType(typeof(LaneTemplateView), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult<LaneTemplateView> SaveLaneTemplate([FromBody] SaveLaneTemplateRequest request)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest(new { error = "name is required." });
+        }
+        if (string.IsNullOrWhiteSpace(request.CorridorCode))
+        {
+            return BadRequest(new { error = "corridorCode is required." });
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var record = _laneTemplates.Add(new LaneTemplateRecord
+        {
+            Id = $"lane-{Guid.NewGuid():n}",
+            Name = request.Name.Trim(),
+            CorridorCode = request.CorridorCode.Trim(),
+            CustomerName = string.IsNullOrWhiteSpace(request.CustomerName) ? null : request.CustomerName.Trim(),
+            OriginLabel = string.IsNullOrWhiteSpace(request.OriginLabel) ? null : request.OriginLabel.Trim(),
+            DestinationLabel = string.IsNullOrWhiteSpace(request.DestinationLabel) ? null : request.DestinationLabel.Trim(),
+            CadenceDays = request.CadenceDays,
+            Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
+            CreatedBy = CurrentUser(),
+            CreatedAt = now,
+            UpdatedAt = now,
+        });
+
+        _logger.LogInformation(
+            "Consolidation metric: lane_template_saved corridor={Corridor} hasCustomer={HasCustomer} "
+            + "cadenceDays={CadenceDays}",
+            record.CorridorCode,
+            record.CustomerName is not null,
+            record.CadenceDays);
+
+        return Ok(LaneTemplateMapping.ToView(record));
+    }
+
+    /// <summary>
+    /// Lists recurring-lane templates, newest first, optionally filtered by corridor and/or customer.
+    /// The SPA uses this to surface "this lane again this week" candidates. Read-only, internal data.
+    /// </summary>
+    [HttpGet("plan/templates")]
+    [ProducesResponseType(typeof(IReadOnlyList<LaneTemplateView>), StatusCodes.Status200OK)]
+    public ActionResult<IReadOnlyList<LaneTemplateView>> GetLaneTemplates(
+        [FromQuery] string? corridorCode,
+        [FromQuery] string? customerName)
+    {
+        var results = _laneTemplates
+            .Query(new LaneTemplateQuery(corridorCode, customerName, _options.MaxCandidatesReturned))
+            .Select(LaneTemplateMapping.ToView)
+            .ToArray();
+        return Ok(results);
+    }
+
+    /// <summary>Deletes a recurring-lane template by id. 404 when no row matched.</summary>
+    [HttpDelete("plan/templates/{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult DeleteLaneTemplate(string id) =>
+        _laneTemplates.Delete(id) ? NoContent() : NotFound();
 
     private string CurrentUser() =>
         User.FindFirstValue("preferred_username")

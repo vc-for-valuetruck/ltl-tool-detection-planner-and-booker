@@ -652,3 +652,38 @@
   border-color: var(--danger);
   background: var(--danger-bg);
 }
+
+.econ-negative { color: var(--danger-text); font-weight: 700; }
+
+/* Phase 4 red-RPM chip: honest floor check on the projected driver RPM. */
+.rpm-chip {
+  margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 6px; display: flex; flex-direction: column; gap: 2px;
+}
+.rpm-chip strong { font-size: 12px; }
+.rpm-chip span { font-size: 11px; color: var(--text-secondary); }
+.rpm-chip-below { border-color: var(--danger); background: var(--danger-bg); }
+.rpm-chip-below strong { color: var(--danger-text); }
+.rpm-chip-ok { border-color: var(--success); background: var(--success-row-bg); }
+.rpm-chip-ok strong { color: var(--success-text); }
+/* Gray/unavailable: RPM inputs missing — never implies a pass or a fail. */
+.rpm-chip-unavailable { border-color: var(--border); background: var(--surface-muted, var(--warning-bg)); }
+
+/* Phase 4 plan-time accessorial pre-checks. */
+.accessorial-load { margin-top: 10px; }
+.accessorial-load-head { font-size: 13px; margin: 0 0 4px; display: flex; align-items: center; gap: 6px; }
+.accessorial-parent-tag {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 1px 6px; border-radius: 999px;
+  background: var(--surface-muted, var(--warning-bg)); color: var(--text-secondary);
+}
+.accessorial-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.accessorial-item {
+  display: grid; grid-template-columns: auto auto; gap: 2px 8px;
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+}
+.accessorial-item-likely { border-color: var(--warning); background: var(--warning-bg); }
+.accessorial-type { font-weight: 700; font-size: 12px; }
+.accessorial-status { font-size: 11px; text-align: right; color: var(--text-secondary); }
+.accessorial-reason, .accessorial-evidence { grid-column: 1 / -1; font-size: 11px; color: var(--text-secondary); }
+.accessorial-evidence { font-style: italic; }

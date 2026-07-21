@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import {
+  CombinedPlanBillingView,
   ConsolidationAuditRecord,
   ConsolidationCandidateResponse,
   ConsolidationOpportunitiesResponse,
@@ -10,6 +11,8 @@ import {
   ConsolidationPlanResponse,
   CorridorSummary,
   CorridorHealthSnapshot,
+  LaneTemplateView,
+  SaveLaneTemplateRequest,
 } from './consolidation.models';
 
 /**
@@ -77,5 +80,43 @@ export class ConsolidationService {
       `${this.base}/opportunities`,
       { params },
     );
+  }
+
+  /**
+   * Combined-RPM billing view for a consolidation-audited parent load. Returns `{ found: false }`
+   * when the load has no consolidation audit on file. Read-only, driver-math RPM.
+   */
+  getCombinedRpm(loadId: string): Observable<CombinedPlanBillingView> {
+    const params = new HttpParams().set('loadId', loadId);
+    return this.http.get<CombinedPlanBillingView>(`${this.base}/plan/combined-rpm`, { params });
+  }
+
+  /** Saves a recurring-lane template (Phase 2.5). Internal data — never an Alvys write. */
+  saveLaneTemplate(request: SaveLaneTemplateRequest): Observable<LaneTemplateView> {
+    return this.http.post<LaneTemplateView>(`${this.base}/plan/templates`, request);
+  }
+
+  /** Lists recurring-lane templates, newest first, optionally filtered by corridor/customer. */
+  getLaneTemplates(corridorCode?: string, customerName?: string): Observable<LaneTemplateView[]> {
+    let params = new HttpParams();
+    if (corridorCode) params = params.set('corridorCode', corridorCode);
+    if (customerName) params = params.set('customerName', customerName);
+    return this.http.get<LaneTemplateView[]>(`${this.base}/plan/templates`, { params });
+  }
+
+  /** Deletes a recurring-lane template by id. */
+  deleteLaneTemplate(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.base}/plan/templates/${encodeURIComponent(id)}`);
+  }
+
+  /**
+   * Fire-and-forget effectiveness metric: the dispatcher copied a plan's click card. Status-only —
+   * no plan body, no PII — so leadership can see how many generated plans reached the paste step.
+   */
+  recordClickCardCopied(corridorCode: string, siblingCount: number): Observable<void> {
+    return this.http.post<void>(`${this.base}/plan/metrics/click-card-copied`, {
+      corridorCode,
+      siblingCount,
+    });
   }
 }

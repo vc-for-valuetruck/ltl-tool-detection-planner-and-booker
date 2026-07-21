@@ -161,6 +161,11 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<IYardArtifactStore, EfYardArtifactStore>();
         services.AddScoped<YardArtifactService>();
 
+        // Phase 2.5 recurring-lane templates: durable, EF-backed lane-shape notes (AppDbContext).
+        // Internal Value Truck data — a template references a corridor + customer, never a live
+        // Alvys load id, and nothing here reads from or writes back to Alvys.
+        services.AddScoped<ILaneTemplateStore, EfLaneTemplateStore>();
+
         // Phase 2 M4 agent command surface (tool-style catalog + read-only dispatch). Feature-gated
         // behind Ltl:Optimization:AgentCommands:Enabled with a Null dispatcher fallback; every command
         // reuses the decision-support services above and writes nothing to Alvys.

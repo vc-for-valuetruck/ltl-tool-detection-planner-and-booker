@@ -430,6 +430,155 @@ public sealed class ConsolidationPlanServiceTests
         Assert.Contains("Open sibling load L-100241", text);
     }
 
+    private static ConsolidationPlanService BuildServiceWithTrips(
+        StatefulAlvysClient client,
+        ConsolidationOptions options)
+    {
+        var loads = new LtlLoadService(
+            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
+        return new ConsolidationPlanService(
+            loads,
+            Microsoft.Extensions.Options.Options.Create(options),
+            LtlTestFactory.Options(),
+            LtlTestFactory.Clock(),
+            LtlTestFactory.StaticPolicyReader(options),
+            new NullTrailerFitService(TimeProvider.System),
+            new LtlTool.Api.Features.Ltl.Optimization.NullStopSequencer(LtlTestFactory.Clock()));
+    }
+
+    private static StatefulAlvysClient VerdefPairWithTrips(
+        decimal parentTripValue, decimal parentLoadedMiles,
+        decimal siblingTripValue, decimal siblingLoadedMiles)
+    {
+        var parent = Load(
+            "L-100234", "Verdef",
+            "Laredo", "TX", "Dallas", "TX", ParentPickup,
+            rate: 4100m, mileage: 1072m, weight: 14200m);
+        var sibling = Load(
+            "L-100241", "Verdef",
+            "Laredo", "TX", "Dallas", "TX", ParentPickup.AddHours(3),
+            rate: 4100m, mileage: 500m, weight: 4100m);
+
+        var client = new StatefulAlvysClient(parent, sibling);
+        client.Trips.Add(new AlvysTrip
+        {
+            Id = "T-100234",
+            LoadNumber = "L-100234",
+            TripValue = new AlvysMoney { Amount = parentTripValue, Currency = "USD" },
+            LoadedMileage = new AlvysDistanceMeasurement
+            {
+                Distance = new AlvysDistance { Value = parentLoadedMiles, UnitOfMeasure = "Miles" },
+            },
+        });
+        client.Trips.Add(new AlvysTrip
+        {
+            Id = "T-100241",
+            LoadNumber = "L-100241",
+            TripValue = new AlvysMoney { Amount = siblingTripValue, Currency = "USD" },
+            LoadedMileage = new AlvysDistanceMeasurement
+            {
+                Distance = new AlvysDistance { Value = siblingLoadedMiles, UnitOfMeasure = "Miles" },
+            },
+        });
+        return client;
+    }
+
+    private static ConsolidationOptions VerdefAllowedOptions(decimal? redRpmFloor = null)
+    {
+        var options = DefaultOptions();
+        if (redRpmFloor is not null) options.RedRpmThresholdPerMile = redRpmFloor.Value;
+        options.CustomerPolicies.Add(new()
+        {
+            Customer = "Verdef",
+            Tier = CustomerConsolidationTier.Allowed,
+        });
+        return options;
+    }
+
+    [Fact]
+    public async Task Rpm_warning_is_ok_when_combined_driver_rpm_clears_the_floor()
+    {
+        // Combined driver RPM = 8100 / 1050 = 7.71, well above the default 1.50 floor.
+        var client = VerdefPairWithTrips(4200m, 1050m, 3900m, 490m);
+        var service = BuildServiceWithTrips(client, VerdefAllowedOptions());
+
+        var response = await service.BuildAsync(
+            new ConsolidationPlanRequest { ParentLoadId = "L-100234", SiblingLoadIds = ["L-100241"] },
+            default);
+
+        Assert.NotNull(response.RpmWarning);
+        Assert.Equal(ConsolidationRpmWarningStatus.Ok, response.RpmWarning!.Status);
+        Assert.Equal(7.71m, response.RpmWarning.RpmPerMile);
+        Assert.Equal(1.50m, response.RpmWarning.ThresholdPerMile);
+    }
+
+    [Fact]
+    public async Task Rpm_warning_is_below_when_combined_driver_rpm_is_under_the_configured_floor()
+    {
+        // Same 7.71 combined driver RPM, but a floor set above it flips the chip to Below.
+        var client = VerdefPairWithTrips(4200m, 1050m, 3900m, 490m);
+        var service = BuildServiceWithTrips(client, VerdefAllowedOptions(redRpmFloor: 10.00m));
+
+        var response = await service.BuildAsync(
+            new ConsolidationPlanRequest { ParentLoadId = "L-100234", SiblingLoadIds = ["L-100241"] },
+            default);
+
+        Assert.NotNull(response.RpmWarning);
+        Assert.Equal(ConsolidationRpmWarningStatus.Below, response.RpmWarning!.Status);
+        Assert.Equal(7.71m, response.RpmWarning.RpmPerMile);
+        Assert.Equal(10.00m, response.RpmWarning.ThresholdPerMile);
+    }
+
+    [Fact]
+    public async Task Rpm_warning_is_unavailable_and_never_zero_when_driver_data_is_missing()
+    {
+        // No trips seeded → combined driver RPM is null. The chip must be gray/Unavailable with a
+        // null RPM (never coerced to 0), so the SPA is honest rather than implying a below-floor.
+        var parent = Load(
+            "L-100234", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup,
+            rate: 4100m, mileage: 1072m, weight: 14200m);
+        var sibling = Load(
+            "L-100241", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup.AddHours(3),
+            rate: 4100m, mileage: 500m, weight: 4100m);
+        var client = new StatefulAlvysClient(parent, sibling); // no trips
+        var service = BuildServiceWithTrips(client, VerdefAllowedOptions());
+
+        var response = await service.BuildAsync(
+            new ConsolidationPlanRequest { ParentLoadId = "L-100234", SiblingLoadIds = ["L-100241"] },
+            default);
+
+        Assert.NotNull(response.RpmWarning);
+        Assert.Equal(ConsolidationRpmWarningStatus.Unavailable, response.RpmWarning!.Status);
+        Assert.Null(response.RpmWarning.RpmPerMile);
+    }
+
+    [Fact]
+    public async Task Accessorial_pre_checks_cover_the_parent_and_each_included_sibling()
+    {
+        var client = VerdefPairWithTrips(4200m, 1050m, 3900m, 490m);
+        var service = BuildServiceWithTrips(client, VerdefAllowedOptions());
+
+        var response = await service.BuildAsync(
+            new ConsolidationPlanRequest { ParentLoadId = "L-100234", SiblingLoadIds = ["L-100241"] },
+            default);
+
+        Assert.Equal(2, response.AccessorialPreChecks.Count);
+        var parentCheck = Assert.Single(response.AccessorialPreChecks, p => p.IsParent);
+        Assert.Equal("L-100234", parentCheck.LoadNumber);
+        var siblingCheck = Assert.Single(response.AccessorialPreChecks, p => !p.IsParent);
+        Assert.Equal("L-100241", siblingCheck.LoadNumber);
+        // No dollar amounts ever ride an accessorial candidate.
+        foreach (var check in response.AccessorialPreChecks)
+        {
+            foreach (var candidate in check.Candidates)
+            {
+                Assert.DoesNotContain("$", candidate.Reason);
+            }
+        }
+    }
+
     [Fact]
     public async Task Preview_id_is_deterministic_shape()
     {

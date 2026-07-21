@@ -1,4 +1,5 @@
 using LtlTool.Api.Features.Integrations.Alvys.Writeback;
+using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using LtlTool.Api.Features.Ltl.Signals;
 using LtlTool.Api.Features.Ltl.YardArtifacts;
@@ -20,6 +21,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Durable yard-artifact intake metadata (see <see cref="EfYardArtifactStore"/>). Internal data, never Alvys.</summary>
     public DbSet<YardArtifactRecord> YardArtifacts => Set<YardArtifactRecord>();
+
+    /// <summary>Durable recurring-lane templates (see <see cref="EfLaneTemplateStore"/>). Internal lane-shape notes, never Alvys.</summary>
+    public DbSet<LaneTemplateRecord> LaneTemplates => Set<LaneTemplateRecord>();
 
     /// <summary>Durable Phase 6 extracted LTL signals (see <see cref="EfSignalStore"/>). Internal data, never Alvys.</summary>
     public DbSet<SignalRecord> Signals => Set<SignalRecord>();
@@ -90,6 +94,24 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(e => e.LoadNumber);
             entity.HasIndex(e => e.TruckUnit);
             entity.HasIndex(e => e.TrailerUnit);
+        });
+
+        modelBuilder.Entity<LaneTemplateRecord>(entity =>
+        {
+            entity.ToTable("LaneTemplates");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(64);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(120);
+            entity.Property(e => e.CorridorCode).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.CustomerName).HasMaxLength(256);
+            entity.Property(e => e.OriginLabel).HasMaxLength(256);
+            entity.Property(e => e.DestinationLabel).HasMaxLength(256);
+            entity.Property(e => e.Notes).HasMaxLength(1024);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(256);
+
+            // Templates are listed by corridor and/or customer; index both relational predicates.
+            entity.HasIndex(e => e.CorridorCode);
+            entity.HasIndex(e => e.CustomerName);
         });
 
         modelBuilder.Entity<SignalRecord>(entity =>

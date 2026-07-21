@@ -1,8 +1,10 @@
 import { PlanDetail } from './plan-detail';
 import { LaneRateContext, LtlLoadSummary } from './ltl.models';
 import {
+  ConsolidationAccessorialPreCheck,
   ConsolidationAuditRecord,
   ConsolidationPlanSibling,
+  ConsolidationRpmWarning,
   ConsolidationTrailerFit,
 } from './consolidation.models';
 import { LtlService } from './ltl.service';
@@ -30,6 +32,7 @@ describe('PlanDetail', () => {
     };
     const routerStub = {
       getCurrentNavigation: () => (navState ? { extras: { state: navState } } : null),
+      navigate: () => Promise.resolve(true),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -457,6 +460,126 @@ describe('PlanDetail', () => {
       c.recordAudit();
       c.recordAudit();
       expect(calls).toBe(1);
+    });
+  });
+
+  describe('red-RPM warning chip (Phase 4)', () => {
+    function warning(partial: Partial<ConsolidationRpmWarning>): ConsolidationRpmWarning {
+      return {
+        status: 'Ok',
+        thresholdPerMile: 1.5,
+        rpmPerMile: 2,
+        message: '',
+        ...partial,
+      };
+    }
+
+    it('prefers the server driver-math RPM over the client billing RPM for display', () => {
+      const c = newComponent();
+      c.parent.set(load({ id: 'P', revenue: 5000, mileage: 500 }));
+      // Client-side combined RPM would be 5000 / 500 = 10.
+      expect(c.combinedRpm()).toBe(10);
+      c.serverCombinedRpm.set(1.85);
+      // Once the server driver-math RPM arrives it wins.
+      expect(c.displayRpm()).toBe(1.85);
+    });
+
+    it('falls back to the client billing RPM until the server RPM resolves', () => {
+      const c = newComponent();
+      c.parent.set(load({ id: 'P', revenue: 4000, mileage: 1000 }));
+      expect(c.serverCombinedRpm()).toBeNull();
+      expect(c.displayRpm()).toBe(4);
+    });
+
+    it('flags below-floor and clears the ok/unavailable flags', () => {
+      const c = newComponent();
+      c.rpmWarning.set(warning({ status: 'Below', rpmPerMile: 1.1 }));
+      expect(c.rpmBelowFloor()).toBeTrue();
+      expect(c.rpmUnavailable()).toBeFalse();
+    });
+
+    it('flags unavailable (gray) when RPM inputs are missing', () => {
+      const c = newComponent();
+      c.rpmWarning.set(warning({ status: 'Unavailable', rpmPerMile: undefined }));
+      expect(c.rpmUnavailable()).toBeTrue();
+      expect(c.rpmBelowFloor()).toBeFalse();
+    });
+
+    it('treats an Ok status as neither below nor unavailable', () => {
+      const c = newComponent();
+      c.rpmWarning.set(warning({ status: 'Ok' }));
+      expect(c.rpmBelowFloor()).toBeFalse();
+      expect(c.rpmUnavailable()).toBeFalse();
+    });
+  });
+
+  describe('accessorial pre-checks (Phase 4)', () => {
+    function preCheck(
+      partial: Partial<ConsolidationAccessorialPreCheck>,
+    ): ConsolidationAccessorialPreCheck {
+      return {
+        loadId: 'L',
+        isParent: false,
+        evaluated: true,
+        candidates: [],
+        ...partial,
+      };
+    }
+
+    it('keeps only evaluated pre-checks that carry at least one candidate', () => {
+      const c = newComponent();
+      c.accessorialPreChecks.set([
+        preCheck({
+          loadId: 'P',
+          isParent: true,
+          candidates: [
+            {
+              type: 'Detention',
+              status: 'Likely',
+              reason: 'Long dwell at stop',
+              evidence: 'Arrival to departure 4h12m',
+              sourceId: null,
+              sourceType: null,
+            },
+          ],
+        }),
+        preCheck({ loadId: 'S1', evaluated: true, candidates: [] }),
+        preCheck({ loadId: 'S2', evaluated: false, candidates: [] }),
+      ]);
+      const shown = c.accessorialPreChecksWithCandidates();
+      expect(shown.length).toBe(1);
+      expect(shown[0].loadId).toBe('P');
+    });
+  });
+
+  describe('openClickCard effectiveness metric (Phase 4)', () => {
+    it('fires a status-only click-card-copied signal with the plan corridor and sibling count', () => {
+      const calls: Array<{ corridor: string; siblings: number }> = [];
+      const c = newComponent(null, {
+        recordClickCardCopied: (corridor: string, siblings: number) => {
+          calls.push({ corridor, siblings });
+          return of(void 0);
+        },
+      });
+      c.parent.set(load({ id: 'P', status: 'Available' }));
+      c.siblings.set([load({ id: 'S1', status: 'Available' })]);
+      c.planCorridorCode.set('LAREDO_TO_DALLAS');
+      c.openClickCard();
+      expect(calls).toEqual([{ corridor: 'LAREDO_TO_DALLAS', siblings: 1 }]);
+    });
+
+    it('does not fire the metric for a delivered example', () => {
+      let calls = 0;
+      const c = newComponent(null, {
+        recordClickCardCopied: () => {
+          calls++;
+          return of(void 0);
+        },
+      });
+      c.parent.set(load({ id: 'P', status: 'Delivered' }));
+      c.siblings.set([load({ id: 'S1', status: 'Delivered' })]);
+      c.openClickCard();
+      expect(calls).toBe(0);
     });
   });
 });
