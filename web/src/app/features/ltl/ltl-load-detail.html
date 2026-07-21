@@ -110,6 +110,24 @@
       }
     </div>
 
+    <div class="card detail-card" data-testid="accessorial-review">
+      <h2>Accessorial review</h2>
+      @if (!l.accessorialReview.evaluated) {
+        <p class="detail-note">Not evaluated — no trip stops, notes, or documents were available. This is not a clean bill of health.</p>
+      } @else if (l.accessorialReview.candidates.length) {
+        <div class="chip-row">
+          @for (c of l.accessorialReview.candidates; track $index) {
+            <span [class]="candidateChipClass(c.status)" [title]="c.evidence">
+              {{ c.reason }}@if (c.status !== 'Likely') { · {{ c.status }} }
+            </span>
+          }
+        </div>
+        <p class="detail-note">Deterministic evidence only — no dollar amount is computed. The accessorial team prices from the cited Alvys record.</p>
+      } @else {
+        <p class="detail-note">Evaluated — no accessorial evidence found in stops, notes, or documents.</p>
+      }
+    </div>
+
     @if (l.hasExceptions) {
       <div class="card detail-card">
         <h2>Exceptions</h2>

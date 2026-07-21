@@ -1,6 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys.Writeback;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.SavedViews;
+using LtlTool.Api.Features.Ltl.Signals;
 using LtlTool.Api.Features.Ltl.YardArtifacts;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,6 +24,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Durable internal assignment-decision audit trail (see <see cref="EfAssignmentAuditStore"/>). Never written back to Alvys.</summary>
     public DbSet<AssignmentAuditRecord> AssignmentAudits => Set<AssignmentAuditRecord>();
+
+    /// <summary>Durable Phase 6 extracted LTL signals (see <see cref="EfSignalStore"/>). Internal data, never Alvys.</summary>
+    public DbSet<SignalRecord> Signals => Set<SignalRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -114,6 +118,29 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // History listing is keyed by load (per-load drawer) and filtered by user (history page).
             entity.HasIndex(e => e.LoadId);
             entity.HasIndex(e => e.RecordedBy);
+        });
+
+        modelBuilder.Entity<SignalRecord>(entity =>
+        {
+            entity.ToTable("Signals");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(64);
+            entity.Property(e => e.SourceType).IsRequired().HasMaxLength(32);
+            entity.Property(e => e.SourceId).IsRequired().HasMaxLength(256);
+            // Enums stored as readable strings so the audit table is legible in the database.
+            entity.Property(e => e.SignalType).IsRequired().HasMaxLength(48);
+            entity.Property(e => e.SuggestedSurface).IsRequired().HasMaxLength(32);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(16);
+            // Evidence quote is mandatory (fail-closed); nvarchar(max) so a long snippet round-trips.
+            entity.Property(e => e.EvidenceQuote).IsRequired();
+            entity.Property(e => e.Summary).HasMaxLength(512);
+            entity.Property(e => e.LoadNumber).HasMaxLength(64);
+            entity.Property(e => e.IngestedBy).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.DecidedBy).HasMaxLength(256);
+
+            // Review-queue listing (by status, newest first) and per-load surfacing.
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.LoadNumber);
         });
     }
 }

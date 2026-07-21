@@ -74,7 +74,8 @@ public sealed class LtlNormalizationService(
         LtlLateDelivery? lateDelivery = null,
         LtlStuckStop? stuckStop = null,
         AccessorialReviewContext? accessorialSignals = null,
-        decimal? carrierAccessorialsTotal = null)
+        decimal? carrierAccessorialsTotal = null,
+        AccessorialReviewResult? accessorialReview = null)
     {
         var missing = new List<MissingDataFlag>();
 
@@ -119,7 +120,8 @@ public sealed class LtlNormalizationService(
         var (isLtl, classification) = ClassifyLtl(load, equipment);
 
         var billingResult = billing.Evaluate(
-            load, documents, invoices, revenue, carrierPayable, accessorialSignals, carrierAccessorialsTotal);
+            load, documents, invoices, revenue, carrierPayable, accessorialSignals, carrierAccessorialsTotal,
+            accessorialReview);
         var grossMargin = revenue is not null && carrierPayable is not null
             ? revenue.Value - carrierPayable.Value
             : (decimal?)null;
@@ -243,6 +245,7 @@ public sealed class LtlNormalizationService(
             LtlClassification = classification,
             MissingData = missing,
             Billing = billingResult,
+            AccessorialReview = accessorialReview ?? AccessorialReviewResult.NotEvaluated,
             Exceptions = exceptions,
             Visibility = visibilityContext,
             Workflow = workflowState,

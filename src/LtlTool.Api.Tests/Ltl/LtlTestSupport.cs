@@ -37,6 +37,9 @@ internal static class LtlTestFactory
 
     public static AccessorialSignalAnalyzer AccessorialAnalyzer() => new();
 
+    public static AccessorialReviewAnalyzer AccessorialReview(LtlOptions? options = null) =>
+        new(Options(options));
+
     /// <summary>
     /// Test-double policy reader that resolves purely from the given
     /// <see cref="ConsolidationOptions.CustomerPolicies"/>. No Alvys calls. Same semantics

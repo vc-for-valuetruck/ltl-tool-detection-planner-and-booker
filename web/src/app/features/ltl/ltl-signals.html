@@ -1,0 +1,147 @@
+<app-ltl-nav active="signals" />
+
+<div class="signals page-shell">
+  <div class="signals-head">
+    <h1>Signals</h1>
+    <span class="signals-sub">
+      Turn a note, email, call summary or transcript into typed, evidence-backed LTL signals, then
+      accept or reject each one. Extraction <strong>fails closed</strong> — if a signal has no
+      verbatim source quote, nothing is recorded. Accepting a signal annotates internal surfaces
+      only; <strong>nothing is ever written to Alvys</strong>.
+    </span>
+    @if (extractorName()) {
+      <span class="extractor" data-testid="signals-extractor">
+        Extractor: <code>{{ extractorName() }}</code>
+      </span>
+    }
+  </div>
+
+  <form class="ingest" data-testid="signals-ingest" (ngSubmit)="ingest()">
+    <div class="ingest-row">
+      <label class="field">
+        <span>Source</span>
+        <select [ngModel]="sourceType()" (ngModelChange)="sourceType.set($event)" name="sourceType">
+          @for (t of sourceTypes; track t) {
+            <option [value]="t">{{ t }}</option>
+          }
+        </select>
+      </label>
+      <label class="field">
+        <span>Source ID</span>
+        <input
+          type="text"
+          name="sourceId"
+          placeholder="message / transcript id"
+          [ngModel]="sourceId()"
+          (ngModelChange)="sourceId.set($event)"
+        />
+      </label>
+      <label class="field">
+        <span>Load # (optional)</span>
+        <input
+          type="text"
+          name="loadNumber"
+          placeholder="e.g. 100234"
+          [ngModel]="loadNumber()"
+          (ngModelChange)="loadNumber.set($event)"
+        />
+      </label>
+    </div>
+    <label class="field">
+      <span>Text</span>
+      <textarea
+        name="text"
+        rows="5"
+        placeholder="Paste the note / email / transcript here…"
+        [ngModel]="text()"
+        (ngModelChange)="text.set($event)"
+      ></textarea>
+    </label>
+    <div class="ingest-actions">
+      <button type="submit" [disabled]="!canIngest()" data-testid="signals-extract-btn">
+        {{ ingesting() ? 'Extracting…' : 'Extract signals' }}
+      </button>
+      @if (lastIngestCount() !== null && !ingestError()) {
+        <span class="ingest-ok" data-testid="signals-ingest-ok">
+          Recorded {{ lastIngestCount() }} signal(s).
+        </span>
+      }
+    </div>
+    @if (ingestError()) {
+      <div class="ingest-error" data-testid="signals-ingest-error">
+        <strong>Nothing was recorded.</strong>
+        <span>{{ ingestError() }}</span>
+      </div>
+    }
+  </form>
+
+  <div class="filter-row">
+    <label class="field field-inline">
+      <span>Status</span>
+      <select
+        [value]="statusFilter()"
+        (change)="onStatusFilterChange($any($event.target).value)"
+        data-testid="signals-status-filter"
+      >
+        <option value="">All</option>
+        <option value="Pending">Pending</option>
+        <option value="Accepted">Accepted</option>
+        <option value="Rejected">Rejected</option>
+      </select>
+    </label>
+  </div>
+
+  @if (loading()) {
+    <div class="state" data-testid="signals-loading">Loading signals…</div>
+  } @else if (error()) {
+    <div class="state state-error" data-testid="signals-error">
+      <strong>Couldn't load the queue.</strong>
+      <span>{{ error() }}</span>
+      <button type="button" (click)="load()">Retry</button>
+    </div>
+  } @else if (!hasItems()) {
+    <div class="state" data-testid="signals-empty">
+      No signals yet. Extract from a note or email above to populate the review queue.
+    </div>
+  } @else {
+    <div class="feed" data-testid="signals-feed">
+      @for (row of items(); track row.id) {
+        <div class="feed-row" data-testid="signals-row">
+          <div class="feed-top">
+            <span class="type-badge">{{ typeLabel(row.signalType) }}</span>
+            <span class="surface">→ {{ surfaceLabel(row.suggestedSurface) }}</span>
+            @if (row.loadNumber) {
+              <span class="load">Load {{ row.loadNumber }}</span>
+            }
+            <span [class]="statusClass(row.status)">{{ row.status }}</span>
+            <span class="feed-time">{{ row.createdAt | date: 'MMM d, h:mm a' }}</span>
+          </div>
+          <blockquote class="evidence" data-testid="signals-evidence">"{{ row.evidenceQuote }}"</blockquote>
+          <div class="feed-meta">
+            <span>{{ row.sourceType }} · {{ row.sourceId }} · {{ row.ingestedBy }}</span>
+            <span class="posture">Not pushed to Alvys — internal annotation only</span>
+          </div>
+          @if (row.status === 'Pending') {
+            <div class="feed-actions">
+              <button type="button" class="accept" (click)="accept(row)" data-testid="signals-accept">
+                Accept
+              </button>
+              <button type="button" class="reject" (click)="reject(row)" data-testid="signals-reject">
+                Reject
+              </button>
+            </div>
+          } @else {
+            <div class="feed-decided" data-testid="signals-decided">
+              {{ row.status }}@if (row.decidedBy) { by {{ row.decidedBy }} }@if (row.decidedAt) {
+                · {{ row.decidedAt | date: 'MMM d, h:mm a' }} }
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="signals-footer" data-testid="signals-footer">
+      Source: pasted text · Deterministic extraction · Read-only against Alvys
+    </div>
+  }
+</div>

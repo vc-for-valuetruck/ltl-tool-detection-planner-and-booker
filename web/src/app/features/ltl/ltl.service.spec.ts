@@ -6,7 +6,12 @@ import {
 } from '@angular/common/http/testing';
 import { LtlService } from './ltl.service';
 import { RUNTIME_CONFIG } from '../../runtime-config';
-import { AccessorialReviewContext, CapacitySnapshot, LaneRateContext } from './ltl.models';
+import {
+  AccessorialReviewContext,
+  AccessorialReviewResult,
+  CapacitySnapshot,
+  LaneRateContext,
+} from './ltl.models';
 import { LaredoArrivalsBoard } from './arrivals.models';
 import { YardArtifactView } from './yard-artifacts.models';
 
@@ -79,6 +84,46 @@ describe('LtlService — accessorial signals', () => {
     expect(result).toBeDefined();
     expect(result!.evaluated).toBeFalse();
     expect(result!.signals).toEqual([]);
+  });
+
+  it('calls GET /api/ltl/loads/{id}/accessorial-review and maps candidates', () => {
+    let result: AccessorialReviewResult | undefined;
+
+    service.getAccessorialReview('LTL-300').subscribe((r) => (result = r));
+
+    const req = http.expectOne('/api/ltl/loads/LTL-300/accessorial-review');
+    expect(req.request.method).toBe('GET');
+
+    const fakeResponse: AccessorialReviewResult = {
+      evaluated: true,
+      hasLikelyCandidate: true,
+      candidates: [
+        {
+          type: 'Detention',
+          status: 'Likely',
+          reason: 'Detention — 3h over free time at Delivery',
+          evidence: 'stop S2, arrived …, departed …, customer free time = 180m',
+          sourceId: 'S2',
+          sourceType: 'Stop',
+        },
+        {
+          type: 'Detention',
+          status: 'CannotEvaluate',
+          reason: "Can't evaluate detention — customer free time not configured",
+          evidence: 'A closed stop dwell exists but no free-time term is configured.',
+          sourceId: null,
+          sourceType: 'Stop',
+        },
+      ],
+    };
+    req.flush(fakeResponse);
+
+    expect(result).toBeDefined();
+    expect(result!.evaluated).toBeTrue();
+    expect(result!.hasLikelyCandidate).toBeTrue();
+    expect(result!.candidates.length).toBe(2);
+    expect(result!.candidates[0].status).toBe('Likely');
+    expect(result!.candidates[1].status).toBe('CannotEvaluate');
   });
 });
 
@@ -340,5 +385,65 @@ describe('LtlService — assignment history & batch validate', () => {
     });
 
     expect(rowCount).toBe(1);
+  });
+});
+
+describe('LtlService — signals', () => {
+  let service: LtlService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: RUNTIME_CONFIG,
+          useValue: { tenantId: '', clientId: '', apiScope: '', apiBaseUrl: '/api' },
+        },
+      ],
+    });
+    service = TestBed.inject(LtlService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('POSTs the ingest request to /api/ltl/signals/ingest', () => {
+    service
+      .ingestSignals({ sourceType: 'email', sourceId: 'msg-1', text: 'Driver was detained.', loadNumber: '100' })
+      .subscribe();
+
+    const req = http.expectOne('/api/ltl/signals/ingest');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body.sourceType).toBe('email');
+    req.flush({ count: 1, signals: [] });
+  });
+
+  it('GETs /api/ltl/signals with only the supplied filters', () => {
+    service.signals({ status: 'Pending', max: 100 }).subscribe();
+
+    const req = http.expectOne('/api/ltl/signals?status=Pending&max=100');
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('GETs /api/ltl/signals/extractor', () => {
+    service.signalExtractor().subscribe();
+    const req = http.expectOne('/api/ltl/signals/extractor');
+    expect(req.request.method).toBe('GET');
+    req.flush({ name: 'deterministic-keyword' });
+  });
+
+  it('POSTs accept and reject to the per-signal routes', () => {
+    service.acceptSignal('s1').subscribe();
+    const accept = http.expectOne('/api/ltl/signals/s1/accept');
+    expect(accept.request.method).toBe('POST');
+    accept.flush({});
+
+    service.rejectSignal('s2').subscribe();
+    const reject = http.expectOne('/api/ltl/signals/s2/reject');
+    expect(reject.request.method).toBe('POST');
+    reject.flush({});
   });
 });

@@ -174,7 +174,15 @@ export interface VisibilityContext {
 }
 
 /** Type of an accessorial-signal evidence item extracted from Alvys notes/documents. */
-export type AccessorialSignalType = 'Detention' | 'Layover' | 'Lumper' | 'Reconsignment' | 'Other';
+export type AccessorialSignalType =
+  | 'Detention'
+  | 'Layover'
+  | 'Lumper'
+  | 'Reconsignment'
+  | 'Handling'
+  | 'InsideDelivery'
+  | 'WeekendDelivery'
+  | 'Other';
 
 /**
  * A single accessorial-signal evidence item extracted from an Alvys note or document name.
@@ -200,6 +208,42 @@ export interface AccessorialSignal {
 export interface AccessorialReviewContext {
   evaluated: boolean;
   signals: AccessorialSignal[];
+}
+
+/**
+ * Confidence of a deterministic accessorial-review candidate (Phase 3.5). Three-valued so the tool
+ * never over- or under-claims: `CannotEvaluate` means the rule needs per-customer config (e.g. free
+ * time minutes) that is not set — flagged, never assumed.
+ */
+export type AccessorialCandidateStatus = 'Likely' | 'Unknown' | 'CannotEvaluate';
+
+/**
+ * One deterministically-derived accessorial-review candidate, each citing the exact Alvys record it
+ * came from (a stop, a note, or a document). No dollar value is ever computed — this only flags that
+ * the underlying evidence exists so revenue is not left on the table.
+ */
+export interface AccessorialReviewCandidate {
+  type: AccessorialSignalType;
+  status: AccessorialCandidateStatus;
+  /** Human-readable reason, e.g. "Detention — 3h over free time". */
+  reason: string;
+  /** Verbatim / cited evidence; always sourced, never fabricated. */
+  evidence: string;
+  /** The Alvys record id this candidate cites (stop id / note id / document id). */
+  sourceId: string | null;
+  /** "Stop", "Note", or "Document". */
+  sourceType: string | null;
+}
+
+/**
+ * Deterministic accessorial-review result for a load. `evaluated=false` means neither stops nor
+ * notes/documents were available (not evaluated ≠ clean). `hasLikelyCandidate` is true when at least
+ * one candidate is a deterministic `Likely` hit.
+ */
+export interface AccessorialReviewResult {
+  evaluated: boolean;
+  candidates: AccessorialReviewCandidate[];
+  hasLikelyCandidate: boolean;
 }
 
 /**
@@ -302,6 +346,8 @@ export interface LtlLoadSummary {
   urgencyScore: number;
   missingData: MissingDataFlag[];
   billing: BillingReadinessResult;
+  /** Deterministic accessorial-review candidates (Phase 3.5). NotEvaluated when nothing to inspect. */
+  accessorialReview: AccessorialReviewResult;
   exceptions: LtlExceptionFlag[];
   hasExceptions: boolean;
   visibility: VisibilityContext;

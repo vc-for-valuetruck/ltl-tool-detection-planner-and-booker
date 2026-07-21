@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import {
   AccessorialReviewContext,
+  AccessorialReviewResult,
   AssignmentAudit,
   AssignmentAuditQuery,
   AssignmentBatchValidateRequest,
@@ -27,6 +28,13 @@ import {
 import { NotificationFeedResponse } from './notifications.models';
 import { LaredoArrivalsBoard } from './arrivals.models';
 import { YardArtifactQuery, YardArtifactView } from './yard-artifacts.models';
+import {
+  SignalExtractorStatus,
+  SignalIngestRequest,
+  SignalIngestResponse,
+  SignalStatus,
+  SignalView,
+} from './signals.models';
 
 /**
  * Client for the read-only LTL decision-support API. Bearer tokens are attached by the MSAL
@@ -68,6 +76,18 @@ export class LtlService {
   getAccessorialSignals(idOrNumber: string): Observable<AccessorialReviewContext> {
     return this.http.get<AccessorialReviewContext>(
       `${this.base}/loads/${encodeURIComponent(idOrNumber)}/accessorial-signals`,
+    );
+  }
+
+  /**
+   * Deterministic accessorial-review candidates for a single load (Phase 3.5): stop-timing
+   * detention / layover / weekend / reconsignment signals plus note/document keyword signals,
+   * each citing its Alvys source id. Returns `evaluated: false` when the load has no trip stops
+   * and no notes/documents (not evaluated ≠ clean). Read-only; no dollar value is computed.
+   */
+  getAccessorialReview(idOrNumber: string): Observable<AccessorialReviewResult> {
+    return this.http.get<AccessorialReviewResult>(
+      `${this.base}/loads/${encodeURIComponent(idOrNumber)}/accessorial-review`,
     );
   }
 
@@ -156,6 +176,41 @@ export class LtlService {
   /** Absolute URL for streaming a stored artifact photo/PDF (inline gallery / PDF download). */
   yardArtifactFileUrl(artifactId: string, fileId: string): string {
     return `${this.base}/yard-artifacts/${encodeURIComponent(artifactId)}/files/${encodeURIComponent(fileId)}`;
+  }
+
+  /**
+   * Phase 6 inbound signals: extract typed, evidence-backed signals from a note/email/transcript.
+   * Fails closed server-side (HTTP 422 with a legible error) if extraction fails or a signal lacks a
+   * verbatim evidence quote — nothing is recorded. Internal data; never writes to Alvys.
+   */
+  ingestSignals(request: SignalIngestRequest): Observable<SignalIngestResponse> {
+    return this.http.post<SignalIngestResponse>(`${this.base}/signals/ingest`, request);
+  }
+
+  /** Recorded signals, newest first, filterable by status / source type / load number. */
+  signals(opts: { status?: SignalStatus; sourceType?: string; loadNumber?: string; max?: number } = {}):
+    Observable<SignalView[]> {
+    let params = new HttpParams();
+    if (opts.status) params = params.set('status', opts.status);
+    if (opts.sourceType) params = params.set('sourceType', opts.sourceType);
+    if (opts.loadNumber) params = params.set('loadNumber', opts.loadNumber);
+    if (opts.max) params = params.set('max', opts.max);
+    return this.http.get<SignalView[]>(`${this.base}/signals`, { params });
+  }
+
+  /** Honest snapshot of which extractor is active (deterministic keyword vs. an LLM). */
+  signalExtractor(): Observable<SignalExtractorStatus> {
+    return this.http.get<SignalExtractorStatus>(`${this.base}/signals/extractor`);
+  }
+
+  /** Accept a signal — annotates the suggested internal surface. Never writes to Alvys. */
+  acceptSignal(id: string): Observable<SignalView> {
+    return this.http.post<SignalView>(`${this.base}/signals/${encodeURIComponent(id)}/accept`, {});
+  }
+
+  /** Reject a signal — kept for audit, annotates nothing. */
+  rejectSignal(id: string): Observable<SignalView> {
+    return this.http.post<SignalView>(`${this.base}/signals/${encodeURIComponent(id)}/reject`, {});
   }
 
   validateAssignment(

@@ -150,6 +150,26 @@ public sealed class LtlController(
     }
 
     /// <summary>
+    /// Deterministic accessorial-review candidates for a single load (Phase 3.5): stop-timing
+    /// detention / layover / weekend / reconsignment signals plus note/document keyword signals,
+    /// each citing its Alvys source id. Returns
+    /// <see cref="AccessorialReviewResult.NotEvaluated"/> when the load has no trip stops and no
+    /// notes/documents (not evaluated ≠ clean). 404 when the load is not found.
+    ///
+    /// <para>Read-only posture: nothing is written back to Alvys. No dollar value is ever computed —
+    /// the analyzer only flags that the underlying evidence exists for the accessorial team.</para>
+    /// </summary>
+    [HttpGet("loads/{idOrNumber}/accessorial-review")]
+    [ProducesResponseType(typeof(AccessorialReviewResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AccessorialReviewResult>> GetAccessorialReview(
+        string idOrNumber, CancellationToken ct)
+    {
+        var review = await loads.GetAccessorialReviewAsync(idOrNumber, ct);
+        return review is null ? NotFound() : Ok(review);
+    }
+
+    /// <summary>
     /// Validates a proposed internal assignment without recording it — the UI calls this to show
     /// blockers/warnings before the dispatcher commits. Returns 404 when the load is not found.
     /// </summary>

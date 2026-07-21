@@ -16,7 +16,14 @@ namespace LtlTool.Api.Tests;
 /// Do not weaken this test by changing an assertion; if the surface intentionally evolves, update
 /// this file AND <c>CLAUDE.md</c> together as the intentional API change.
 /// </para>
+///
+/// <para>
+/// Tagged <c>Category=ApiSurfaceContract</c> so it runs both in the full <c>api</c> job and in the
+/// dedicated "Verify API Surface Contract" CI job, alongside the reflection-based
+/// <see cref="LtlApiSurfaceManifestTests"/>.
+/// </para>
 /// </summary>
+[Trait("Category", "ApiSurfaceContract")]
 public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory factory)
     : IClassFixture<TemplateWebApplicationFactory>
 {
@@ -28,6 +35,7 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/loads/100/matches")]
     [InlineData("/api/ltl/loads/100/matches?top=3")]
     [InlineData("/api/ltl/loads/100/billing-readiness")]
+    [InlineData("/api/ltl/loads/100/accessorial-review")]
     [InlineData("/api/ltl/loads/100/assignments")]
     [InlineData("/api/ltl/assignments")]
     [InlineData("/api/ltl/assignments?user=dispatcher@valuetruck.com&reasonType=CustomerRequest")]
@@ -45,6 +53,9 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/reporting/margin-rollup?groupBy=Rep")]
     [InlineData("/api/ltl/reporting/margin-rollup/export")]
     [InlineData("/api/ltl/reporting/margin-rollup/export?groupBy=Lane")]
+    [InlineData("/api/ltl/signals")]
+    [InlineData("/api/ltl/signals?status=Pending")]
+    [InlineData("/api/ltl/signals/extractor")]
     public async Task Ltl_get_routes_are_mapped_and_protected(string route)
     {
         var client = _factory.CreateClient();
@@ -62,6 +73,9 @@ public sealed class LtlApiSurfaceContractTests(TemplateWebApplicationFactory fac
     [InlineData("/api/ltl/assign/validate-batch")]
     [InlineData("/api/ltl/consolidation/plan")]
     [InlineData("/api/ltl/consolidation/plan/audit")]
+    [InlineData("/api/ltl/signals/ingest")]
+    [InlineData("/api/ltl/signals/abc123/accept")]
+    [InlineData("/api/ltl/signals/abc123/reject")]
     public async Task Ltl_post_routes_are_mapped_and_protected(string route)
     {
         var client = _factory.CreateClient();

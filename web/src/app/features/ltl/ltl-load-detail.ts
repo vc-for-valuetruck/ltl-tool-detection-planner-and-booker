@@ -226,4 +226,11 @@ export class LtlLoadDetail implements OnInit {
     if (badge === 'ExceptionBlockingBilling') return 'chip chip-danger';
     return 'chip chip-warn';
   }
+
+  /** Chip styling for an accessorial-review candidate status: Likely = warn, CannotEvaluate = neutral. */
+  protected candidateChipClass(status: string): string {
+    if (status === 'Likely') return 'chip chip-warn';
+    if (status === 'CannotEvaluate') return 'chip chip-neutral';
+    return 'chip chip-muted';
+  }
 }
