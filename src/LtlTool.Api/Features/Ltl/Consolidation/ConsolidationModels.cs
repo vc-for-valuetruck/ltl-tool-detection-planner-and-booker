@@ -465,6 +465,21 @@ public sealed class CorridorHealth
     public string? SeedLoadNumber { get; init; }
 }
 
+/// <summary>
+/// Envelope for <c>/corridors/health</c>. Carries the per-corridor health list plus the
+/// <see cref="AsOf"/> instant the cached snapshot was computed, so the UI can render an honest
+/// "as of" stamp without reading a response header. <see cref="AsOf"/> is <c>null</c> on a cold
+/// cache (empty <see cref="Corridors"/>, first refresh already in flight) — never fabricated.
+/// </summary>
+public sealed class CorridorHealthSnapshotResponse
+{
+    /// <summary>When the served snapshot was computed; <c>null</c> when the cache is still cold.</summary>
+    public required DateTimeOffset? AsOf { get; init; }
+
+    /// <summary>Per-corridor health; empty on a cold cache.</summary>
+    public required IReadOnlyList<CorridorHealth> Corridors { get; init; }
+}
+
 /// <summary>Public projection of a warehouse. Never carries geolocation — Phase 1 filters on state + NearbyCities.</summary>
 public sealed class WarehouseSummary
 {

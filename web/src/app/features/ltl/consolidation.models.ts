@@ -229,3 +229,13 @@ export interface CorridorHealth {
   seedLoadId?: string | null;
   seedLoadNumber?: string | null;
 }
+
+/**
+ * `/corridors/health` envelope: the per-corridor health list plus the instant the cached
+ * snapshot was computed. `asOf` is null on a cold cache (empty `corridors`, first refresh in
+ * flight) so the UI can show an honest "as of" stamp rather than implying live-now data.
+ */
+export interface CorridorHealthSnapshot {
+  asOf: string | null;
+  corridors: CorridorHealth[];
+}

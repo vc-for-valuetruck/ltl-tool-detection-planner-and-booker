@@ -17,6 +17,7 @@ import {
   ConsolidationOpportunityLoad,
   ConsolidationPlanResponse,
   CorridorHealth,
+  CorridorHealthSnapshot,
   CorridorSummary,
 } from './consolidation.models';
 
@@ -169,6 +170,10 @@ export class Consolidate implements OnInit {
   readonly totalScanned = signal<number | null>(null);
   readonly generatedAt = signal<string | null>(null);
   readonly dataSource = signal<string | null>(null);
+
+  // Instant the served corridor-health snapshot was computed; null on a cold cache. Rendered
+  // as an honest "as of" stamp beside the chips so counts are never implied to be live-now.
+  readonly healthAsOf = signal<string | null>(null);
 
   // Screen 1: candidate search
   readonly seedInput = signal('');
@@ -355,8 +360,8 @@ export class Consolidate implements OnInit {
         // opportunity sweep.
         this.consolidation
           .getCorridorHealth()
-          .pipe(catchError(() => of([] as CorridorHealth[])))
-          .subscribe((health) => this.applyHealth(health));
+          .pipe(catchError(() => of({ asOf: null, corridors: [] } as CorridorHealthSnapshot)))
+          .subscribe((snapshot) => this.applyHealth(snapshot));
 
         // Progressive enhancement 2: append live lanes discovered by the opportunity sweep. This
         // is the fallback default-selection path when no pilot lane has a workable pair.
@@ -374,7 +379,9 @@ export class Consolidate implements OnInit {
    * slower opportunity sweep. This mirrors {@link chooseDefaultSelection}'s pilotWithPair rule (a
    * lone open load defers to a live pair, so it is NOT auto-selected here).
    */
-  private applyHealth(health: CorridorHealth[]): void {
+  private applyHealth(snapshot: CorridorHealthSnapshot): void {
+    this.healthAsOf.set(snapshot.asOf);
+    const health = snapshot.corridors;
     const healthByCode = new Map<string, CorridorHealth>(health.map((h) => [h.code, h]));
     const merged = this.corridors().map((r) => {
       if (r.isLiveLane) return r;
@@ -839,6 +846,22 @@ export class Consolidate implements OnInit {
     try {
       const d = new Date(value);
       return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    } catch {
+      return value;
+    }
+  }
+
+  /** Date + time for the corridor-health "as of" stamp (snapshot refreshes every ~2 min). */
+  formatDateTime(value: string | undefined | null): string {
+    if (!value) return '—';
+    try {
+      const d = new Date(value);
+      return d.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
     } catch {
       return value;
     }

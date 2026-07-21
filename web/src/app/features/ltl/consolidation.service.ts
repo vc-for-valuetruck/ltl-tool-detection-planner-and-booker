@@ -9,7 +9,7 @@ import {
   ConsolidationPlanRequest,
   ConsolidationPlanResponse,
   CorridorSummary,
-  CorridorHealth,
+  CorridorHealthSnapshot,
 } from './consolidation.models';
 
 /**
@@ -61,8 +61,8 @@ export class ConsolidationService {
    * Live per-corridor open-load counts. Hits Alvys once per corridor; the caller should not
    * poll aggressively — open on tab-load is enough.
    */
-  getCorridorHealth(): Observable<CorridorHealth[]> {
-    return this.http.get<CorridorHealth[]>(`${this.base}/corridors/health`);
+  getCorridorHealth(): Observable<CorridorHealthSnapshot> {
+    return this.http.get<CorridorHealthSnapshot>(`${this.base}/corridors/health`);
   }
 
   /**
