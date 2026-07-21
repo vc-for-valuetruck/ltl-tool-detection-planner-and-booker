@@ -37,6 +37,7 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<VisibilityAnalyzer>();
         services.AddScoped<EquipmentEventAnalyzer>();
         services.AddScoped<AccessorialSignalAnalyzer>();
+        services.AddScoped<AccessorialReviewAnalyzer>();
         services.AddScoped<LtlNormalizationService>();
         services.AddScoped<TenderEnrichmentService>();
         services.AddScoped<MatchScoringService>();

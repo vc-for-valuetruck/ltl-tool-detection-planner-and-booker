@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import {
   AccessorialReviewContext,
+  AccessorialReviewResult,
   AssignmentAudit,
   AssignmentRequest,
   AssignmentValidationResult,
@@ -65,6 +66,18 @@ export class LtlService {
   getAccessorialSignals(idOrNumber: string): Observable<AccessorialReviewContext> {
     return this.http.get<AccessorialReviewContext>(
       `${this.base}/loads/${encodeURIComponent(idOrNumber)}/accessorial-signals`,
+    );
+  }
+
+  /**
+   * Deterministic accessorial-review candidates for a single load (Phase 3.5): stop-timing
+   * detention / layover / weekend / reconsignment signals plus note/document keyword signals,
+   * each citing its Alvys source id. Returns `evaluated: false` when the load has no trip stops
+   * and no notes/documents (not evaluated ≠ clean). Read-only; no dollar value is computed.
+   */
+  getAccessorialReview(idOrNumber: string): Observable<AccessorialReviewResult> {
+    return this.http.get<AccessorialReviewResult>(
+      `${this.base}/loads/${encodeURIComponent(idOrNumber)}/accessorial-review`,
     );
   }
 

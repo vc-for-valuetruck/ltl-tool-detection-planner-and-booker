@@ -323,6 +323,13 @@ public sealed class LtlLoadSummary
 
     public IReadOnlyList<MissingDataFlag> MissingData { get; init; } = [];
     public BillingReadinessResult Billing { get; init; } = new();
+
+    /// <summary>
+    /// Deterministic accessorial-review candidates (Phase 3.5). Only populated on the detail path
+    /// where trip stops and notes/documents are fetched; on the list/search path it is
+    /// <see cref="AccessorialReviewResult.NotEvaluated"/> (not "no accessorials").
+    /// </summary>
+    public AccessorialReviewResult AccessorialReview { get; init; } = AccessorialReviewResult.NotEvaluated;
     public IReadOnlyList<LtlExceptionFlag> Exceptions { get; init; } = [];
 
     /// <summary>
@@ -770,6 +777,9 @@ public enum AccessorialSignalType
     Layover,
     Lumper,
     Reconsignment,
+    Handling,
+    InsideDelivery,
+    WeekendDelivery,
     Other,
 }
 
@@ -813,6 +823,72 @@ public sealed class AccessorialReviewContext
 
     public bool Evaluated { get; init; }
     public IReadOnlyList<AccessorialSignal> Signals { get; init; } = [];
+}
+
+/// <summary>
+/// Confidence of an <see cref="AccessorialReviewCandidate"/> — deliberately three-valued so the
+/// tool never over- or under-claims. <see cref="CannotEvaluate"/> is distinct from
+/// <see cref="Unknown"/>: it means the deterministic rule could not run because required config
+/// (e.g. a customer's free-time minutes) is missing, and is surfaced as such rather than assumed.
+/// </summary>
+public enum AccessorialCandidateStatus
+{
+    /// <summary>The evidence deterministically supports billing this accessorial for review.</summary>
+    Likely,
+
+    /// <summary>Evidence hints at the accessorial but is not conclusive (weak keyword, ambiguous).</summary>
+    Unknown,
+
+    /// <summary>The rule requires per-customer config that is not set — flagged, never assumed.</summary>
+    CannotEvaluate,
+}
+
+/// <summary>
+/// One deterministically-derived accessorial-review candidate for a load, each citing the exact
+/// Alvys record it came from (a stop, a load note, or a document). The analyzer never computes a
+/// dollar value — pricing is the accessorial team's job; this only flags that the underlying
+/// evidence exists so revenue is not left on the table.
+/// </summary>
+public sealed class AccessorialReviewCandidate
+{
+    public required AccessorialSignalType Type { get; init; }
+
+    public required AccessorialCandidateStatus Status { get; init; }
+
+    /// <summary>Human-readable reason, e.g. "Detention — 3h over free time".</summary>
+    public required string Reason { get; init; }
+
+    /// <summary>
+    /// Verbatim / cited evidence, e.g. "stop 2, arrived 10:00, departed 16:00, customer free time = 180m"
+    /// or a note excerpt. Never fabricated — always sourced from <see cref="SourceType"/>/<see cref="SourceId"/>.
+    /// </summary>
+    public required string Evidence { get; init; }
+
+    /// <summary>The Alvys record id this candidate cites (stop id / note id / document id).</summary>
+    public string? SourceId { get; init; }
+
+    /// <summary>"Stop", "Note", or "Document".</summary>
+    public string? SourceType { get; init; }
+}
+
+/// <summary>
+/// Deterministic accessorial-review result for a single load. <see cref="Evaluated"/> follows the
+/// same honesty rule as <see cref="AccessorialReviewContext"/>: when no stops and no notes/documents
+/// were available to inspect it is <c>false</c>, and an empty <see cref="Candidates"/> must never be
+/// read as "no accessorials to bill" — it means "not evaluated".
+/// </summary>
+public sealed class AccessorialReviewResult
+{
+    /// <summary>Shared not-evaluated singleton (no stops and no notes/documents inspected).</summary>
+    public static readonly AccessorialReviewResult NotEvaluated = new();
+
+    public bool Evaluated { get; init; }
+
+    public IReadOnlyList<AccessorialReviewCandidate> Candidates { get; init; } = [];
+
+    /// <summary>True when at least one candidate is a deterministic <see cref="AccessorialCandidateStatus.Likely"/> hit.</summary>
+    public bool HasLikelyCandidate =>
+        Candidates.Any(c => c.Status == AccessorialCandidateStatus.Likely);
 }
 
 /// <summary>Paged normalized LTL search response.</summary>
