@@ -205,7 +205,7 @@
                 <td>{{ weightLabel(load) }}</td>
                 <td>{{ formatCurrency(load.revenue) }}</td>
                 <td>{{ rpmLabel(load) }}</td>
-                <td>{{ load.status }}</td>
+                <td><app-ltl-status-chip [status]="load.status" [dense]="true" /></td>
                 <td>
                   <div class="chip-row">
                     @for (badge of load.billing.badges; track badge) {

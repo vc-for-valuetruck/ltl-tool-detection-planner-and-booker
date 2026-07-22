@@ -15,9 +15,9 @@
         <a routerLink="/ltl/consolidate" class="back-link">← Back to Consolidate</a>
         <h1>{{ l.loadNumber ?? l.id }}</h1>
         <div class="chip-row">
-          <span class="chip chip-neutral">{{ l.workflow.stageLabel }}</span>
-          <span class="chip chip-neutral">{{ l.status }}</span>
-          <span class="chip chip-neutral">{{ l.assignment }}</span>
+          <app-ltl-status-chip [status]="l.workflow.stageLabel" />
+          <app-ltl-status-chip [status]="l.status" />
+          <app-ltl-status-chip [status]="l.assignment" />
           @if (l.isLtl) {
             <span class="chip chip-neutral">LTL{{ l.ltlClassification ? ' · ' + l.ltlClassification : '' }}</span>
           }

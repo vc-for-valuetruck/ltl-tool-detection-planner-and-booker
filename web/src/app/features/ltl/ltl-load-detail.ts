@@ -4,6 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { LtlService } from './ltl.service';
 import { LtlLoadSummary, LtlPlace, MatchFactor, MatchResult } from './ltl.models';
 import { LtlDocumentUpload } from './ltl-document-upload';
+import { LtlStatusChip } from './ltl-status-chip';
 import { YardArtifactFileView, YardArtifactView } from './yard-artifacts.models';
 import { AlvysLoadDocument, BolField, BolFieldSuggestionView } from './bol.models';
 
@@ -21,7 +22,7 @@ type DetailTab = 'details' | 'documents' | 'tracking' | 'billing';
 @Component({
   selector: 'app-ltl-load-detail',
   standalone: true,
-  imports: [DatePipe, RouterLink, LtlDocumentUpload],
+  imports: [DatePipe, RouterLink, LtlDocumentUpload, LtlStatusChip],
   templateUrl: './ltl-load-detail.html',
   styleUrls: ['./ltl-worklist.css', './ltl-load-detail.css'],
 })

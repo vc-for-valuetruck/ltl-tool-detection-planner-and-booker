@@ -82,7 +82,7 @@
                 {{ a.inboundFrom?.label ?? '—' }} → {{ a.laredo.label ?? selectedWarehouse()?.name }}
               </span>
               <span class="chips">
-                <span class="chip" [class.chip-status]="true">{{ a.status }}</span>
+                <app-ltl-status-chip [status]="a.status" [dense]="true" />
                 @if (a.dallasBound) { <span class="chip chip-bound">Corridor-bound</span> }
                 @if (a.truck?.unit) { <span class="chip">Truck {{ a.truck?.unit }}</span> }
                 @if (a.driverName) { <span class="chip">{{ a.driverName }}</span> }

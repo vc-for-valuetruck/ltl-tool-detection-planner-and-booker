@@ -60,7 +60,7 @@
                 <td>
                   <div class="load-cell">
                     <strong>{{ load.loadNumber ?? load.id }}</strong>
-                    <span class="load-tag">{{ load.workflow.stageLabel }}</span>
+                    <app-ltl-status-chip [status]="load.workflow.stageLabel" [dense]="true" />
                   </div>
                 </td>
                 <td>{{ load.customerName ?? '—' }}</td>
