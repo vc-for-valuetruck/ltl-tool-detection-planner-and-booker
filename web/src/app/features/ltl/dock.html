@@ -25,11 +25,27 @@
       <li [class.active]="step() === 'result'">5 · Combine</li>
     </ol>
 
-    @if (error()) {
-      <div class="error" role="alert">{{ error() }}</div>
-    }
-    @if (loading()) {
-      <div class="state">Working…</div>
+    @if (sessionExpired()) {
+      <div class="reauth-panel" role="alert" aria-live="assertive">
+        <p class="reauth-title">Session expired</p>
+        <p class="reauth-body">
+          Your sign-in expired while the dock was open. Sign in again to keep combining loads — no
+          in-progress selection is lost.
+        </p>
+        <button type="button" class="btn-primary" (click)="signInAgain()" [disabled]="!canSignIn()">
+          Sign in again
+        </button>
+        @if (!canSignIn()) {
+          <p class="hint">Auth isn't configured in this environment; refresh the page or reach out to IT.</p>
+        }
+      </div>
+    } @else {
+      @if (error()) {
+        <div class="error" role="alert">{{ error() }}</div>
+      }
+      @if (loading()) {
+        <div class="state">Working…</div>
+      }
     }
 
     <!-- ===================== Step 1: warehouse ===================== -->
