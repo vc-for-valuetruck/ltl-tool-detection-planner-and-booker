@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
+import { MsalService } from '@azure/msal-angular';
+import { RUNTIME_CONFIG } from '../../runtime-config';
 import { Dock } from './dock';
 import { DockService } from './dock.service';
 import { ConsolidationService } from './consolidation.service';
@@ -106,6 +108,18 @@ describe('Dock', () => {
         { provide: DockService, useValue: defaults },
         { provide: ConsolidationService, useValue: consolidationDefaults },
         { provide: DispatchPlannerService, useValue: plannerDefaults },
+        // Session-expired re-auth wiring (see docs/BOUNDARIES.md, issue #164).
+        // MsalService is only used by the Sign-in button in the re-auth branch — a light stub
+        // is enough for these existing dock behaviour tests. RUNTIME_CONFIG mirrors the shape
+        // used across the other feature specs (see dock.service.spec.ts).
+        {
+          provide: MsalService,
+          useValue: { loginRedirect: (_req?: unknown): void => undefined },
+        },
+        {
+          provide: RUNTIME_CONFIG,
+          useValue: { tenantId: '', clientId: '', apiScope: '', apiBaseUrl: '/api' },
+        },
       ],
     });
     return TestBed.runInInjectionContext(() => new Dock());
