@@ -1,0 +1,52 @@
+@if (loading()) {
+  <section class="ai-narrative card" data-testid="ai-narrative-skeleton" aria-hidden="true">
+    <div class="ai-narrative-header">
+      <span class="ai-narrative-eyebrow skeleton-chip"></span>
+    </div>
+    @for (row of skeletonRows; track row) {
+      <div class="ai-narrative-row">
+        <span class="skeleton-line skeleton-label"></span>
+        <span class="skeleton-line skeleton-value"></span>
+      </div>
+    }
+    <div class="ai-narrative-chips">
+      <span class="skeleton-chip"></span>
+      <span class="skeleton-chip"></span>
+      <span class="skeleton-chip"></span>
+    </div>
+  </section>
+} @else if (ready() && narrative(); as n) {
+  <section class="ai-narrative card" data-testid="ai-narrative">
+    <div class="ai-narrative-header">
+      <span class="ai-narrative-eyebrow">AI review</span>
+      @if (source(); as src) {
+        <span class="ai-narrative-source" data-testid="ai-narrative-source">
+          {{ src }}{{ cached() ? ' · cached' : '' }}
+        </span>
+      }
+    </div>
+
+    <dl class="ai-narrative-rows">
+      <div class="ai-narrative-row">
+        <dt data-testid="ai-narrative-why-label">Why review</dt>
+        <dd data-testid="ai-narrative-why">{{ n.whyReview }}</dd>
+      </div>
+      <div class="ai-narrative-row">
+        <dt data-testid="ai-narrative-verify-label">What to verify</dt>
+        <dd data-testid="ai-narrative-verify">{{ n.whatToVerify }}</dd>
+      </div>
+      <div class="ai-narrative-row">
+        <dt data-testid="ai-narrative-next-label">Next action</dt>
+        <dd data-testid="ai-narrative-next">{{ n.nextAction }}</dd>
+      </div>
+    </dl>
+
+    @if (n.citations.length > 0) {
+      <div class="ai-narrative-chips" data-testid="ai-narrative-citations">
+        @for (citation of n.citations; track citation) {
+          <span class="ai-narrative-chip">{{ citation }}</span>
+        }
+      </div>
+    }
+  </section>
+}

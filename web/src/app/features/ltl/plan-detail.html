@@ -36,6 +36,9 @@
 
     <div class="plan-columns">
       <div class="plan-col-main">
+        @if (previewPlanId(); as pid) {
+          <ai-narrative [planId]="pid" />
+        }
         <div class="card">
           <div class="card-header">
             <h2>Trailer plan (visual only — dims not verified)</h2>
