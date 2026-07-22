@@ -489,6 +489,20 @@ Empirical corrections after the 2026-07-17 Reuben sync + live MCP verification (
 
 ---
 
+### Phase 3.8 — BOL intelligence (suggest-only reader + PDF document creator)
+
+**BOL intelligence — turn the paperwork into billing-ready structure, produce the paperwork as real documents.**
+- **What (two halves, one slice):**
+  1. **Suggest-only BOL reader.** From a load's Documents surface and the Dock flow, a "Read BOL" action fetches the document bytes over the existing #141 Alvys document read path, extracts the PDF text layer, and runs a pluggable `IBolFieldExtractor` (deterministic regex/keyword) to suggest pallet count, piece count, weight, freight class, commodity description, and a hazmat flag. Every suggested field carries a confidence and a verbatim evidence snippet from the document.
+  2. **Document creator.** The Dock combined BOL packet / dock manifest graduates from print-CSS views to a real, downloadable, server-generated PDF (parent marked **BOL CONTROLLING**, children carrying the zeroed-miles / `LTL=true` / `Main Load Id` compliance note, honest `—` for missing data). The print views stay as a fallback; a **Download PDF** button sits beside **Print**.
+- **Hard guardrails (this is the reason it is suggest-only):** suggestions are **never** auto-applied and **never** written to Alvys. A human accepts each field in the UI ("Suggested from BOL — review" chips); accepted values annotate the tool's own internal surfaces only and are audited (who accepted, when, from which source document). The reader is **fail-closed**: an extractor error, a scanned/image-only BOL with no text layer, or a field without verbatim evidence yields *no* partial suggestions and a legible error — never a fabricated value. This is the plumbing failure mode **3g** (multi-BOL/POD billing leakage) names directly.
+- **OCR posture:** a cloud-OCR adapter (Azure Document Intelligence) is defined behind `IPdfTextExtractor` + config for scanned/image BOLs but is **interface + config stub only** — not wired to a live service, so a fresh clone / CI / the demo stay offline and deterministic.
+- **Why (competitive rationale, July 2026 analysis):** every LTL software leader treats the BOL as an image to store, not structure to bill from. Reading pallet/class/weight/hazmat off the controlling BOL — with evidence and a human accept step — is the honest half of the "OCR on BOL/POD" transcript signal, and producing a compliant combined BOL/manifest PDF closes the Dock loop without a print driver.
+- **Alvys posture:** read-only. The reader consumes the #141 document read path; nothing writes back. The suggestion store and accept/audit trail are internal (`AppDbContext`), never Alvys.
+- **Status:** **landing with this PR.** Deterministic extractor + fail-closed reader + EF suggestion store (+ SQL Server migration test) + server-side PDF for the Dock packet/manifest. Live cloud OCR and a load-detail Documents-tab accept surface beyond the Dock flow are the sequenced follow-ups.
+
+---
+
 ### Phase 4 — Bill readiness that catches leakage
 
 **Goal.** Move billing readiness from "flag missing" to "prevent revenue leakage and cash delay".
