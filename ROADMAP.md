@@ -479,6 +479,16 @@ Empirical corrections after the 2026-07-17 Reuben sync + live MCP verification (
 
 ---
 
+### Phase 3.75 — Point-of-service accessorial evidence capture
+
+**Point-of-service accessorial evidence capture**
+- **What:** driver/dock-captured photo + GPS + timestamp proving accessorial services (liftgate, detention, inside delivery, lumper) at the moment of service, BEFORE billing — feeding the existing Phase 3.5 `AccessorialReviewAnalyzer` as high-confidence evidence.
+- **Capture surface:** the Yard application (peer system, Rylan's initiative) — NOT this app. Evidence flows through the established boundary only (Alvys documents upload via the gated #141 writeback slice, or Jordan's intake) — no direct cross-app integration, consistent with the pilot's no-direct-integration rule.
+- **Why (competitive rationale, July 2026 analysis):** this is the single whitespace gap not yet covered — no LTL software leader ships point-of-service capture tied to billing readiness; MyCarrier's top user complaint is limited accessorial handling; Trimble/CLI/McLeod handle accessorials back-office only.
+- **Status:** proposed, sequenced after Phase 5 writeback unlocks document upload from the capture surface.
+
+---
+
 ### Phase 4 — Bill readiness that catches leakage
 
 **Goal.** Move billing readiness from "flag missing" to "prevent revenue leakage and cash delay".
