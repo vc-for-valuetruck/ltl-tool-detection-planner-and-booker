@@ -9,6 +9,7 @@ using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using LtlTool.Api.Features.Ltl.Signals;
 using LtlTool.Api.Features.Ltl.YardArtifacts;
+using LtlTool.Api.Features.Ltl.YardIngestion;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -203,6 +204,12 @@ public static class LtlServiceCollectionExtensions
         // deterministic defaults) with a durable suggestion store and human accept/reject. Suggestions
         // are never applied and never written to Alvys; the read path is read-only (document download).
         services.AddLtlBol(configuration);
+
+        // Yard→LTL scheduler ingestion (durable inbox + deterministic projection). Yard is a peer
+        // system that POSTs freight events over the v1 HTTP contract; this tool persists them to its
+        // own SQL store and derives the scheduler projection. Read-only against Alvys, no cross-
+        // database read of Yard's store, no shared secret (service-to-service via Entra app role/scope).
+        services.AddYardIngestion(configuration);
 
         return services;
     }
