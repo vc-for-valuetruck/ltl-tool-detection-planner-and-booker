@@ -80,21 +80,22 @@ test.describe('LTL demo — screenshot tour', () => {
     await shot(page, '05-consolidate-seed-entered');
   });
 
-  test('04 - Billing nav stub (Phase 2)', async ({ page }) => {
-    // Billing is a Phase 2 stub in the shared LtlNav tab strip (issue #79): its backend
-    // endpoint exists but no screen is wired yet, so it renders as a non-navigating tab
-    // carrying a "Phase 2" badge rather than a link. Capture that state instead of clicking
-    // through to a screen that does not exist yet.
-    await page.goto('/ltl/consolidate');
-    await expect(page.getByRole('tab', { name: 'Billing' })).toBeVisible();
+  test('04 - Billing worklist (via sidebar)', async ({ page }) => {
+    // Billing is now a wired screen reached from the Back Office group of the Alvys-style
+    // sidebar (LtlShell). Navigate the way an operator would — click the sidebar link — and
+    // capture whatever live state Alvys returns (worklist rows, or an honest empty/loading state).
+    await page.goto('/ltl');
+    await page.getByRole('link', { name: 'Billing' }).click();
+    await expect(page).toHaveURL(/\/ltl\/billing$/);
     await page.waitForTimeout(1500);
     await shot(page, '06-billing-worklist');
   });
 
-  test('05 - Exceptions nav stub (Phase 2)', async ({ page }) => {
-    // Exceptions is likewise a Phase 2 stub tab in the shared LtlNav strip (issue #79).
-    await page.goto('/ltl/consolidate');
-    await expect(page.getByRole('tab', { name: 'Exceptions' })).toBeVisible();
+  test('05 - Exceptions (via sidebar)', async ({ page }) => {
+    // Exceptions is likewise a wired Back Office screen in the sidebar (LtlShell).
+    await page.goto('/ltl');
+    await page.getByRole('link', { name: 'Exceptions' }).click();
+    await expect(page).toHaveURL(/\/ltl\/exceptions$/);
     await page.waitForTimeout(1500);
     await shot(page, '07-exceptions');
   });
