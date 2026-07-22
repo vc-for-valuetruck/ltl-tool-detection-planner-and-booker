@@ -1,6 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Arrivals;
+using LtlTool.Api.Features.Ltl.Bol;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using LtlTool.Api.Features.Ltl.Dock;
@@ -352,6 +353,49 @@ public sealed class DockServiceTests
         // Recipients configured, but the shared email channel has no SMTP config → honest NotConfigured.
         Assert.Equal("NotConfigured", response.Notification.State);
         Assert.Contains("ops@valuetruck.com", response.Notification.Recipients);
+    }
+
+    [Fact]
+    public async Task BuildBolPacketPdf_renders_a_readable_manifest_and_records_nothing()
+    {
+        var parent = Load("L-100234", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup,
+            rate: 4100m, mileage: 1072m, weight: 14200m);
+        var sibling = Load("L-100241", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup.AddHours(3),
+            rate: 4100m, mileage: 500m, weight: 4100m);
+        var client = new StatefulAlvysClient(parent, sibling);
+        var audits = new InMemoryConsolidationAuditStore(LtlTestFactory.Clock());
+
+        var pdf = await Build(client, auditStore: audits).BuildBolPacketPdfAsync(
+            new DockCombineRequest { ParentLoadId = "L-100234", SiblingLoadIds = ["L-100241"], WarehouseCode = "LAREDO" },
+            default);
+
+        var raw = System.Text.Encoding.ASCII.GetString(pdf);
+        Assert.StartsWith("%PDF-1.4", raw);
+        Assert.EndsWith("%%EOF", raw);
+
+        // The manifest content is a real text layer we can read back.
+        var text = await new BuiltInPdfTextExtractor().ExtractTextAsync(pdf, "application/pdf");
+        Assert.NotNull(text);
+        Assert.Contains("Combined BOL Packet", text);
+        Assert.Contains("L-100234", text);
+        Assert.Contains("L-100241", text);
+
+        // Downloading a PDF is read-only — no audit, no Alvys writeback.
+        Assert.Empty(audits.All());
+    }
+
+    [Fact]
+    public async Task BuildBolPacketPdf_throws_for_a_blocked_plan_so_no_manifest_is_handed_out()
+    {
+        // Parent off the Laredo→Dallas corridor → hard blocker → no manifest for an illegal consolidation.
+        var parent = Load("L-OFF", "Verdef", "Miami", "FL", "Atlanta", "GA", ParentPickup);
+        var sibling = Load("L-2", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup.AddHours(2));
+        var client = new StatefulAlvysClient(parent, sibling);
+
+        await Assert.ThrowsAsync<ConsolidationPlanBlockedException>(
+            () => Build(client).BuildBolPacketPdfAsync(
+                new DockCombineRequest { ParentLoadId = "L-OFF", SiblingLoadIds = ["L-2"] },
+                default));
     }
 
     [Fact]
