@@ -1,6 +1,7 @@
 import { ApplicationConfig, EnvironmentProviders, Provider, provideZoneChangeDetection } from '@angular/core';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
+import { provideHttpClient, withInterceptors, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
+import { sessionExpiredInterceptor } from './core/auth/session-expired.interceptor';
 import {
   IPublicClientApplication,
   PublicClientApplication,
@@ -66,7 +67,9 @@ export function buildAppConfig(rawConfig: RuntimeConfig): ApplicationConfig {
   const providers: Array<Provider | EnvironmentProviders> = [
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
-    provideHttpClient(withInterceptorsFromDi()),
+    // Global session-expired interceptor runs before the DI-based MSAL interceptor and
+    // marks {@link AuthSessionStore} on any 401 without swallowing the error.
+    provideHttpClient(withInterceptors([sessionExpiredInterceptor]), withInterceptorsFromDi()),
     { provide: RUNTIME_CONFIG, useValue: rawConfig },
     { provide: MSAL_INSTANCE, useFactory: msalInstanceFactory, deps: [RUNTIME_CONFIG] },
     { provide: MSAL_GUARD_CONFIG, useFactory: guardConfigFactory, deps: [RUNTIME_CONFIG] },

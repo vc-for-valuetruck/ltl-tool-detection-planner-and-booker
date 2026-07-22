@@ -1,6 +1,9 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { MsalService } from '@azure/msal-angular';
+import { AuthSessionStore } from '../../core/auth/auth-session.store';
+import { RUNTIME_CONFIG, isAuthConfigured } from '../../runtime-config';
 import { LaredoArrival, LaredoArrivalsBoard } from './arrivals.models';
 import {
   ConsolidationCandidate,
@@ -53,6 +56,32 @@ export class Dock implements OnInit, OnDestroy {
   private readonly dock = inject(DockService);
   private readonly consolidation = inject(ConsolidationService);
   private readonly dispatchPlanner = inject(DispatchPlannerService);
+  private readonly authSession = inject(AuthSessionStore);
+  private readonly msal = inject(MsalService);
+  private readonly runtimeConfig = inject(RUNTIME_CONFIG);
+
+  /**
+   * True once any HTTP call from this SPA has returned 401 for the current session. When set,
+   * the dock replaces the indefinite "Working…" loader with a re-auth prompt. See issue #164 and
+   * the {@link AuthSessionStore} / {@link sessionExpiredInterceptor} pair for the plumbing.
+   */
+  protected readonly sessionExpired = this.authSession.sessionExpired;
+
+  /** Whether the Sign-in button should actually attempt an MSAL redirect (auth configured). */
+  protected readonly canSignIn = computed(() => isAuthConfigured(this.runtimeConfig));
+
+  /**
+   * Handler for the "Sign in again" button on the re-auth panel. Triggers MSAL's redirect flow
+   * using the same scope set the rest of the SPA uses; clears the session-expired signal so the
+   * normal loading states can render once the user returns.
+   */
+  protected signInAgain(): void {
+    const scopes = this.runtimeConfig.apiScope ? [this.runtimeConfig.apiScope] : [];
+    this.authSession.clear();
+    if (isAuthConfigured(this.runtimeConfig)) {
+      this.msal.loginRedirect({ scopes });
+    }
+  }
 
   /** How long the one-tap Undo stays offered after a combine, in seconds (a few minutes). */
   private static readonly UndoWindowSeconds = 180;
