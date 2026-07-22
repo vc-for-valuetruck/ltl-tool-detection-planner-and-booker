@@ -73,6 +73,33 @@
 
     <!-- ===================== Step 2: arrivals / pick parent ===================== -->
     @if (step() === 'arrivals') {
+      <!-- Yard-originated incoming opportunities (issue #166 · LtlDraftCreated). Inbound suggestions
+           only — acted on inside this same Alvys-backed flow. Null measures render "—", never 0. -->
+      @if (opportunities().length > 0) {
+        <section class="panel opportunities" data-testid="dock-opportunities">
+          <h2>
+            Incoming from the yard
+            <span class="panel-sub">{{ opportunities().length }} draft(s) scanned at the dock</span>
+          </h2>
+          <div class="opp-grid">
+            @for (opp of opportunities(); track opp.id) {
+              <div class="opp-card" data-testid="dock-opportunity-card">
+                <span class="opp-parent">Parent {{ opp.parentLoadId ?? '—' }}</span>
+                <span class="opp-sub">
+                  {{ opp.yardCode ?? '—' }} · station {{ opp.createdByStation ?? '—' }}
+                </span>
+                <span class="opp-sub">
+                  {{ opp.siblingLoadIds.length }} sibling(s) · {{ opp.freight.length }} freight line(s)
+                </span>
+                <span class="opp-sub opp-meta">
+                  Scanned {{ opp.scannedAt ? (opp.scannedAt | date: 'short') : '—' }} · received
+                  {{ opp.receivedAt | date: 'short' }}
+                </span>
+              </div>
+            }
+          </div>
+        </section>
+      }
       <section class="panel">
         <h2>
           Tap the BOL-controlling load
@@ -235,6 +262,24 @@
                 <span class="pref-chip">Trailer {{ pref.trailerId ?? '—' }}</span>
               </div>
             }
+            <!-- Yard presence (issue #166): a peer signal, never operational truth. Red = security hold
+                 (disables Combine); amber = not at yard; green = at yard; grey = unavailable. -->
+            @if (presenceLoading()) {
+              <div class="presence-chip presence-grey" data-testid="dock-presence-chip">
+                <span class="presence-dot"></span>Checking yard presence…
+              </div>
+            } @else if (presenceChip(); as chip) {
+              <div
+                class="presence-chip"
+                [class.presence-green]="chip.state === 'green'"
+                [class.presence-amber]="chip.state === 'amber'"
+                [class.presence-red]="chip.state === 'red'"
+                [class.presence-grey]="chip.state === 'grey'"
+                data-testid="dock-presence-chip"
+              >
+                <span class="presence-dot"></span>{{ chip.text }}
+              </div>
+            }
           </div>
           @for (id of selectedSiblingIds(); track id) {
             <div class="review-card">
@@ -252,12 +297,18 @@
             <ul>@for (b of previewBlockers(); track b) { <li>{{ b }}</li> }</ul>
           </div>
         }
+        @if (presenceBlocksCombine()) {
+          <div class="error" role="alert" data-testid="dock-security-hold">
+            <strong>The yard has placed a security hold on this equipment's release.</strong>
+            Combine is disabled until the hold is cleared.
+          </div>
+        }
         <div class="review-actions">
           <button type="button" class="btn-ghost" (click)="backToSiblings()">← Back to siblings</button>
           <button
             type="button"
             class="btn-primary"
-            [disabled]="loading() || previewLoading() || hasBlockers()"
+            [disabled]="loading() || previewLoading() || hasBlockers() || presenceBlocksCombine()"
             (click)="combine()"
           >
             Combine {{ selectedSiblingIds().length + 1 }} loads

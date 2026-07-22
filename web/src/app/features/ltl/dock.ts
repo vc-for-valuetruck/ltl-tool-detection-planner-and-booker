@@ -14,7 +14,12 @@ import {
 import { ConsolidationService } from './consolidation.service';
 import { DispatchPreferenceView } from './dispatch-planner.models';
 import { DispatchPlannerService } from './dispatch-planner.service';
-import { DockCombineResponse, DockNotificationResult } from './dock.models';
+import {
+  DockCombineResponse,
+  DockNotificationResult,
+  DockPresenceResponse,
+  YardOpportunityView,
+} from './dock.models';
 import { DockService } from './dock.service';
 import { LtlParentChildBadge } from './ltl-parent-child-badge';
 import { LtlStatusChip } from './ltl-status-chip';
@@ -94,6 +99,13 @@ export class Dock implements OnInit, OnDestroy {
   protected readonly board = signal<LaredoArrivalsBoard | null>(null);
   protected readonly parent = signal<LaredoArrival | null>(null);
 
+  /**
+   * Yard-originated LTL consolidation opportunities (from `LtlDraftCreated` webhooks), newest first
+   * (issue #166). Inbound suggestions only — the dock acts on them inside this same Alvys-backed flow.
+   * Empty when the webhook boundary is dormant or nothing has arrived; the SPA refreshes over REST.
+   */
+  protected readonly opportunities = signal<YardOpportunityView[]>([]);
+
   protected readonly candidates = signal<ConsolidationCandidateResponse | null>(null);
   /** Selected sibling load ids, insertion-ordered. */
   protected readonly selectedSiblingIds = signal<string[]>([]);
@@ -120,6 +132,47 @@ export class Dock implements OnInit, OnDestroy {
    */
   protected readonly preferredPairing = signal<DispatchPreferenceView | null>(null);
   protected readonly hasPreferredPairing = computed(() => this.preferredPairing()?.resolved === true);
+
+  /**
+   * Yard presence for the parent equipment at the Review step (issue #166). A peer signal folded in
+   * next to the preferred-pairing chip — never operational truth. Null until a lookup completes; the
+   * chip then reads {@link presenceChip}. A security hold ({@link presenceBlocksCombine}) is the only
+   * presence state that can stop a combine; every other state is informational and honest.
+   */
+  protected readonly yardPresence = signal<DockPresenceResponse | null>(null);
+  protected readonly presenceLoading = signal(false);
+
+  /** True when the yard has placed a security hold on release — disables Combine (red chip). */
+  protected readonly presenceBlocksCombine = computed(
+    () => this.yardPresence()?.securityHold === true,
+  );
+
+  /**
+   * The Review-step presence chip descriptor. Green = at yard (with release time when known); amber =
+   * configured + reachable but not at yard; red = security hold (blocks combine); grey = unavailable
+   * (integration off or yard unreachable). Null while a lookup is in flight or before one runs.
+   */
+  protected readonly presenceChip = computed<{
+    state: 'green' | 'amber' | 'red' | 'grey';
+    text: string;
+  } | null>(() => {
+    const p = this.yardPresence();
+    if (!p) return null;
+    if (!p.configured || !p.available) {
+      return { state: 'grey', text: 'Presence: unavailable' };
+    }
+    if (p.securityHold) {
+      return { state: 'red', text: 'Security hold on release' };
+    }
+    if (!p.atYard) {
+      return {
+        state: 'amber',
+        text: p.onRecord ? 'Not at yard' : 'Not at yard (no yard record)',
+      };
+    }
+    const released = p.releasedAt ? this.formatTimeHm(p.releasedAt) : null;
+    return { state: 'green', text: released ? `At yard · released ${released}` : 'At yard' };
+  });
 
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -228,6 +281,18 @@ export class Dock implements OnInit, OnDestroy {
         this.error.set(this.messageOf(err, 'Could not load warehouses.'));
         this.loading.set(false);
       },
+    });
+    this.loadOpportunities();
+  }
+
+  /**
+   * Loads yard-originated incoming opportunities (issue #166). Best-effort and non-blocking: a failure
+   * (or a dormant webhook boundary) simply leaves the list empty — it never blocks the dock flow.
+   */
+  protected loadOpportunities(): void {
+    this.dock.getOpportunities().subscribe({
+      next: (res) => this.opportunities.set(res.opportunities),
+      error: () => this.opportunities.set([]),
     });
   }
 
@@ -342,6 +407,8 @@ export class Dock implements OnInit, OnDestroy {
     if (!parent?.loadNumber || siblings.length === 0) return;
     // Fail closed on a known-blocked plan — the backend also guards (422), this is the UI's guard.
     if (this.hasBlockers()) return;
+    // A yard security hold on release blocks the combine (issue #166); the button is also disabled.
+    if (this.presenceBlocksCombine()) return;
 
     this.tapCount.update((n) => n + 1);
     this.loading.set(true);
@@ -490,6 +557,7 @@ export class Dock implements OnInit, OnDestroy {
     const siblings = this.selectedSiblingIds();
     if (!parent?.loadNumber || siblings.length === 0) return;
     this.loadPreferredPairing(parent);
+    this.loadPresence(parent);
     this.previewLoading.set(true);
     this.previewPlan.set(null);
     this.error.set(null);
@@ -527,9 +595,41 @@ export class Dock implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Fetches yard presence for the parent equipment (issue #166). Best-effort and non-blocking: a
+   * transport failure leaves an honest grey "unavailable" chip rather than erroring the review. The
+   * backend already returns a grey shape when the Yard integration is off, so no client gate is needed.
+   */
+  private loadPresence(parent: LaredoArrival): void {
+    const truckId = parent.truck?.id ?? undefined;
+    const trailerId = parent.trailer?.id ?? undefined;
+    this.yardPresence.set(null);
+    this.presenceLoading.set(true);
+    this.dock.getPresence(truckId, trailerId).subscribe({
+      next: (view) => {
+        this.yardPresence.set(view);
+        this.presenceLoading.set(false);
+      },
+      error: () => {
+        // Honest unavailable rather than a fabricated pass.
+        this.yardPresence.set({
+          configured: true,
+          available: false,
+          onRecord: false,
+          atYard: false,
+          driverPresent: false,
+          securityHold: false,
+        });
+        this.presenceLoading.set(false);
+      },
+    });
+  }
+
   protected backToSiblings(): void {
     this.previewPlan.set(null);
     this.preferredPairing.set(null);
+    this.yardPresence.set(null);
+    this.presenceLoading.set(false);
     this.step.set('siblings');
   }
 
@@ -611,6 +711,8 @@ export class Dock implements OnInit, OnDestroy {
     this.combineResult.set(null);
     this.previewPlan.set(null);
     this.preferredPairing.set(null);
+    this.yardPresence.set(null);
+    this.presenceLoading.set(false);
     this.notification.set(null);
     this.undone.set(false);
     this.stopUndoWindow();
@@ -637,6 +739,14 @@ export class Dock implements OnInit, OnDestroy {
   protected formatWeight(value: number | null | undefined): string {
     if (value === null || value === undefined || Number.isNaN(value)) return '—';
     return `${value.toLocaleString()} lb`;
+  }
+
+  /** HH:MM (local) for a yard release time; empty string when unparseable — never a fabricated time. */
+  protected formatTimeHm(iso: string | null | undefined): string {
+    if (!iso) return '';
+    const ms = Date.parse(iso);
+    if (Number.isNaN(ms)) return '';
+    return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   }
 
   protected tierLabel(tier: string): string {

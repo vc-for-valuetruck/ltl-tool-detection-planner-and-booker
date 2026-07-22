@@ -1,5 +1,6 @@
 using LtlTool.Api.Features.Integrations.Alvys.Webhooks;
 using LtlTool.Api.Features.Integrations.Alvys.Writeback;
+using LtlTool.Api.Features.Integrations.Yard.Webhooks;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Bol;
 using LtlTool.Api.Features.Ltl.Consolidation;
@@ -42,6 +43,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Per-load freshness markers derived from webhook deliveries (see <see cref="EfAlvysWebhookStore"/>). A pointer only — Alvys stays authoritative.</summary>
     public DbSet<LoadFreshnessRecord> LoadFreshness => Set<LoadFreshnessRecord>();
+
+    /// <summary>Durable received Yard webhook deliveries (see <see cref="EfYardWebhookStore"/>). Idempotency-keyed by event id. Never a source of operational truth.</summary>
+    public DbSet<YardWebhookEvent> YardWebhookEvents => Set<YardWebhookEvent>();
+
+    /// <summary>Yard-originated LTL consolidation opportunities from <c>LtlDraftCreated</c> webhooks (see <see cref="EfYardWebhookStore"/>). Inbound suggestions only — the dock acts on them inside its own Alvys-backed flow.</summary>
+    public DbSet<YardLtlOpportunity> YardLtlOpportunities => Set<YardLtlOpportunity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -230,6 +237,49 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(e => e.LoadNumber).HasMaxLength(64);
             entity.Property(e => e.LastEventType).HasMaxLength(128);
             entity.Property(e => e.LastEventId).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<YardWebhookEvent>(entity =>
+        {
+            entity.ToTable("YardWebhookEvents");
+            // The Yard-supplied event id is the natural idempotency key: a duplicate delivery of the same
+            // id is rejected on insert (the PK gives us the unique index for free).
+            entity.HasKey(e => e.EventId);
+            entity.Property(e => e.EventId).HasMaxLength(128);
+            entity.Property(e => e.EventType).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.YardCode).HasMaxLength(32);
+            entity.Property(e => e.TractorId).HasMaxLength(128);
+            entity.Property(e => e.TrailerId).HasMaxLength(128);
+            entity.Property(e => e.DriverId).HasMaxLength(128);
+            // Raw body stored verbatim for audit/replay; nvarchar(max) so a large snapshot round-trips.
+            entity.Property(e => e.RawBody).IsRequired();
+            // Enum stored as a readable string so the table is legible in the database.
+            entity.Property(e => e.ProcessingState).HasConversion<string>().HasMaxLength(16);
+            entity.Property(e => e.ProcessingError).HasMaxLength(2048);
+
+            // Admin listing is newest-first; equipment lookups filter by tractor/trailer.
+            entity.HasIndex(e => e.ReceivedAt);
+            entity.HasIndex(e => e.EventType);
+        });
+
+        modelBuilder.Entity<YardLtlOpportunity>(entity =>
+        {
+            entity.ToTable("YardLtlOpportunities");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(64);
+            entity.Property(e => e.EventId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.DraftId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.YardCode).HasMaxLength(32);
+            entity.Property(e => e.ParentLoadId).HasMaxLength(128);
+            // Sibling ids and freight lines stored as JSON; nvarchar(max) so a large draft round-trips.
+            entity.Property(e => e.SiblingLoadIdsJson).IsRequired();
+            entity.Property(e => e.FreightJson).IsRequired();
+            entity.Property(e => e.CreatedByStation).HasMaxLength(64);
+
+            // Idempotency: one opportunity per source webhook event (a reprocess never dupes a card).
+            entity.HasIndex(e => e.EventId).IsUnique();
+            // Dock listing is newest-first.
+            entity.HasIndex(e => e.ReceivedAt);
         });
     }
 }

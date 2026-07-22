@@ -92,6 +92,18 @@ describe('Dock', () => {
       undo: () => of({ audit: { alvysWriteback: 'NotPerformed' } } as unknown as DockUndoResponse),
       renotify: () => of({ state: 'Delivered', recipients: ['ops@example.com'] } as DockNotificationResult),
       recordCombineMetric: () => of(undefined),
+      // Yard boundary (issue #166): default to the honest grey "unavailable" presence and no
+      // opportunities so existing flows are unaffected; individual tests override as needed.
+      getPresence: () =>
+        of({
+          configured: false,
+          available: false,
+          onRecord: false,
+          atYard: false,
+          driverPresent: false,
+          securityHold: false,
+        }),
+      getOpportunities: () => of({ opportunities: [] }),
       ...stub,
     };
     const consolidationDefaults: Partial<ConsolidationService> = {
@@ -326,6 +338,114 @@ describe('Dock', () => {
 
     expect(getPreferredPairing).not.toHaveBeenCalled();
     expect(c['preferredPairing']()).toBeNull();
+  });
+
+  it('shows a green presence chip when equipment is at the yard', () => {
+    const getPresence = jasmine.createSpy('getPresence').and.returnValue(
+      of({
+        configured: true,
+        available: true,
+        onRecord: true,
+        atYard: true,
+        driverPresent: true,
+        securityHold: false,
+        releasedAt: '2026-07-21T15:30:00Z',
+      }),
+    );
+    const c = build({ getPresence });
+    c['parent'].set(
+      arrival({
+        loadNumber: 'L1',
+        truck: { id: 'TRK-1', unit: '101', equipmentType: null, lengthFeet: null, fleetName: null, ownership: 'Unknown' },
+      }),
+    );
+    c['selectedSiblingIds'].set(['L-2']);
+
+    c['goToReview']();
+
+    expect(getPresence).toHaveBeenCalledWith('TRK-1', undefined);
+    expect(c['presenceChip']()?.state).toBe('green');
+    expect(c['presenceBlocksCombine']()).toBeFalse();
+  });
+
+  it('shows an amber chip and still allows combine when equipment is not at the yard', () => {
+    const c = build({
+      getPresence: () =>
+        of({
+          configured: true,
+          available: true,
+          onRecord: true,
+          atYard: false,
+          driverPresent: false,
+          securityHold: false,
+        }),
+    });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+
+    c['goToReview']();
+
+    expect(c['presenceChip']()?.state).toBe('amber');
+    expect(c['presenceBlocksCombine']()).toBeFalse();
+  });
+
+  it('blocks combine on a yard security hold (red chip)', () => {
+    const combineSpy = jasmine.createSpy('combine');
+    const c = build({
+      combine: combineSpy,
+      getPresence: () =>
+        of({
+          configured: true,
+          available: true,
+          onRecord: true,
+          atYard: true,
+          driverPresent: true,
+          securityHold: true,
+        }),
+    });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+
+    c['goToReview']();
+    expect(c['presenceChip']()?.state).toBe('red');
+    expect(c['presenceBlocksCombine']()).toBeTrue();
+
+    c['combine']();
+    expect(combineSpy).not.toHaveBeenCalled();
+  });
+
+  it('shows a grey unavailable chip when the yard integration is off, never fabricating a pass', () => {
+    const c = build({}); // default getPresence returns configured:false
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+
+    c['goToReview']();
+
+    expect(c['presenceChip']()?.state).toBe('grey');
+    expect(c['presenceBlocksCombine']()).toBeFalse();
+  });
+
+  it('surfaces yard-originated incoming opportunities on init', () => {
+    const c = build({
+      getOpportunities: () =>
+        of({
+          opportunities: [
+            {
+              id: 'yopp-1',
+              draftId: 'DRAFT-1',
+              yardCode: 'LAREDO',
+              parentLoadId: 'L1',
+              siblingLoadIds: ['L-2', 'L-3'],
+              freight: [],
+              createdByStation: 'DOCK-3',
+              receivedAt: '2026-07-21T16:00:00Z',
+            },
+          ],
+        }),
+    });
+    c.ngOnInit();
+    expect(c['opportunities']().length).toBe(1);
+    expect(c['opportunities']()[0].parentLoadId).toBe('L1');
   });
 
   it('routes a 422 blocked-plan combine back to review with its blockers', () => {

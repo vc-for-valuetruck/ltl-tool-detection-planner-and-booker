@@ -7,6 +7,7 @@ using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using LtlTool.Api.Features.Ltl.Dock;
 using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Tests.Ltl.Notifications;
+using LtlTool.Api.Tests.Yard;
 using LtlTool.Api.Features.Ltl.Optimization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -58,6 +59,8 @@ public sealed class DockControllerTests
 
         var controller = new DockController(
             new DockService(arrivals, candidates, plans, audits, notifications, dispatchPlanner, optsWrap),
+            new FakeYardPresenceClient(),
+            new FakeYardWebhookStore(),
             NullLogger<DockController>.Instance);
         var identity = new ClaimsIdentity([new Claim("preferred_username", "dock@valuetruck.com")], "test");
         controller.ControllerContext = new ControllerContext

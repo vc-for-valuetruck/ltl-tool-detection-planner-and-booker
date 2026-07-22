@@ -1,6 +1,22 @@
 using System.Collections.Concurrent;
+using LtlTool.Api.Features.Integrations.Yard;
 
 namespace LtlTool.Api.Features.Ltl.Assignment;
+
+/// <summary>
+/// The yard-presence input to assignment validation. <see cref="Attempted"/> is true only when the Yard
+/// integration is configured/enabled and a presence lookup was actually made — so unconfigured
+/// deployments never see a spurious "presence unavailable" warning on every assignment. When a lookup
+/// was attempted, <see cref="Presence"/> is the snapshot (or null when the yard was unreachable, which
+/// is surfaced as a warning — never fabricated into a pass).
+/// </summary>
+/// <param name="Attempted">Whether a yard-presence lookup was made for this candidate.</param>
+/// <param name="Presence">The presence snapshot, or null when the yard was unreachable.</param>
+public readonly record struct YardPresenceAssessment(bool Attempted, YardPresence? Presence)
+{
+    /// <summary>The yard was not consulted (integration off/unconfigured). Never warns.</summary>
+    public static readonly YardPresenceAssessment NotAttempted = new(false, null);
+}
 
 /// <summary>
 /// Typed short reason an override was recorded (Phase 3 reason taxonomy). Slicing the audit by a

@@ -11,6 +11,13 @@ export const routes: Routes = [
     path: 'ltl/consolidate/plan/:planId/click-card',
     loadComponent: () => import('./features/ltl/click-card').then((m) => m.ClickCard),
   },
+  // Read-only Yard webhook admin panel — standalone, outside the LTL shell (mirrors the Alvys ops
+  // webhook admin). Shows recent inbound Yard deliveries and receiver configuration; writes nothing.
+  {
+    path: 'admin/yard/webhooks',
+    loadComponent: () =>
+      import('./features/ltl/yard-webhooks-admin').then((m) => m.YardWebhooksAdmin),
+  },
   {
     path: 'ltl',
     loadComponent: () => import('./features/ltl/ltl-shell').then((m) => m.LtlShell),

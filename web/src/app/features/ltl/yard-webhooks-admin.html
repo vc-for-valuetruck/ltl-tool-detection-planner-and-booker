@@ -1,0 +1,76 @@
+<div class="yard-webhooks" data-testid="yard-webhooks">
+  <div class="yw-head">
+    <div>
+      <h2>Yard webhooks</h2>
+      <p class="muted">
+        Read-only view of the inbound Yard boundary. Deliveries are HMAC-verified machine-to-machine;
+        nothing here writes to the Yard or to Alvys.
+      </p>
+    </div>
+    <button type="button" class="link" (click)="load()" [disabled]="loading()">
+      {{ loading() ? 'Refreshing…' : 'Refresh' }}
+    </button>
+  </div>
+
+  @if (loading() && !webhooks()) {
+    <p class="muted">Loading Yard webhook activity…</p>
+  } @else if (error(); as err) {
+    <div class="yw-error">{{ err }}</div>
+  } @else if (webhooks(); as w) {
+    @if (!w.enabled) {
+      <div class="posture posture-audit" data-testid="yard-webhook-config">
+        Receiver disabled &mdash; the boundary is dormant (<code>Yard:Webhooks:Enabled=false</code>) and
+        returns 404 to callers.
+      </div>
+    } @else if (w.secretConfigured) {
+      <div class="posture posture-ok" data-testid="yard-webhook-config">
+        Receiver enabled &mdash; verifies HMAC-SHA256 signatures with a {{ w.toleranceSeconds }}s
+        timestamp tolerance.
+      </div>
+    } @else {
+      <div class="posture posture-audit" data-testid="yard-webhook-config">
+        No signing secret configured &mdash; the receiver fails closed (503) and accepts no events.
+      </div>
+    }
+    <p class="muted">{{ w.totalReceived }} event(s) received to date.</p>
+
+    @if (w.events.length === 0) {
+      <p class="muted">No webhook deliveries recorded yet.</p>
+    } @else {
+      <table class="yw-table">
+        <thead>
+          <tr>
+            <th>Received</th>
+            <th>Event</th>
+            <th>Yard</th>
+            <th>Equipment</th>
+            <th>State</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (e of w.events; track e.eventId) {
+            <tr>
+              <td>{{ e.receivedAt | date: 'short' }}</td>
+              <td>{{ e.eventType }}</td>
+              <td>{{ e.yardCode ?? '—' }}</td>
+              <td>
+                <div>Tractor: {{ e.tractorId ?? '—' }}</div>
+                <div>Trailer: {{ e.trailerId ?? '—' }}</div>
+                <div>Driver: {{ e.driverId ?? '—' }}</div>
+              </td>
+              <td>
+                <span [class]="stateClass(e.processingState)">{{ e.processingState }}</span>
+                @if (e.processedAt) {
+                  <div class="muted">{{ e.processedAt | date: 'short' }}</div>
+                }
+                @if (e.processingError) {
+                  <div class="muted required">{{ e.processingError }}</div>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  }
+</div>

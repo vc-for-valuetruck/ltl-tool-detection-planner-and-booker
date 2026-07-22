@@ -46,8 +46,25 @@ These are the only sanctioned channels. Every new consumer of Yard data must ext
 
 | Contract | Direction | Owner | Purpose | Failure mode |
 |---|---|---|---|---|
-| `GET /api/yard/presence?tractor=…&trailer=…&driverId=…` | Yard exposes, LTL consumes | Yard App | Returns `{ atYard, releasedAt, photoGates: {tractor, trailer, seal}, driverPresent, lastEventAt }` for the equipment/driver named. LTL uses it in `AssignmentValidationService` and `/ltl/dock` combine flow. | 5xx / timeout → LTL renders `Presence: Unavailable` and downgrades any blocker to a warning. `404` → `Presence: NotOnRecord` (render "—", warning). |
-| Webhook `TruckArrived` / `LoadReleased` | Yard emits, LTL receives | Yard App | Real-time push so the LTL dock screen and Consolidation queue update without polling. HMAC-signed like the existing Alvys webhook receiver (PR [#141](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/pull/141)). | Verification failure → 4xx, fail closed. Missing secret → 503 (existing pattern). |
+| `GET /api/yard/presence?tractor=…&trailer=…&driverId=…` | Yard exposes, LTL consumes | Yard App | Returns `{ onRecord, atYard, releasedAt, driverPresent, securityHold, lastEventAt, gates: {tractor, trailer, seal} }` for the equipment/driver named. LTL consumes it in `AssignmentValidationService` (via `YardPresenceClient`) and the `/ltl/dock` combine Review step (`GET /api/ltl/dock/presence`). | 5xx / timeout / unconfigured → `YardPresenceClient` returns `null`; LTL renders `Presence: Unavailable` and downgrades any blocker to a warning (never a fabricated pass). `404` → `NotOnRecord` sentinel (`onRecord=false`, render "—", warning). |
+| Webhook events `TruckArrived` / `LoadReleased` / `LtlDraftCreated` → `POST /api/yard/webhooks/receiver` | Yard emits, LTL receives | Yard App | Real-time push so the LTL dock screen and Consolidation queue update without polling. `TruckArrived` invalidates the presence cache; `LoadReleased` invalidates + fans out over SignalR; `LtlDraftCreated` persists a yard-originated opportunity, surfaces it on the `/ltl/dock` opportunities card, and fans out over SignalR. Read-only admin listing at `/admin/yard/webhooks`. | Verification failure → 401, fail closed. Missing signing secret → 503. Receiver gated behind `Yard:Webhooks:Enabled` (default off) → 404 when dormant. |
+
+#### Yard webhook signing + event payloads
+
+The receiver (`POST /api/yard/webhooks/receiver`) is anonymous but signed — the Yard is a machine
+caller with no email identity. Every delivery carries:
+
+| Header | Purpose |
+|---|---|
+| `X-Yard-Signature: t={unix},v1={hex}` | HMAC-SHA256 over `"{t}.{rawBody}"` with the shared `Yard:Webhooks:Secret`. Constant-time compare; 5-minute timestamp tolerance (`Yard:Webhooks:ToleranceSeconds`, default 300). |
+| `X-Yard-Event` | Event type (`TruckArrived` / `LoadReleased` / `LtlDraftCreated`); falls back to the body's `eventType`. |
+| `X-Yard-Event-Id` | Idempotency key. Duplicate ids are acked 200 without reprocessing. |
+| `X-Yard-Timestamp` | Echo of the signed `t` for auditing. |
+
+Event bodies (all fields nullable — LTL renders "—", never fabricated):
+
+- **`TruckArrived`** / **`LoadReleased`**: `{ eventType, yardCode?, tractorId?, trailerId?, driverId? }`.
+- **`LtlDraftCreated`**: `{ eventType, yardCode?, draftId, parentLoadId?, siblingLoadIds[], freight[], createdByStation?, scannedAt? }` — a yard-originated LTL consolidation suggestion. LTL persists it (`YardLtlOpportunities`), never as an Alvys write; the dock acts on it inside its own Alvys-backed combine flow. `freight[]` lines carry `{ loadId?, pallets?, pieces?, weightLbs?, dims?, osd? }`.
 
 ### Yard → Alvys
 

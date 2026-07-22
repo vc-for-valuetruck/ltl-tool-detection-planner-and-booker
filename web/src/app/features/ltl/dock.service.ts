@@ -9,6 +9,8 @@ import {
   DockCombineRequest,
   DockCombineResponse,
   DockNotificationResult,
+  DockOpportunitiesResponse,
+  DockPresenceResponse,
   DockUndoRequest,
   DockUndoResponse,
   DockWarehousesResponse,
@@ -81,5 +83,27 @@ export class DockService {
    */
   recordCombineMetric(metric: DockCombineMetric): Observable<void> {
     return this.http.post<void>(`${this.base}/metrics/combine`, metric);
+  }
+
+  /**
+   * Yard presence for a proposed pairing, for the Review-step chip. Read-only and honest — a grey
+   * "unavailable" shape comes back when the Yard integration is off or the yard is unreachable;
+   * presence is never fabricated into a pass. Alvys stays authoritative.
+   */
+  getPresence(tractor?: string, trailer?: string, driverId?: string): Observable<DockPresenceResponse> {
+    let params = new HttpParams();
+    if (tractor) params = params.set('tractor', tractor);
+    if (trailer) params = params.set('trailer', trailer);
+    if (driverId) params = params.set('driverId', driverId);
+    return this.http.get<DockPresenceResponse>(`${this.base}/presence`, { params });
+  }
+
+  /**
+   * Yard-originated LTL consolidation opportunities (from `LtlDraftCreated` webhooks), newest first.
+   * Inbound suggestions only — the dock acts on them inside its own Alvys-backed combine flow.
+   */
+  getOpportunities(max = 50): Observable<DockOpportunitiesResponse> {
+    const params = new HttpParams().set('max', String(max));
+    return this.http.get<DockOpportunitiesResponse>(`${this.base}/opportunities`, { params });
   }
 }

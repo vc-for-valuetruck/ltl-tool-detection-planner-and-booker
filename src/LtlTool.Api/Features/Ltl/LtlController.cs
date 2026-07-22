@@ -2,6 +2,7 @@ using System.Security.Claims;
 using LtlTool.Api.Features.Ltl.Arrivals;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using LtlTool.Api.Features.Integrations.Yard;
 using LtlTool.Api.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -31,6 +32,7 @@ public sealed class LtlController(
     ConsolidationOpportunityService consolidationOpportunityService,
     CapacitySnapshotService capacity,
     LaredoArrivalsService arrivals,
+    IYardPresenceClient yardPresence,
     ILogger<LtlController> logger) : ControllerBase
 {
     /// <summary>Upper bound on rows accepted by the preflight batch-validate endpoint.</summary>
@@ -228,7 +230,18 @@ public sealed class LtlController(
         var events = await matches.FetchEquipmentEventsAsync(load, [candidate], ct);
         var assessment = matches.AssessCandidate(load, candidate, events);
 
-        return (load, validation.Validate(load, request, candidate, assessment));
+        // Fold the yard-presence signal in only when the Yard integration is configured, so unconfigured
+        // deployments never see a spurious "presence unavailable" warning on every assignment. When
+        // configured, an unreachable yard degrades to null → a warning (never a fabricated pass).
+        var yard = YardPresenceAssessment.NotAttempted;
+        if (yardPresence.IsConfigured)
+        {
+            var presence = await yardPresence.GetPresenceAsync(
+                candidate.Truck?.Id, candidate.Trailer?.Id, candidate.Driver?.Id, ct);
+            yard = new YardPresenceAssessment(true, presence);
+        }
+
+        return (load, validation.Validate(load, request, candidate, assessment, yard));
     }
 
     /// <summary>The recorded internal assignment-decision history for a load (audit trail).</summary>

@@ -1,3 +1,5 @@
+using LtlTool.Api.Features.Integrations.Yard;
+using LtlTool.Api.Features.Integrations.Yard.Webhooks;
 using LtlTool.Api.Features.Ltl.Arrivals;
 using LtlTool.Api.Features.Ltl.Consolidation;
 
@@ -111,4 +113,65 @@ public sealed class DockCombineMetricRequest
     public int? SiblingCount { get; set; }
     public int? TapCount { get; set; }
     public long? TimeToCombineMs { get; set; }
+}
+
+/// <summary>
+/// Yard-presence projection for the dock Review-step chip. Deliberately explicit about the three
+/// distinct "not green" states so the UI never has to infer them: <see cref="Configured"/> false means
+/// the Yard integration is off (grey "unavailable"); configured but <see cref="Available"/> false means
+/// the yard was consulted and could not be reached (grey "unavailable"); available with
+/// <see cref="SecurityHold"/> is the red state that disables Combine; available and not
+/// <see cref="AtYard"/> is amber. Every measure is honest — a missing gate is false, never a fabricated
+/// pass — mirroring <see cref="YardPresence"/>.
+/// </summary>
+public sealed class DockPresenceResponse
+{
+    /// <summary>True when the Yard integration is configured (base URL + credentials present).</summary>
+    public required bool Configured { get; init; }
+
+    /// <summary>True when a presence snapshot was obtained (configured, reachable, and answered).</summary>
+    public required bool Available { get; init; }
+
+    /// <summary>True when the yard has a record for the queried equipment/driver (false on a 404).</summary>
+    public bool OnRecord { get; init; }
+
+    public bool AtYard { get; init; }
+    public bool DriverPresent { get; init; }
+    public bool SecurityHold { get; init; }
+    public DateTimeOffset? ReleasedAt { get; init; }
+    public DateTimeOffset? LastEventAt { get; init; }
+
+    /// <summary>Which photo gates the yard captured, when a snapshot is available; null otherwise.</summary>
+    public PhotoGates? Gates { get; init; }
+
+    /// <summary>The Yard integration is off — the honest grey "presence unavailable" chip.</summary>
+    public static DockPresenceResponse NotConfigured { get; } =
+        new() { Configured = false, Available = false };
+
+    /// <summary>Configured but the yard could not be reached / did not answer — grey "unavailable".</summary>
+    public static DockPresenceResponse Unavailable { get; } =
+        new() { Configured = true, Available = false };
+
+    public static DockPresenceResponse From(YardPresence presence) => new()
+    {
+        Configured = true,
+        Available = true,
+        OnRecord = presence.OnRecord,
+        AtYard = presence.AtYard,
+        DriverPresent = presence.DriverPresent,
+        SecurityHold = presence.SecurityHold,
+        ReleasedAt = presence.ReleasedAt,
+        LastEventAt = presence.LastEventAt,
+        Gates = presence.Gates,
+    };
+}
+
+/// <summary>
+/// The dock incoming-opportunity list: yard-originated LTL consolidation suggestions (from
+/// <c>LtlDraftCreated</c> webhooks), newest first. Inbound suggestions only — the dock acts on them
+/// inside its own Alvys-backed combine flow; nothing here is a source of operational truth.
+/// </summary>
+public sealed class DockOpportunitiesResponse
+{
+    public required IReadOnlyList<YardOpportunityView> Opportunities { get; init; }
 }

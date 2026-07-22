@@ -5,6 +5,8 @@ using Microsoft.Identity.Web;
 using LtlTool.Api.Data;
 using LtlTool.Api.Features.Ai;
 using LtlTool.Api.Features.Integrations.Alvys;
+using LtlTool.Api.Features.Integrations.Yard;
+using LtlTool.Api.Features.Integrations.Yard.Webhooks;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Options;
 using LtlTool.Api.Security;
@@ -96,6 +98,15 @@ builder.Services.AddLtlDecisionSupport(builder.Configuration);
 // and read-only against Alvys — no writeback path, no EF DbSet.
 builder.Services.AddAiNarrative(builder.Configuration);
 
+// Yard boundary integration (issue #166): read-only presence client folded into assignment validation
+// and the dock, plus the HMAC-verified inbound webhook receiver. The Yard is a peer system, never a
+// source of operational truth — Alvys stays authoritative. Degrades honestly when unconfigured.
+builder.Services.AddYardIntegration(builder.Configuration);
+
+// SignalR backs the Yard→dock real-time fan-out (load released / new opportunity). Backend-only; the
+// SPA refreshes over REST, so no browser SignalR client dependency is required to keep the UI honest.
+builder.Services.AddSignalR();
+
 // CORS for the SPA.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? new[] { "http://localhost:4200" };
@@ -178,6 +189,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<YardEventsHub>(YardEventsHub.Path);
 
 app.Run();
 
