@@ -131,40 +131,114 @@ public sealed class TeamsNotificationChannel(
 }
 
 /// <summary>
-/// Email channel. Disabled (honest "not configured") until <c>Notifications:Email</c> is enabled
-/// with an SMTP host + from-address server-side. The SMTP transport itself is deliberately not
-/// wired in this first slice: when configured the channel reports
-/// <see cref="NotificationDeliveryState.Pending"/> with an honest detail rather than fabricating a
-/// delivery. Wiring a real SMTP/Graph send is a documented follow-up.
+/// Email channel backed by Microsoft Graph <c>sendMail</c> (app-only / client-credentials, fitting
+/// the existing Entra stack). Honest states throughout:
+/// <list type="bullet">
+/// <item><b>NotConfigured</b> — <c>Notifications:Email</c> is not enabled or the Graph app
+/// registration / sender mailbox is absent. Nothing is sent; this is not a failure.</item>
+/// <item><b>Delivered</b> — Graph accepted the message (HTTP 202).</item>
+/// <item><b>Failed</b> — a configured send genuinely failed (auth/consent/permanent error, or a
+/// transient error still failing after the configured retries). Surfaced as the UI retry chip; never
+/// a fabricated delivery.</item>
+/// </list>
+/// Outbox semantics: every send is keyed by the event's idempotency key. A prior <b>Delivered</b>
+/// entry short-circuits as an idempotent replay so a retry never sends a duplicate email. Transient
+/// failures are retried with exponential backoff up to <c>Notifications:Email:MaxSendAttempts</c>.
+/// The Graph client secret and bearer token are server-side only — never returned to the SPA.
 /// </summary>
-public sealed class EmailNotificationChannel(IOptions<NotificationOptions> options) : INotificationChannel
+public sealed class EmailNotificationChannel(
+    IGraphMailClient graph,
+    IMailOutbox outbox,
+    IOptions<NotificationOptions> options,
+    TimeProvider clock,
+    ILogger<EmailNotificationChannel> logger) : INotificationChannel
 {
     private readonly EmailChannelOptions _email = options.Value.Email;
 
     public NotificationChannelKind Kind => NotificationChannelKind.Email;
     public bool IsConfigured => _email.IsConfigured;
 
-    public Task<NotificationDelivery> SendAsync(
+    public async Task<NotificationDelivery> SendAsync(
         NotificationEvent evt,
         IReadOnlyList<NotificationRecipient> recipients,
         CancellationToken ct)
     {
+        var addresses = recipients
+            .Select(r => r.Address ?? r.Name)
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .ToArray();
         var names = recipients.Select(r => r.Name).ToArray();
-        var delivery = IsConfigured
-            ? new NotificationDelivery
+
+        if (!IsConfigured)
+        {
+            return Delivery(NotificationDeliveryState.NotConfigured, names,
+                "Email not configured (set Notifications:Email:Enabled + FromAddress + Graph app registration).");
+        }
+
+        // Idempotent replay: a previously Delivered event never re-sends. This is what makes the dock
+        // retry chip / a re-poll safe — no duplicate emails on retry.
+        var existing = outbox.Get(evt.IdempotencyKey);
+        if (existing is { State: NotificationDeliveryState.Delivered })
+        {
+            return Delivery(NotificationDeliveryState.Delivered, existing.Recipients,
+                "Already delivered (idempotent replay — no duplicate sent).");
+        }
+
+        if (addresses.Length == 0)
+        {
+            return Delivery(NotificationDeliveryState.NotConfigured, names,
+                "No email addresses on the recipients for this event.");
+        }
+
+        var message = new GraphMailMessage
+        {
+            Subject = evt.Title,
+            Body = evt.Summary,
+            ToAddresses = addresses,
+        };
+
+        var attempts = Math.Max(1, _email.MaxSendAttempts);
+        GraphMailSendOutcome outcome = GraphMailSendOutcome.TransientFailure("No send attempted.");
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            outcome = await graph.SendAsync(message, ct);
+            if (outcome.Success || !outcome.Retryable)
+                break;
+
+            if (attempt < attempts)
             {
-                Channel = Kind,
-                State = NotificationDeliveryState.Pending,
-                Recipients = names,
-                Detail = "Email configured; SMTP transport not wired in this slice.",
+                var delay = TimeSpan.FromMilliseconds(
+                    Math.Max(0, _email.RetryBaseDelayMs) * Math.Pow(2, attempt - 1));
+                logger.LogWarning(
+                    "Graph sendMail attempt {Attempt}/{Max} failed ({Detail}); retrying in {DelayMs}ms.",
+                    attempt, attempts, outcome.Detail, delay.TotalMilliseconds);
+                if (delay > TimeSpan.Zero)
+                    await Task.Delay(delay, clock, ct);
             }
-            : new NotificationDelivery
-            {
-                Channel = Kind,
-                State = NotificationDeliveryState.NotConfigured,
-                Recipients = names,
-                Detail = "Email not configured (set Notifications:Email:Enabled + SmtpHost + FromAddress).",
-            };
-        return Task.FromResult(delivery);
+        }
+
+        var state = outcome.Success ? NotificationDeliveryState.Delivered : NotificationDeliveryState.Failed;
+        outbox.Save(new MailOutboxEntry
+        {
+            IdempotencyKey = evt.IdempotencyKey,
+            State = state,
+            AttemptCount = (existing?.AttemptCount ?? 0) + 1,
+            Detail = outcome.Detail,
+            Recipients = addresses,
+            UpdatedAt = clock.GetUtcNow(),
+        });
+
+        return Delivery(state, addresses, outcome.Detail
+            ?? (outcome.Success ? "Sent via Microsoft Graph." : "Graph sendMail failed."));
     }
+
+    private NotificationDelivery Delivery(
+        NotificationDeliveryState state, IReadOnlyList<string> recipients, string detail) =>
+        new()
+        {
+            Channel = Kind,
+            State = state,
+            Recipients = recipients,
+            Detail = detail,
+        };
 }

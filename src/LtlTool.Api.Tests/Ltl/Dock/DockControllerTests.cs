@@ -6,6 +6,7 @@ using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using LtlTool.Api.Features.Ltl.Dock;
 using LtlTool.Api.Features.Ltl.Notifications;
+using LtlTool.Api.Tests.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -45,8 +46,7 @@ public sealed class DockControllerTests
         var audits = new InMemoryConsolidationAuditStore(LtlTestFactory.Clock());
 
         var notifications = new DockNotificationService(
-            [new InAppNotificationChannel(), new EmailNotificationChannel(
-                Microsoft.Extensions.Options.Options.Create(new NotificationOptions()))],
+            [new InAppNotificationChannel(), NotificationTestFactory.UnconfiguredEmailChannel()],
             new InMemoryNotificationStore(),
             Microsoft.Extensions.Options.Options.Create(new DockOptions()),
             LtlTestFactory.Clock(),
