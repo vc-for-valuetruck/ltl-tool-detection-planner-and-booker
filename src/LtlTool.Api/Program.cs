@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Identity.Web;
 using LtlTool.Api.Data;
+using LtlTool.Api.Features.Ai;
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Options;
@@ -88,6 +89,10 @@ builder.Services.AddAlvysIntegration(builder.Configuration);
 // LTL decision-support layer (normalization, billing readiness, match scoring, search,
 // internal assignment audit) on top of the read-only Alvys integration.
 builder.Services.AddLtlDecisionSupport(builder.Configuration);
+
+// AI narrative HTTP surface (Phase 2 Sprint 1, #150). Binds AI options and registers a fallback
+// INarrativeService until the real NarrativeService (#149) lands. Read-only against Alvys.
+builder.Services.AddAiNarrative(builder.Configuration);
 
 // CORS for the SPA.
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
