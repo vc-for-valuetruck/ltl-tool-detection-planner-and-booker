@@ -67,6 +67,15 @@ export class DockService {
   }
 
   /**
+   * Downloads the combined BOL packet / dock manifest as a server-side PDF (the "Download PDF"
+   * companion to the print view). Read-only against Alvys — rebuilds the plan and renders it,
+   * records no audit and sends no notification. Returns the raw PDF blob for the caller to save.
+   */
+  downloadBolPacket(request: DockCombineRequest): Observable<Blob> {
+    return this.http.post(`${this.base}/bol-packet.pdf`, request, { responseType: 'blob' });
+  }
+
+  /**
    * Fire-and-forget effectiveness metric (time-to-combine + tap count). Status-only, no PII; a
    * failure to record must never affect the dock worker, so callers ignore the result.
    */

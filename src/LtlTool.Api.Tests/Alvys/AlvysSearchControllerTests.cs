@@ -91,6 +91,10 @@ public sealed class AlvysSearchControllerTests
                 [new AlvysLoadDocument { Id = "DOC1", AttachmentType = "RateConfirmation", DownloadUrl = "https://files.alvys.test/abc" }]);
         }
 
+        public Task<AlvysDocumentContent?> DownloadLoadDocumentAsync(
+            string loadNumber, string documentId, CancellationToken ct = default)
+            => Task.FromResult<AlvysDocumentContent?>(null);
+
         public Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(string loadNumber, CancellationToken ct = default)
         {
             NotesLoadNumber = loadNumber;

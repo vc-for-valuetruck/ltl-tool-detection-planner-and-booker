@@ -259,6 +259,82 @@
       }
     </div>
 
+    <div class="card detail-card" data-testid="bol-intelligence">
+      <h2>Read BOL <span class="chip chip-neutral">suggest-only</span></h2>
+      <p class="detail-note">
+        Reads a Bill of Lading into <strong>suggested</strong> fields for you to accept or reject.
+        Suggestions are never applied automatically and are never written back to Alvys — an accepted
+        value annotates this tool's internal surfaces only and is audited (who accepted, when, from
+        which document).
+      </p>
+
+      @if (bolDocuments().length) {
+        <ul class="bol-doc-list">
+          @for (doc of bolDocuments(); track doc.id) {
+            <li class="bol-doc" data-testid="bol-doc">
+              <span class="bol-doc-name">{{ bolDocLabel(doc) }}</span>
+              <button
+                type="button"
+                class="btn btn-sm"
+                data-testid="bol-read-btn"
+                [disabled]="bolReadingDocId() !== null"
+                (click)="readBol(doc)">
+                {{ bolReadingDocId() === doc.id ? 'Reading…' : 'Read BOL' }}
+              </button>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="detail-note" data-testid="bol-no-docs">No Alvys documents are attached to this load.</p>
+      }
+
+      @if (bolError()) {
+        <p class="detail-note bol-error" role="alert" data-testid="bol-error">{{ bolError() }}</p>
+      }
+
+      @if (bolSuggestions().length) {
+        <div class="bol-suggestions" data-testid="bol-suggestions">
+          @for (s of bolSuggestions(); track s.id) {
+            <div class="bol-suggestion" [class.decided]="s.status !== 'Pending'" data-testid="bol-suggestion">
+              <div class="bol-suggestion-head">
+                <span class="chip chip-warn">Suggested from BOL — review</span>
+                <span class="bol-field">{{ bolFieldLabel(s.field) }}:</span>
+                <span class="bol-value">{{ s.value }}</span>
+                <span class="chip chip-neutral" data-testid="bol-confidence">{{ bolConfidencePct(s.confidence) }} confidence</span>
+                @if (s.status === 'Accepted') {
+                  <span class="chip chip-good" data-testid="bol-accepted">Accepted by {{ s.decidedBy }}</span>
+                } @else if (s.status === 'Rejected') {
+                  <span class="chip chip-muted" data-testid="bol-rejected">Rejected</span>
+                }
+              </div>
+              <p class="bol-evidence" data-testid="bol-evidence">“{{ s.evidenceQuote }}”</p>
+              <p class="bol-source">{{ s.extractorName }} · {{ s.documentName ?? s.documentId }}</p>
+              @if (s.status === 'Pending') {
+                <div class="bol-actions">
+                  <button
+                    type="button"
+                    class="btn btn-sm"
+                    data-testid="bol-accept-btn"
+                    [disabled]="bolDecidingId() !== null"
+                    (click)="acceptBol(s)">
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-sm btn-ghost"
+                    data-testid="bol-reject-btn"
+                    [disabled]="bolDecidingId() !== null"
+                    (click)="rejectBol(s)">
+                    Reject
+                  </button>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+
     @if (artifacts().length) {
       <div class="card detail-card" data-testid="yard-artifacts">
         <h2>Yard artifacts</h2>

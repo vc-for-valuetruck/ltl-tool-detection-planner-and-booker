@@ -266,6 +266,14 @@
             </p>
           </div>
           <div class="result-print-actions">
+            <button
+              type="button"
+              class="btn"
+              data-testid="dock-download-pdf"
+              [disabled]="pdfDownloading()"
+              (click)="downloadPdf()">
+              {{ pdfDownloading() ? 'Building PDF…' : 'Download PDF' }}
+            </button>
             <button type="button" class="btn" (click)="print('bol')">Print BOL packet</button>
             <button type="button" class="btn" (click)="print('clickcard')">Print click card</button>
           </div>

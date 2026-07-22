@@ -574,6 +574,18 @@ public sealed class AlvysLoadDocument
 }
 
 /// <summary>
+/// Raw bytes of a single load document fetched over the read-only #141 document surface. Carries no
+/// secrets and no Alvys URL — just the content, the document id it came from, and the best-known
+/// content type / file name so downstream text extraction can pick the right decoder. Never
+/// persisted with Alvys; consumed transiently by the BOL reader.
+/// </summary>
+public sealed record AlvysDocumentContent(
+    string DocumentId,
+    byte[] Content,
+    string? ContentType,
+    string? FileName);
+
+/// <summary>
 /// A note on a load, as returned by the read-only
 /// <c>GET /api/p/v{version}/loads/{loadNumber}/notes</c> listing. Distinct from the
 /// inline load <see cref="AlvysNote"/> (Text/CreatedAt/CreatedBy): the dedicated notes

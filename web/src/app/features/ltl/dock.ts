@@ -95,6 +95,9 @@ export class Dock implements OnInit, OnDestroy {
   protected readonly error = signal<string | null>(null);
   protected readonly copyMessage = signal<string | null>(null);
 
+  /** True while the server-side BOL packet PDF is being generated + downloaded. */
+  protected readonly pdfDownloading = signal(false);
+
   // --- Feature 3: minimal-tap instrumentation + one-tap Undo ----------------
   /** Taps on the happy path since the parent was chosen (parent tap → combine). Powers the metric. */
   protected readonly tapCount = signal(0);
@@ -511,6 +514,49 @@ export class Dock implements OnInit, OnDestroy {
       }
       this.printMode.set('none');
     }, 0);
+  }
+
+  /**
+   * Downloads the combined BOL packet as a real server-side PDF (the "Download PDF" companion to
+   * Print). Read-only against Alvys — the endpoint rebuilds the plan and renders it, recording
+   * nothing. On any failure it falls back to a legible message; the print view stays available.
+   */
+  protected downloadPdf(): void {
+    const parent = this.parent();
+    const siblings = this.selectedSiblingIds();
+    if (!parent?.loadNumber || siblings.length === 0 || this.pdfDownloading()) return;
+
+    this.pdfDownloading.set(true);
+    this.copyMessage.set(null);
+    this.dock
+      .downloadBolPacket({
+        parentLoadId: parent.loadNumber,
+        siblingLoadIds: siblings,
+        corridorCode: this.candidates()?.corridorCode,
+        warehouseCode: this.selectedWarehouse()?.code,
+      })
+      .subscribe({
+        next: (blob) => {
+          this.saveBlob(blob, `bol-packet-${parent.loadNumber}.pdf`);
+          this.pdfDownloading.set(false);
+        },
+        error: () => {
+          this.copyMessage.set('PDF generation failed — use Print BOL packet instead.');
+          this.pdfDownloading.set(false);
+        },
+      });
+  }
+
+  private saveBlob(blob: Blob, fileName: string): void {
+    if (typeof window === 'undefined' || typeof URL?.createObjectURL !== 'function') return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   protected async copyClickCard(): Promise<void> {

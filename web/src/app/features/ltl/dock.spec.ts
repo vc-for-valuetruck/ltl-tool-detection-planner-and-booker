@@ -382,6 +382,43 @@ describe('Dock', () => {
     expect(c['sortedCandidates']().map((x) => x.loadId)).toEqual(['C', 'A', 'B']);
   });
 
+  it('downloads the BOL packet PDF and saves the returned blob', () => {
+    const blob = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+    const spy = jasmine.createSpy('downloadBolPacket').and.returnValue(of(blob));
+    spyOn(URL, 'createObjectURL').and.returnValue('blob:fake');
+    spyOn(URL, 'revokeObjectURL');
+    const c = build({ downloadBolPacket: spy });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+
+    c['downloadPdf']();
+
+    expect(spy).toHaveBeenCalledWith(
+      jasmine.objectContaining({ parentLoadId: 'L1', siblingLoadIds: ['L-2'] }),
+    );
+    expect(URL.createObjectURL).toHaveBeenCalledWith(blob);
+    expect(c['pdfDownloading']()).toBeFalse();
+  });
+
+  it('does not request a PDF without a parent and at least one sibling', () => {
+    const spy = jasmine.createSpy('downloadBolPacket');
+    const c = build({ downloadBolPacket: spy });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set([]);
+    c['downloadPdf']();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a legible message when PDF generation fails, pointing at Print', () => {
+    const spy = jasmine.createSpy('downloadBolPacket').and.returnValue(throwError(() => ({ message: 'boom' })));
+    const c = build({ downloadBolPacket: spy });
+    c['parent'].set(arrival({ loadNumber: 'L1' }));
+    c['selectedSiblingIds'].set(['L-2']);
+    c['downloadPdf']();
+    expect(c['copyMessage']()).toContain('Print BOL packet');
+    expect(c['pdfDownloading']()).toBeFalse();
+  });
+
   it('formats missing values honestly as an em dash', () => {
     const c = build({});
     expect(c['formatCurrency'](null)).toBe('—');

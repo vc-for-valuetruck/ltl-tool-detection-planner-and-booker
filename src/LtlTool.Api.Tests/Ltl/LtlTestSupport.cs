@@ -105,6 +105,9 @@ internal class FakeAlvysClient : IAlvysClient
     public List<AlvysLoad> Loads { get; set; } = [];
     public AlvysLoad? LoadDetail { get; set; }
     public List<AlvysLoadDocument> Documents { get; set; } = [];
+
+    /// <summary>Document id → scripted downloaded bytes, served by <see cref="DownloadLoadDocumentAsync"/>.</summary>
+    public Dictionary<string, AlvysDocumentContent> DownloadableDocuments { get; set; } = [];
     public List<AlvysLoadNote> Notes { get; set; } = [];
     public List<AlvysDriver> Drivers { get; set; } = [];
     public List<AlvysTruck> Trucks { get; set; } = [];
@@ -154,6 +157,10 @@ internal class FakeAlvysClient : IAlvysClient
 
     public Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(string loadNumber, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AlvysLoadDocument>>(Documents);
+
+    public Task<AlvysDocumentContent?> DownloadLoadDocumentAsync(
+        string loadNumber, string documentId, CancellationToken ct = default)
+        => Task.FromResult(DownloadableDocuments.TryGetValue(documentId, out var content) ? content : null);
 
     public Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(string loadNumber, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AlvysLoadNote>>(Notes);

@@ -447,3 +447,65 @@ describe('LtlService — signals', () => {
     reject.flush({});
   });
 });
+
+describe('LtlService — BOL intelligence', () => {
+  let service: LtlService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: RUNTIME_CONFIG,
+          useValue: { tenantId: '', clientId: '', apiScope: '', apiBaseUrl: '/api' },
+        },
+      ],
+    });
+    service = TestBed.inject(LtlService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('GETs the Alvys documents for a load (not under /ltl)', () => {
+    service.loadDocuments('L-100').subscribe();
+    const req = http.expectOne('/api/alvys/loads/L-100/documents');
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('POSTs a BOL read to the per-document route and URL-encodes both ids', () => {
+    service.readBol('L/1', 'doc/9').subscribe();
+    const req = http.expectOne('/api/ltl/loads/L%2F1/bol/documents/doc%2F9/read');
+    expect(req.request.method).toBe('POST');
+    req.flush({ loadNumber: 'L/1', documentId: 'doc/9', extractorName: 'x', count: 0, suggestions: [] });
+  });
+
+  it('GETs /api/ltl/bol/suggestions with only the supplied filters', () => {
+    service.bolSuggestions({ loadNumber: 'L-100', status: 'Pending' }).subscribe();
+    const req = http.expectOne('/api/ltl/bol/suggestions?loadNumber=L-100&status=Pending');
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('GETs the BOL extractor status snapshot', () => {
+    service.bolExtractor().subscribe();
+    const req = http.expectOne('/api/ltl/bol/extractor');
+    expect(req.request.method).toBe('GET');
+    req.flush({ textExtractor: 'BuiltInPdfTextExtractor', fieldExtractor: 'RegexBolFieldExtractor' });
+  });
+
+  it('POSTs accept and reject to the per-suggestion routes', () => {
+    service.acceptBolSuggestion('s1').subscribe();
+    const accept = http.expectOne('/api/ltl/bol/suggestions/s1/accept');
+    expect(accept.request.method).toBe('POST');
+    accept.flush({});
+
+    service.rejectBolSuggestion('s2').subscribe();
+    const reject = http.expectOne('/api/ltl/bol/suggestions/s2/reject');
+    expect(reject.request.method).toBe('POST');
+    reject.flush({});
+  });
+});

@@ -1,6 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys.Webhooks;
 using LtlTool.Api.Features.Integrations.Alvys.Writeback;
 using LtlTool.Api.Features.Ltl.Assignment;
+using LtlTool.Api.Features.Ltl.Bol;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using LtlTool.Api.Features.Ltl.Signals;
@@ -32,6 +33,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Durable Phase 6 extracted LTL signals (see <see cref="EfSignalStore"/>). Internal data, never Alvys.</summary>
     public DbSet<SignalRecord> Signals => Set<SignalRecord>();
+
+    /// <summary>Durable suggested BOL fields awaiting human review (see <see cref="EfBolSuggestionStore"/>). Suggestion-only; never applied to or written back to Alvys.</summary>
+    public DbSet<BolFieldSuggestionRecord> BolFieldSuggestions => Set<BolFieldSuggestionRecord>();
 
     /// <summary>Durable received Alvys webhook deliveries (see <see cref="EfAlvysWebhookStore"/>). Idempotency-keyed by event id.</summary>
     public DbSet<AlvysWebhookEvent> AlvysWebhookEvents => Set<AlvysWebhookEvent>();
@@ -174,6 +178,29 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // Review-queue listing (by status, newest first) and per-load surfacing.
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.LoadNumber);
+        });
+
+        modelBuilder.Entity<BolFieldSuggestionRecord>(entity =>
+        {
+            entity.ToTable("BolFieldSuggestions");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(64);
+            entity.Property(e => e.LoadNumber).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.DocumentId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.DocumentName).HasMaxLength(512);
+            // Enums stored as readable strings so the review table is legible in the database.
+            entity.Property(e => e.Field).IsRequired().HasMaxLength(32);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(16);
+            // Suggested value + mandatory evidence quote; nvarchar(max) so long snippets round-trip.
+            entity.Property(e => e.Value).IsRequired().HasMaxLength(512);
+            entity.Property(e => e.EvidenceQuote).IsRequired();
+            entity.Property(e => e.ExtractorName).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.DecidedBy).HasMaxLength(256);
+
+            // Review-queue listing: per-load surfacing and status filtering.
+            entity.HasIndex(e => e.LoadNumber);
+            entity.HasIndex(e => e.Status);
         });
 
         modelBuilder.Entity<AlvysWebhookEvent>(entity =>

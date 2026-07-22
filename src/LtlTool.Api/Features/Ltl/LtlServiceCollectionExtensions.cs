@@ -1,6 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl.Agent;
 using LtlTool.Api.Features.Ltl.Assignment;
+using LtlTool.Api.Features.Ltl.Bol;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using LtlTool.Api.Features.Ltl.Notifications;
@@ -197,6 +198,11 @@ public static class LtlServiceCollectionExtensions
         // pluggable extractor (deterministic keyword default), durable store, accept/reject. The
         // inbound half of the mail plumbing; read-only against Alvys.
         services.AddLtlSignals();
+
+        // BOL intelligence: fail-closed, suggest-only BOL reader (pluggable text + field extractors,
+        // deterministic defaults) with a durable suggestion store and human accept/reject. Suggestions
+        // are never applied and never written to Alvys; the read path is read-only (document download).
+        services.AddLtlBol(configuration);
 
         return services;
     }
