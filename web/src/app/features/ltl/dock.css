@@ -399,6 +399,44 @@
   color: var(--text-primary);
 }
 
+/* Dispatch-planner preferred pairing chips (read-only Alvys planner data). */
+.pref-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--card-border);
+}
+
+.pref-chips.pref-unresolved {
+  opacity: 0.7;
+}
+
+.pref-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.pref-chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--info-bg, var(--card-bg));
+  color: var(--info-text, var(--text-secondary));
+  border: 1px solid var(--card-border);
+}
+
+.yard-meta {
+  color: var(--text-muted);
+}
+
 .review-actions {
   display: flex;
   justify-content: space-between;

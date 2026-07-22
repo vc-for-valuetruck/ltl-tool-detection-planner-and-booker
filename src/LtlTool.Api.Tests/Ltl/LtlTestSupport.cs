@@ -118,6 +118,7 @@ internal class FakeAlvysClient : IAlvysClient
     public List<AlvysTrailerEvent> TrailerEvents { get; set; } = [];
     public List<AlvysCustomer> Customers { get; set; } = [];
     public List<AlvysTender> Tenders { get; set; } = [];
+    public List<AlvysLocation> Locations { get; set; } = [];
 
     /// <summary>Trip id → its stops, served by <see cref="ListTripStopsAsync"/>.</summary>
     public Dictionary<string, List<AlvysTripStopDetail>> TripStops { get; set; } = [];
@@ -183,9 +184,23 @@ internal class FakeAlvysClient : IAlvysClient
         SearchTripsCallCount++;
         return Task.FromResult(new AlvysTripsResponse { Total = Trips.Count, Items = Trips });
     }
-    // Unused read paths in the LTL layer.
     public Task<AlvysLocationsResponse> SearchLocationsAsync(LocationSearchRequest request, CancellationToken ct = default)
-        => throw new NotSupportedException();
+    {
+        // Honor the LocationIds filter so the dispatch-planner enrichment tests are deterministic.
+        IEnumerable<AlvysLocation> matched = Locations;
+        if (request.LocationIds is { Count: > 0 } ids)
+            matched = matched.Where(l => ids.Contains(l.Id, StringComparer.OrdinalIgnoreCase));
+        var items = matched.ToList();
+        return Task.FromResult(new AlvysLocationsResponse
+        {
+            Page = request.Page,
+            PageSize = request.PageSize,
+            Total = items.Count,
+            Items = items,
+        });
+    }
+
+    // Unused read paths in the LTL layer.
     public Task<AlvysCustomersResponse> SearchCustomersAsync(CustomerSearchRequest request, CancellationToken ct = default)
     {
         SearchCustomersCallCount++;

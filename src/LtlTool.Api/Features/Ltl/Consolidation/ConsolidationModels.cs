@@ -625,4 +625,16 @@ public sealed class WarehouseSummary
 
     /// <summary>Cities considered "near" this warehouse for lane-fit evaluation.</summary>
     public required IReadOnlyList<string> NearbyCities { get; init; }
+
+    /// <summary>
+    /// Live Alvys location type (e.g. "Warehouse", "Yard") when the yard config carries an Alvys
+    /// location id and the read succeeds; null otherwise. Honest — never inferred from the code/name.
+    /// </summary>
+    public string? LocationType { get; init; }
+
+    /// <summary>
+    /// Live Alvys physical-address label ("Street, City, ST Zip") when resolvable; null otherwise, in
+    /// which case the UI falls back to the static <see cref="Name"/> / <see cref="State"/> strings.
+    /// </summary>
+    public string? AddressLabel { get; init; }
 }

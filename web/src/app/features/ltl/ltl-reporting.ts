@@ -1,7 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { LtlService } from './ltl.service';
 import { MarginRollupRow, RollupGroupBy } from './ltl.models';
-import { LtlNav } from './ltl-nav';
 
 interface GroupByOption {
   value: RollupGroupBy;
@@ -17,7 +16,7 @@ interface GroupByOption {
 @Component({
   selector: 'app-ltl-reporting',
   standalone: true,
-  imports: [LtlNav],
+  imports: [],
   templateUrl: './ltl-reporting.html',
   styleUrls: ['./ltl-worklist.css'],
 })

@@ -11,8 +11,6 @@ import {
   ConsolidationOpportunity,
   ConsolidationPlanResponse,
 } from './consolidation.models';
-import { LtlNav } from './ltl-nav';
-import { By } from '@angular/platform-browser';
 import { ConsolidationService } from './consolidation.service';
 import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
@@ -610,52 +608,5 @@ describe('Consolidate live-lane walkthrough', () => {
     c.toggleSibling({ loadId: 'S2', isBlocked: false } as ConsolidationCandidate);
     expect(c.isSelected('S2')).toBeFalse();
     expect(c.plan()?.combinedRevenue).toBe(4000);
-  });
-});
-
-describe('LtlNav active states', () => {
-  function renderNav(active: 'search' | 'consolidate' | null) {
-    TestBed.configureTestingModule({
-      imports: [LtlNav],
-      providers: [provideRouter([])],
-    });
-    const fixture = TestBed.createComponent(LtlNav);
-    fixture.componentInstance.active = active;
-    fixture.detectChanges();
-    return fixture;
-  }
-
-  it('renders Search as a real navigating link (not a Phase 2 stub) and marks it active', () => {
-    const fixture = renderNav('search');
-    const anchors = fixture.debugElement.queryAll(By.css('a.shell-tab'));
-    const search = anchors.find((a) => a.nativeElement.textContent.trim().startsWith('Search'));
-    expect(search).toBeTruthy();
-    expect(search!.nativeElement.getAttribute('href')).toContain('/ltl');
-    expect(search!.nativeElement.classList).toContain('active');
-    // Search must NOT carry a Phase 2 badge anymore.
-    expect(search!.nativeElement.querySelector('.phase-badge')).toBeNull();
-  });
-
-  it('marks Consolidate active on consolidate routes and leaves Search inactive', () => {
-    const fixture = renderNav('consolidate');
-    const anchors = fixture.debugElement.queryAll(By.css('a.shell-tab'));
-    const consolidate = anchors.find((a) =>
-      a.nativeElement.textContent.trim().startsWith('Consolidate'),
-    );
-    const search = anchors.find((a) => a.nativeElement.textContent.trim().startsWith('Search'));
-    expect(consolidate!.nativeElement.classList).toContain('active');
-    expect(search!.nativeElement.classList).not.toContain('active');
-  });
-
-  it('renders Billing / Exceptions / Tenders as live links with no Phase 2 stubs left', () => {
-    const fixture = renderNav('search');
-    expect(fixture.debugElement.queryAll(By.css('span.shell-tab-stub')).length).toBe(0);
-    expect(fixture.debugElement.queryAll(By.css('.phase-badge')).length).toBe(0);
-
-    const anchors = fixture.debugElement.queryAll(By.css('a.shell-tab'));
-    const hrefs = anchors.map((a) => a.nativeElement.getAttribute('href'));
-    expect(hrefs).toContain('/ltl/billing');
-    expect(hrefs).toContain('/ltl/exceptions');
-    expect(hrefs).toContain('/ltl/tenders');
   });
 });

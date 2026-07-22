@@ -1,5 +1,6 @@
 using LtlTool.Api.Features.Ltl.Arrivals;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Features.Ltl.Dock;
@@ -18,6 +19,7 @@ public sealed class DockService(
     ConsolidationPlanService plans,
     IConsolidationAuditStore audits,
     DockNotificationService notifications,
+    DispatchPlannerService dispatchPlanner,
     IOptions<ConsolidationOptions> options)
 {
     private readonly LaredoArrivalsService _arrivals = arrivals;
@@ -25,21 +27,47 @@ public sealed class DockService(
     private readonly ConsolidationPlanService _plans = plans;
     private readonly IConsolidationAuditStore _audits = audits;
     private readonly DockNotificationService _notifications = notifications;
+    private readonly DispatchPlannerService _dispatchPlanner = dispatchPlanner;
     private readonly ConsolidationOptions _opts = options.Value;
 
     /// <summary>
     /// The configured yards a dock worker can pick. Honest projection of static config — never a
     /// place to declare a yard at runtime. Empty when no warehouses are configured.
+    ///
+    /// <para>
+    /// When a yard config carries an <see cref="ConsolidationWarehouseOptions.AlvysLocationId"/> the
+    /// card is enriched with live Alvys location metadata (type + physical address) via the read-only
+    /// dispatch-planner service. Any yard whose location does not resolve (unconfigured id, or a
+    /// degraded/429 read) degrades to its static name/state — enrichment never blocks the picker.
+    /// </para>
     /// </summary>
-    public DockWarehousesResponse ListWarehouses()
+    public async Task<DockWarehousesResponse> ListWarehousesAsync(CancellationToken ct)
     {
+        var locationIds = _opts.Warehouses
+            .Select(w => w.AlvysLocationId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!)
+            .ToList();
+
+        var locations = locationIds.Count == 0
+            ? (IReadOnlyDictionary<string, LocationView>)new Dictionary<string, LocationView>()
+            : await _dispatchPlanner.GetLocationsAsync(locationIds, ct);
+
         var warehouses = _opts.Warehouses
-            .Select(w => new WarehouseSummary
+            .Select(w =>
             {
-                Code = w.Code,
-                Name = w.Name,
-                State = w.State,
-                NearbyCities = w.NearbyCities,
+                LocationView? loc = null;
+                if (!string.IsNullOrWhiteSpace(w.AlvysLocationId))
+                    locations.TryGetValue(w.AlvysLocationId!, out loc);
+                return new WarehouseSummary
+                {
+                    Code = w.Code,
+                    Name = w.Name,
+                    State = w.State,
+                    NearbyCities = w.NearbyCities,
+                    LocationType = loc?.Type,
+                    AddressLabel = loc?.AddressLabel,
+                };
             })
             .ToArray();
         return new DockWarehousesResponse { Warehouses = warehouses };
@@ -72,6 +100,14 @@ public sealed class DockService(
         DockCombineRequest request, string recordedBy, CancellationToken ct)
     {
         var plan = await BuildPlanAsync(request.ParentLoadId, request.SiblingLoadIds, request.CorridorCode, ct);
+
+        // Phase 3 semantics: a plan with hard blockers (parent outside the corridor, a
+        // Never-consolidate sibling, an unresolved load) must NOT combine. Fail closed BEFORE any
+        // audit is recorded or notification sent — the UI surfaces these blockers at the review step,
+        // and this guard is the last line even if the UI is bypassed. Warnings (e.g. a below-target
+        // RPM) are not blockers and are allowed through.
+        if (plan.Blockers.Count > 0)
+            throw new ConsolidationPlanBlockedException(plan);
 
         var audit = _audits.Record(plan, recordedBy);
 

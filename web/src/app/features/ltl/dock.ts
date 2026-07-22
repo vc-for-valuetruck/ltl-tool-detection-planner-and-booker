@@ -5,11 +5,14 @@ import { LaredoArrival, LaredoArrivalsBoard } from './arrivals.models';
 import {
   ConsolidationCandidate,
   ConsolidationCandidateResponse,
+  ConsolidationPlanResponse,
   WarehouseSummary,
 } from './consolidation.models';
+import { ConsolidationService } from './consolidation.service';
+import { DispatchPreferenceView } from './dispatch-planner.models';
+import { DispatchPlannerService } from './dispatch-planner.service';
 import { DockCombineResponse, DockNotificationResult } from './dock.models';
 import { DockService } from './dock.service';
-import { LtlNav } from './ltl-nav';
 import { LtlParentChildBadge } from './ltl-parent-child-badge';
 
 /** The dock-worker flow is a linear step machine; each value is one screen in the wizard. */
@@ -32,13 +35,15 @@ type PrintMode = 'none' | 'bol' | 'clickcard';
 @Component({
   selector: 'app-dock',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, LtlNav, LtlParentChildBadge],
+  imports: [CommonModule, FormsModule, DatePipe, LtlParentChildBadge],
   templateUrl: './dock.html',
   styleUrls: ['./dock.css'],
   host: { '[class.printing-bol]': "printMode() === 'bol'", '[class.printing-card]': "printMode() === 'clickcard'" },
 })
 export class Dock implements OnInit, OnDestroy {
   private readonly dock = inject(DockService);
+  private readonly consolidation = inject(ConsolidationService);
+  private readonly dispatchPlanner = inject(DispatchPlannerService);
 
   /** How long the one-tap Undo stays offered after a combine, in seconds (a few minutes). */
   private static readonly UndoWindowSeconds = 180;
@@ -58,6 +63,25 @@ export class Dock implements OnInit, OnDestroy {
 
   protected readonly combineResult = signal<DockCombineResponse | null>(null);
   protected readonly printMode = signal<PrintMode>('none');
+
+  /**
+   * Read-only plan preview fetched at the Review step so the dock worker sees the plan's blockers
+   * (parent off-corridor, a Never-consolidate sibling, an unresolved load) BEFORE combining. A plan
+   * with blockers must not combine — the Combine button is disabled and the backend fails closed (422).
+   */
+  protected readonly previewPlan = signal<ConsolidationPlanResponse | null>(null);
+  protected readonly previewLoading = signal(false);
+  protected readonly previewBlockers = computed(() => this.previewPlan()?.blockers ?? []);
+  protected readonly hasBlockers = computed(() => this.previewBlockers().length > 0);
+
+  /**
+   * Preferred driver/truck/trailer pairing for the parent's equipment, read from the Alvys Public
+   * API dispatch planner (read-only). Shown as "preferred …" chips on the review card so the dock
+   * worker sees the planner's intended assignment; honestly null when Alvys carries no preference or
+   * the read degraded. Never fabricated — an unresolved view renders "—".
+   */
+  protected readonly preferredPairing = signal<DispatchPreferenceView | null>(null);
+  protected readonly hasPreferredPairing = computed(() => this.preferredPairing()?.resolved === true);
 
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -218,6 +242,8 @@ export class Dock implements OnInit, OnDestroy {
     const parent = this.parent();
     const siblings = this.selectedSiblingIds();
     if (!parent?.loadNumber || siblings.length === 0) return;
+    // Fail closed on a known-blocked plan — the backend also guards (422), this is the UI's guard.
+    if (this.hasBlockers()) return;
 
     this.tapCount.update((n) => n + 1);
     this.loading.set(true);
@@ -240,10 +266,25 @@ export class Dock implements OnInit, OnDestroy {
           this.recordCombineMetric(siblings.length);
         },
         error: (err) => {
-          this.error.set(this.messageOf(err, 'Combine failed — nothing was recorded.'));
+          // A 422 carries the blocked plan itself (not an {error} envelope): surface its blockers
+          // at the review step so the worker sees exactly why the combine was refused.
+          const blocked = this.blockedPlanOf(err);
+          if (blocked) {
+            this.previewPlan.set(blocked);
+            this.step.set('review');
+            this.error.set('This plan has blockers and cannot be combined.');
+          } else {
+            this.error.set(this.messageOf(err, 'Combine failed — nothing was recorded.'));
+          }
           this.loading.set(false);
         },
       });
+  }
+
+  /** Extracts a blocked plan from a 422 combine response, or null for any other error shape. */
+  private blockedPlanOf(err: unknown): ConsolidationPlanResponse | null {
+    const e = err as { status?: number; error?: ConsolidationPlanResponse };
+    return e?.status === 422 && Array.isArray(e.error?.blockers) ? e.error! : null;
   }
 
   /** One-tap Undo: records a retraction audit. Nothing was written to Alvys, so this reverses nothing there. */
@@ -336,10 +377,61 @@ export class Dock implements OnInit, OnDestroy {
   }
 
   protected goToReview(): void {
-    if (this.hasSelection()) this.step.set('review');
+    if (!this.hasSelection()) return;
+    this.step.set('review');
+    this.loadPreview();
+  }
+
+  /**
+   * Fetches the read-only consolidation plan preview so blockers surface at review time, before any
+   * combine. Reuses the already-tested consolidation plan endpoint — no new consolidation logic and
+   * no Alvys write.
+   */
+  private loadPreview(): void {
+    const parent = this.parent();
+    const siblings = this.selectedSiblingIds();
+    if (!parent?.loadNumber || siblings.length === 0) return;
+    this.loadPreferredPairing(parent);
+    this.previewLoading.set(true);
+    this.previewPlan.set(null);
+    this.error.set(null);
+    this.consolidation
+      .buildPlan({
+        parentLoadId: parent.loadNumber,
+        siblingLoadIds: siblings,
+        corridorCode: this.candidates()?.corridorCode,
+      })
+      .subscribe({
+        next: (plan) => {
+          this.previewPlan.set(plan);
+          this.previewLoading.set(false);
+        },
+        error: (err) => {
+          this.error.set(this.messageOf(err, 'Could not build the plan preview.'));
+          this.previewLoading.set(false);
+        },
+      });
+  }
+
+  /**
+   * Fetches the parent equipment's preferred pairing from the read-only dispatch planner. Uses the
+   * parent arrival's Alvys truck/trailer ids (driver is name-only on the board, so it is not sent).
+   * Non-blocking and best-effort: a failure leaves the chips absent rather than erroring the review.
+   */
+  private loadPreferredPairing(parent: LaredoArrival): void {
+    const truckId = parent.truck?.id ?? null;
+    const trailerId = parent.trailer?.id ?? null;
+    this.preferredPairing.set(null);
+    if (!truckId && !trailerId) return;
+    this.dispatchPlanner.getPreferredPairing({ truckId, trailerId }).subscribe({
+      next: (view) => this.preferredPairing.set(view),
+      error: () => this.preferredPairing.set(null),
+    });
   }
 
   protected backToSiblings(): void {
+    this.previewPlan.set(null);
+    this.preferredPairing.set(null);
     this.step.set('siblings');
   }
 
@@ -376,6 +468,8 @@ export class Dock implements OnInit, OnDestroy {
     this.candidates.set(null);
     this.selectedSiblingIds.set([]);
     this.combineResult.set(null);
+    this.previewPlan.set(null);
+    this.preferredPairing.set(null);
     this.notification.set(null);
     this.undone.set(false);
     this.stopUndoWindow();

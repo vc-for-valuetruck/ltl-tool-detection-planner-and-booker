@@ -2,10 +2,12 @@ using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Arrivals;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using LtlTool.Api.Features.Ltl.Dock;
 using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Tests.Ltl.Consolidation;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -25,7 +27,8 @@ public sealed class DockServiceTests
     private static DockService Build(
         FakeAlvysClient client,
         ConsolidationOptions? overrides = null,
-        DockOptions? dockOptions = null)
+        DockOptions? dockOptions = null,
+        InMemoryConsolidationAuditStore? auditStore = null)
     {
         var opts = overrides ?? new ConsolidationOptions();
         var optsWrap = Microsoft.Extensions.Options.Options.Create(opts);
@@ -48,7 +51,7 @@ public sealed class DockServiceTests
             new NullTrailerFitService(TimeProvider.System),
             new NullStopSequencer(LtlTestFactory.Clock()));
 
-        var audits = new InMemoryConsolidationAuditStore(LtlTestFactory.Clock());
+        var audits = auditStore ?? new InMemoryConsolidationAuditStore(LtlTestFactory.Clock());
 
         var notifications = new DockNotificationService(
             [new InAppNotificationChannel(), new EmailNotificationChannel(NotificationOptionsWrap())],
@@ -57,7 +60,11 @@ public sealed class DockServiceTests
             LtlTestFactory.Clock(),
             NullLogger<DockNotificationService>.Instance);
 
-        return new DockService(arrivals, candidates, plans, audits, notifications, optsWrap);
+        var dispatchPlanner = new DispatchPlannerService(
+            client, new MemoryCache(new MemoryCacheOptions()),
+            NullLogger<DispatchPlannerService>.Instance);
+
+        return new DockService(arrivals, candidates, plans, audits, notifications, dispatchPlanner, optsWrap);
     }
 
     private static Microsoft.Extensions.Options.IOptions<NotificationOptions> NotificationOptionsWrap()
@@ -108,11 +115,11 @@ public sealed class DockServiceTests
         };
 
     [Fact]
-    public void ListWarehouses_projects_the_configured_yards()
+    public async Task ListWarehouses_projects_the_configured_yards()
     {
         var service = Build(new FakeAlvysClient());
 
-        var response = service.ListWarehouses();
+        var response = await service.ListWarehousesAsync(default);
 
         Assert.Equal(2, response.Warehouses.Count);
         Assert.Contains(response.Warehouses, w => w.Code == "LAREDO");
@@ -120,11 +127,46 @@ public sealed class DockServiceTests
     }
 
     [Fact]
-    public void ListWarehouses_is_empty_when_no_warehouses_configured()
+    public async Task ListWarehouses_is_empty_when_no_warehouses_configured()
     {
         var service = Build(new FakeAlvysClient(), new ConsolidationOptions { Warehouses = [] });
 
-        Assert.Empty(service.ListWarehouses().Warehouses);
+        Assert.Empty((await service.ListWarehousesAsync(default)).Warehouses);
+    }
+
+    [Fact]
+    public async Task ListWarehouses_enriches_from_alvys_location_when_configured_and_degrades_otherwise()
+    {
+        // LAREDO carries an Alvys location id and resolves → enriched type + address. DALLAS carries
+        // no id → honest null enrichment (degrades to static name/state), never fabricated geography.
+        var client = new FakeAlvysClient
+        {
+            Locations =
+            [
+                new AlvysLocation
+                {
+                    Id = "LOC-LAREDO",
+                    Name = "Laredo Cross-Dock",
+                    Type = "Warehouse",
+                    PhysicalAddress = new AlvysContextAddress
+                    {
+                        Street = "1 Bridge Rd", City = "Laredo", State = "TX", ZipCode = "78045",
+                    },
+                },
+            ],
+        };
+        var options = new ConsolidationOptions();
+        options.Warehouses[0].AlvysLocationId = "LOC-LAREDO"; // LAREDO
+
+        var response = await Build(client, options).ListWarehousesAsync(default);
+
+        var laredo = Assert.Single(response.Warehouses, w => w.Code == "LAREDO");
+        Assert.Equal("Warehouse", laredo.LocationType);
+        Assert.Equal("1 Bridge Rd, Laredo, TX 78045", laredo.AddressLabel);
+
+        var dallas = Assert.Single(response.Warehouses, w => w.Code == "DALLAS");
+        Assert.Null(dallas.LocationType);
+        Assert.Null(dallas.AddressLabel);
     }
 
     [Fact]
@@ -238,6 +280,29 @@ public sealed class DockServiceTests
             default);
 
         Assert.Equal("LAREDO_TO_DALLAS", response.Plan.CorridorCode);
+    }
+
+    [Fact]
+    public async Task Combine_with_blocked_plan_throws_and_records_nothing()
+    {
+        // Parent sits OFF the Laredo→Dallas corridor (Miami→Atlanta). The plan resolves but is
+        // illegal, so the plan carries a hard blocker. Phase 3 semantics: the combine must fail
+        // closed — throw the blocked exception and record NO audit.
+        var parent = Load("L-OFF", "Verdef", "Miami", "FL", "Atlanta", "GA", ParentPickup);
+        var sibling = Load("L-2", "Verdef", "Laredo", "TX", "Dallas", "TX", ParentPickup.AddHours(2));
+        var client = new StatefulAlvysClient(parent, sibling);
+        var audits = new InMemoryConsolidationAuditStore(LtlTestFactory.Clock());
+        var service = Build(client, auditStore: audits);
+
+        var ex = await Assert.ThrowsAsync<ConsolidationPlanBlockedException>(
+            () => service.CombineAsync(
+                new DockCombineRequest { ParentLoadId = "L-OFF", SiblingLoadIds = ["L-2"] },
+                "dock.worker@valuetruck.com",
+                default));
+
+        Assert.NotEmpty(ex.Plan.Blockers);
+        // Nothing was recorded — the guardrail wrote no audit for a blocked plan.
+        Assert.Empty(audits.All());
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl.Agent;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Features.Ltl.SavedViews;
@@ -152,6 +153,12 @@ public static class LtlServiceCollectionExtensions
             .Bind(configuration.GetSection(Dock.DockOptions.SectionName));
         services.AddScoped<Dock.DockNotificationService>();
         services.AddScoped<Dock.DockService>();
+
+        // Dispatch-planner data utilisation (Alvys Public API, read-only): preferred driver/truck/
+        // trailer pairings + yard/location enrichment. Wraps the typed client #134 built with polite
+        // IMemoryCache memoisation (already registered above) and honest degradation — never a new
+        // consolidation rule, never an Alvys write.
+        services.AddScoped<DispatchPlannerService>();
 
         // Internal, non-Alvys assignment audit. Durable EF Core store (AppDbContext) so decisions
         // survive restarts and back the filterable /ltl/assignments history page. Scoped to the

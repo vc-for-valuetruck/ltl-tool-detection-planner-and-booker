@@ -1,0 +1,82 @@
+<div class="ltl-shell" [class.collapsed]="collapsed()" [class.mobile-open]="mobileOpen()">
+  <!-- Scrim behind the slide-out on tablet; tap to dismiss. -->
+  <div class="shell-scrim" (click)="closeMobile()" aria-hidden="true"></div>
+
+  <aside class="shell-side" aria-label="LTL navigation">
+    <div class="side-brand">
+      <span class="brand-mark" aria-hidden="true">VT</span>
+      <span class="brand-text">
+        <span class="brand-name">Value Truck</span>
+        <span class="brand-sub">LTL Tool</span>
+      </span>
+      <button
+        type="button"
+        class="collapse-btn"
+        (click)="toggleCollapsed()"
+        [attr.aria-pressed]="collapsed()"
+        [attr.aria-label]="collapsed() ? 'Expand navigation' : 'Collapse navigation'"
+        title="Collapse"
+      >
+        <span aria-hidden="true">{{ collapsed() ? '»' : '«' }}</span>
+      </button>
+    </div>
+
+    <nav class="side-nav">
+      <!-- Search: top-level quick item, above the groups. -->
+      <a
+        class="nav-item quick"
+        [routerLink]="quickItem.route"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        [title]="quickItem.label"
+      >
+        <span class="nav-mono" aria-hidden="true">{{ quickItem.monogram }}</span>
+        <span class="nav-label">{{ quickItem.label }}</span>
+      </a>
+
+      @for (group of groups; track group.title) {
+        <div class="nav-group">
+          <span class="group-title">{{ group.title }}</span>
+          @for (item of group.items; track item.route) {
+            <a
+              class="nav-item"
+              [routerLink]="item.route"
+              routerLinkActive="active"
+              [title]="item.label"
+            >
+              <span class="nav-mono" aria-hidden="true">{{ item.monogram }}</span>
+              <span class="nav-label">{{ item.label }}</span>
+            </a>
+          }
+        </div>
+      }
+    </nav>
+
+    <div class="side-foot">
+      <a class="nav-item" routerLink="/" title="Help / Home">
+        <span class="nav-mono" aria-hidden="true">?</span>
+        <span class="nav-label">Help &amp; Home</span>
+      </a>
+      <div class="side-user" title="Signed-in user">
+        <span class="user-avatar" aria-hidden="true">U</span>
+        <span class="nav-label user-name">Value Truck ops</span>
+      </div>
+    </div>
+  </aside>
+
+  <section class="shell-content">
+    <div class="crumb-bar">
+      <button
+        type="button"
+        class="hamburger"
+        (click)="toggleMobile()"
+        aria-label="Open navigation"
+      >
+        <span aria-hidden="true">☰</span>
+      </button>
+      <span class="crumb" aria-label="Breadcrumb">{{ breadcrumb() }}</span>
+    </div>
+
+    <router-outlet />
+  </section>
+</div>

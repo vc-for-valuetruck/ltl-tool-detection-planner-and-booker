@@ -1,0 +1,121 @@
+import { CommonModule } from '@angular/common';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  ActivatedRoute,
+  NavigationEnd,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+  RouterOutlet,
+} from '@angular/router';
+import { Subscription, filter } from 'rxjs';
+
+/** One clickable destination in the sidebar. `monogram` is the collapsed-mode icon glyph. */
+interface NavItem {
+  readonly label: string;
+  readonly route: string;
+  readonly monogram: string;
+  /** true → active only on an exact URL match (the Search quick item, whose route prefixes them all). */
+  readonly exact?: boolean;
+}
+
+interface NavGroup {
+  readonly title: string;
+  readonly items: readonly NavItem[];
+}
+
+/**
+ * LTL workspace layout (Alvys-style vertical sidebar). Replaces the crowded 11-tab horizontal strip
+ * (<c>LtlNav</c>) with a light, collapsible left rail that mirrors the Alvys dispatch console: a brand
+ * block on top, Search as a top-level quick item, then two collapsible groups (Operations / Back
+ * Office), and a pinned Help/user block at the bottom. The active item gets a soft pill highlight.
+ *
+ * The rail collapses to icons on the desktop (persisted per session) and becomes a hamburger slide-out
+ * overlay on tablet widths, with large touch targets for dock tablets. The content area carries a
+ * breadcrumb bar (e.g. "LTL / Dock") derived from the active child route's <c>data.crumb</c>.
+ */
+@Component({
+  selector: 'app-ltl-shell',
+  standalone: true,
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+  templateUrl: './ltl-shell.html',
+  styleUrls: ['./ltl-shell.css'],
+})
+export class LtlShell implements OnInit, OnDestroy {
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+
+  /** Collapsed-to-icons on desktop. */
+  protected readonly collapsed = signal(false);
+  /** Slide-out overlay open on tablet/narrow widths. */
+  protected readonly mobileOpen = signal(false);
+
+  /** The active leaf route's breadcrumb label ("Dock", "Billing", …); null on the Search landing. */
+  protected readonly crumb = signal<string | null>(null);
+  protected readonly breadcrumb = computed(() => {
+    const leaf = this.crumb();
+    return leaf ? `LTL / ${leaf}` : 'LTL';
+  });
+
+  protected readonly quickItem: NavItem = { label: 'Search', route: '/ltl', monogram: 'S', exact: true };
+
+  protected readonly groups: readonly NavGroup[] = [
+    {
+      title: 'Operations',
+      items: [
+        { label: 'Dock', route: '/ltl/dock', monogram: 'D' },
+        { label: 'Consolidate', route: '/ltl/consolidate', monogram: 'C' },
+        { label: 'Loads', route: '/ltl/loads', monogram: 'L' },
+        { label: 'Tenders', route: '/ltl/tenders', monogram: 'T' },
+        { label: 'Assignments', route: '/ltl/assignments', monogram: 'A' },
+      ],
+    },
+    {
+      title: 'Back Office',
+      items: [
+        { label: 'Billing', route: '/ltl/billing', monogram: 'B' },
+        { label: 'Exceptions', route: '/ltl/exceptions', monogram: 'E' },
+        { label: 'Signals', route: '/ltl/signals', monogram: 'G' },
+        { label: 'Notifications', route: '/ltl/notifications', monogram: 'N' },
+        { label: 'Reporting', route: '/ltl/reporting', monogram: 'R' },
+      ],
+    },
+  ];
+
+  private sub: Subscription | null = null;
+
+  ngOnInit(): void {
+    this.updateCrumb();
+    this.sub = this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe(() => {
+        this.updateCrumb();
+        // A route change on tablet closes the slide-out so the content isn't left behind the scrim.
+        this.mobileOpen.set(false);
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.sub?.unsubscribe();
+  }
+
+  protected toggleCollapsed(): void {
+    this.collapsed.update((c) => !c);
+  }
+
+  protected toggleMobile(): void {
+    this.mobileOpen.update((o) => !o);
+  }
+
+  protected closeMobile(): void {
+    this.mobileOpen.set(false);
+  }
+
+  /** Walks to the deepest activated child and reads its `data.crumb` for the breadcrumb bar. */
+  private updateCrumb(): void {
+    let r = this.route;
+    while (r.firstChild) r = r.firstChild;
+    const crumb = r.snapshot.data['crumb'];
+    this.crumb.set(typeof crumb === 'string' && crumb.length > 0 ? crumb : null);
+  }
+}

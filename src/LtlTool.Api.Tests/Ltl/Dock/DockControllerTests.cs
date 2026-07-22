@@ -3,11 +3,13 @@ using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl;
 using LtlTool.Api.Features.Ltl.Arrivals;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using LtlTool.Api.Features.Ltl.Dock;
 using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -50,8 +52,12 @@ public sealed class DockControllerTests
             LtlTestFactory.Clock(),
             NullLogger<DockNotificationService>.Instance);
 
+        var dispatchPlanner = new DispatchPlannerService(
+            client, new MemoryCache(new MemoryCacheOptions()),
+            NullLogger<DispatchPlannerService>.Instance);
+
         var controller = new DockController(
-            new DockService(arrivals, candidates, plans, audits, notifications, optsWrap),
+            new DockService(arrivals, candidates, plans, audits, notifications, dispatchPlanner, optsWrap),
             NullLogger<DockController>.Instance);
         var identity = new ClaimsIdentity([new Claim("preferred_username", "dock@valuetruck.com")], "test");
         controller.ControllerContext = new ControllerContext
@@ -62,9 +68,9 @@ public sealed class DockControllerTests
     }
 
     [Fact]
-    public void GetWarehouses_returns_the_configured_yards()
+    public async Task GetWarehouses_returns_the_configured_yards()
     {
-        var result = BuildController(new FakeAlvysClient()).GetWarehouses();
+        var result = await BuildController(new FakeAlvysClient()).GetWarehouses(default);
 
         var response = Assert.IsType<DockWarehousesResponse>(((OkObjectResult)result.Result!).Value);
         Assert.Equal(2, response.Warehouses.Count);

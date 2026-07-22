@@ -3,7 +3,6 @@ import { DatePipe } from '@angular/common';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Router, RouterLink } from '@angular/router';
 import { RUNTIME_CONFIG } from '../../runtime-config';
-import { LtlNav } from './ltl-nav';
 import { LtlArrivalsBoard } from './ltl-arrivals-board';
 
 interface ConsolidationOpportunitiesResponse {
@@ -47,7 +46,7 @@ interface ConsolidationOpportunityLoad {
 @Component({
   selector: 'app-ltl-search',
   standalone: true,
-  imports: [DatePipe, RouterLink, LtlNav, LtlArrivalsBoard],
+  imports: [DatePipe, RouterLink, LtlArrivalsBoard],
   templateUrl: './ltl-search.html',
   styleUrls: ['./ltl-search.css'],
 })

@@ -2,7 +2,6 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { LtlService } from './ltl.service';
 import { AssignmentAudit, AssignmentReasonType } from './ltl.models';
-import { LtlNav } from './ltl-nav';
 
 interface ReasonOption {
   value: AssignmentReasonType | '';
@@ -18,7 +17,7 @@ interface ReasonOption {
 @Component({
   selector: 'app-ltl-assignments',
   standalone: true,
-  imports: [LtlNav, FormsModule],
+  imports: [FormsModule],
   templateUrl: './ltl-assignments.html',
   styleUrls: ['./ltl-worklist.css'],
 })

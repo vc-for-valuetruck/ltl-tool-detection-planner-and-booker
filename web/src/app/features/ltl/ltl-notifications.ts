@@ -2,7 +2,6 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { LtlService } from './ltl.service';
-import { LtlNav } from './ltl-nav';
 import {
   NotificationChannelStatus,
   NotificationDeliveryState,
@@ -19,7 +18,7 @@ import {
 @Component({
   selector: 'app-ltl-notifications',
   standalone: true,
-  imports: [DatePipe, RouterLink, LtlNav],
+  imports: [DatePipe, RouterLink],
   templateUrl: './ltl-notifications.html',
   styleUrls: ['./ltl-notifications.css'],
 })

@@ -1,7 +1,6 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { AlvysTendersService } from './alvys-tenders.service';
 import { AlvysTender, AlvysTenderOrderDetail } from './alvys-tenders.models';
-import { LtlNav } from './ltl-nav';
 
 /** A tender projected for the board: raw Alvys tender + the fields the row needs, derived once. */
 interface TenderRow {
@@ -45,7 +44,7 @@ const CUBIC_FEET_PER_PALLET = 96;
 @Component({
   selector: 'app-ltl-tenders',
   standalone: true,
-  imports: [LtlNav],
+  imports: [],
   templateUrl: './ltl-tenders.html',
   styleUrls: ['./ltl-worklist.css'],
 })

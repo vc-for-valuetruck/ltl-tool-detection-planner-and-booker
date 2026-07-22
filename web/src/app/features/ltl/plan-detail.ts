@@ -14,7 +14,6 @@ import {
   CustomerConsolidationTier,
   CustomerPolicySource,
 } from './consolidation.models';
-import { LtlNav } from './ltl-nav';
 
 type GapTone = 'amber' | 'blue' | 'green';
 interface HonestGap {
@@ -38,7 +37,7 @@ const US_STATES = new Set([
 @Component({
   selector: 'app-plan-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink, LtlNav],
+  imports: [CommonModule, RouterLink],
   templateUrl: './plan-detail.html',
   styleUrls: ['./plan-detail.css'],
 })
