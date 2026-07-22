@@ -41,6 +41,15 @@ const PLAN_PREVIEW = {
 
 /** Intercepts every backend call the plan detail makes so the page renders without a live stack. */
 async function mockPlanDependencies(page: Page): Promise<void> {
+  // Force the SPA's auth config empty so MSAL stays off. The demo-stack CI job injects placeholder
+  // Azure GUIDs into the web container's runtime-config, which flips isAuthConfigured() true and
+  // attaches the MsalInterceptor — that gates every /api call behind a token acquisition against a
+  // non-existent tenant, so the page.route mocks below never fire and the plan detail hangs on its
+  // loading spinner. Pinning auth off here keeps this fully-mocked spec deterministic in both the
+  // empty-auth local demo stack and the GUID-injected CI stack.
+  await page.route('**/runtime-config.json', (route) =>
+    route.fulfill({ json: { tenantId: '', clientId: '', apiScope: '', apiBaseUrl: '/api' } }),
+  );
   await page.route('**/api/ltl/loads/L-1', (route) =>
     route.fulfill({ json: loadSummary('L-1', 'L-1') }),
   );
