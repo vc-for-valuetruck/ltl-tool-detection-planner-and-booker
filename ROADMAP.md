@@ -15,7 +15,7 @@
 
 **Workflow spine:** Search → Match → Assign → Bill → Billed.
 **Author:** Joshua Davis · Value Truck + Value Logistics
-**Last update:** 2026-07-17 (Reuben sync — Public API is read-only; writes pivot to internal API; anti-failure map row 3p added)
+**Last update:** 2026-07-22 (UAT UI parity reconciliation — see [`docs/UAT_PARITY_STATUS.md`](docs/UAT_PARITY_STATUS.md); every P0/P1 workbook row closed on `main`; one P3 polish remaining as issue [#164](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/issues/164))
 
 > **Field input incorporated (2026-07-15 Phoenix visit, Junior + Holly + Poornima).** The transcript from the yard visit changes the emphasis: consolidation planning is the actual product, not a match factor. Junior already runs LTL by hand (Verdef cross-border → Laredo → Dallas/Phoenix → local delivery) using dummy loads (W1/W2), zeroed-out child miles, and a manually-maintained trip reference. Bre is the political blocker, not tech. Accessorials are where the money lives. Poornima confirmed the intended Alvys path: **trip reference + LTL boolean flag + zero-out miles on child trips + main-load identifier + filterable report**. The roadmap below reflects that.
 
