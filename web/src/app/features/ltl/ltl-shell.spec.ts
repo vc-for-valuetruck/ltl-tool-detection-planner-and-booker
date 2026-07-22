@@ -2,10 +2,21 @@ import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { of } from 'rxjs';
 import { LtlShell } from './ltl-shell';
+import { LtlService } from './ltl.service';
 
 @Component({ standalone: true, template: 'stub' })
 class Stub {}
+
+/** Minimal LtlService stub — the shell only reads the exceptions / pending-signals counts. */
+function ltlStub(overrides: Partial<LtlService> = {}): Partial<LtlService> {
+  return {
+    exceptions: () => of([]),
+    signals: () => of([]),
+    ...overrides,
+  };
+}
 
 /**
  * LtlShell replaces the old horizontal LtlNav tab strip with an Alvys-style vertical sidebar.
@@ -18,7 +29,7 @@ describe('LtlShell', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [LtlShell],
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), { provide: LtlService, useValue: ltlStub() }],
     }).compileComponents();
     fixture = TestBed.createComponent(LtlShell);
     fixture.detectChanges();
@@ -108,10 +119,50 @@ describe('LtlShell', () => {
   });
 });
 
+describe('LtlShell badges', () => {
+  function build(overrides: Partial<LtlService>): ComponentFixture<LtlShell> {
+    TestBed.configureTestingModule({
+      imports: [LtlShell],
+      providers: [provideRouter([]), { provide: LtlService, useValue: ltlStub(overrides) }],
+    });
+    const fixture = TestBed.createComponent(LtlShell);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it('shows a red exception count and a neutral pending-signal count when non-zero', () => {
+    const fixture = build({
+      exceptions: () => of([{}, {}, {}] as never[]),
+      signals: () => of([{}, {}] as never[]),
+    });
+    const el = fixture.nativeElement as HTMLElement;
+    const exBadge = el.querySelector('[data-testid="nav-badge-exceptions"]');
+    const sigBadge = el.querySelector('[data-testid="nav-badge-signals"]');
+    expect(exBadge?.textContent?.trim()).toBe('3');
+    expect(exBadge?.classList).toContain('nav-badge-danger');
+    expect(sigBadge?.textContent?.trim()).toBe('2');
+    expect(sigBadge?.classList).not.toContain('nav-badge-danger');
+  });
+
+  it('hides both badges when the counts are zero', () => {
+    const fixture = build({ exceptions: () => of([]), signals: () => of([]) });
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="nav-badge-exceptions"]')).toBeNull();
+    expect(el.querySelector('[data-testid="nav-badge-signals"]')).toBeNull();
+  });
+
+  it('requests only pending signals for the needs-review count', () => {
+    const signalsSpy = jasmine.createSpy('signals').and.returnValue(of([]));
+    build({ signals: signalsSpy });
+    expect(signalsSpy).toHaveBeenCalledWith({ status: 'Pending' });
+  });
+});
+
 describe('LtlShell breadcrumb from route data', () => {
   it('derives the breadcrumb from the active child route crumb', async () => {
     TestBed.configureTestingModule({
       providers: [
+        { provide: LtlService, useValue: ltlStub() },
         provideRouter([
           {
             path: 'ltl',

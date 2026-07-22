@@ -46,6 +46,15 @@
             >
               <span class="nav-mono" aria-hidden="true">{{ item.monogram }}</span>
               <span class="nav-label">{{ item.label }}</span>
+              @if (badgeCount(item); as n) {
+                <span
+                  class="nav-badge"
+                  [class.nav-badge-danger]="item.badge === 'exceptions'"
+                  [attr.data-testid]="'nav-badge-' + item.badge"
+                  [attr.aria-label]="n + ' needs attention'"
+                  >{{ n }}</span
+                >
+              }
             </a>
           }
         </div>
