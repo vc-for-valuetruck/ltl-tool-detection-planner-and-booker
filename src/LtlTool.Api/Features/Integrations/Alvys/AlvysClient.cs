@@ -97,6 +97,65 @@ public sealed class AlvysClient(
         return await GetListAsync<AlvysLoadDocument>(path, ct) ?? [];
     }
 
+    public async Task<AlvysDocumentContent?> DownloadLoadDocumentAsync(
+        string loadNumber, string documentId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(documentId))
+            return null;
+
+        // Re-list the load's documents so the download URL is always the Alvys-issued one for the
+        // requested document — the caller never supplies a URL. Read-only.
+        var documents = await ListLoadDocumentsAsync(loadNumber, ct);
+        var target = documents.FirstOrDefault(
+            d => string.Equals(d.Id, documentId, StringComparison.OrdinalIgnoreCase));
+
+        if (target is null || string.IsNullOrWhiteSpace(target.DownloadUrl))
+            return null;
+
+        if (target.ExpiresAt is { } expiresAt && expiresAt <= DateTimeOffset.UtcNow)
+        {
+            logger.LogWarning(
+                "Alvys document {DocumentId} download URL expired at {ExpiresAt}; not fetching.",
+                documentId, expiresAt);
+            return null;
+        }
+
+        try
+        {
+            // The DownloadUrl is a self-authenticating, time-limited link (S3/blob presigned). Fetch
+            // it with a plain client and NO Alvys bearer — an extra Authorization header can void a
+            // presigned signature. Absolute URL, so the client's Alvys base address is not applied.
+            var client = httpClientFactory.CreateClient(ApiHttpClientName);
+            using var request = new HttpRequestMessage(HttpMethod.Get, target.DownloadUrl);
+            using var response = await client.SendAsync(request, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogError(
+                    "Alvys document {DocumentId} download failed with HTTP {StatusCode}.",
+                    documentId, (int)response.StatusCode);
+                return null;
+            }
+
+            var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+            if (bytes.Length == 0)
+                return null;
+
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? target.AttachmentType;
+            return new AlvysDocumentContent(documentId, bytes, contentType, target.AttachmentPath);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            logger.LogError(ex, "Alvys document {DocumentId} download transport error: {Message}",
+                documentId, ex.Message);
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(
         string loadNumber, CancellationToken ct = default)
     {

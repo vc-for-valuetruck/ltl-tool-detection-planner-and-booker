@@ -36,6 +36,10 @@ public sealed class FallbackAlvysClient : IAlvysClient
         string loadNumber, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AlvysLoadDocument>>([]);
 
+    public Task<AlvysDocumentContent?> DownloadLoadDocumentAsync(
+        string loadNumber, string documentId, CancellationToken ct = default)
+        => Task.FromResult<AlvysDocumentContent?>(null);
+
     public Task<IReadOnlyList<AlvysLoadNote>> ListLoadNotesAsync(
         string loadNumber, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AlvysLoadNote>>([]);

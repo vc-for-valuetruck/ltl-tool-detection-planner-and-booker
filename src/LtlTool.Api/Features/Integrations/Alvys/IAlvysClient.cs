@@ -61,6 +61,17 @@ public interface IAlvysClient
     Task<IReadOnlyList<AlvysLoadDocument>> ListLoadDocumentsAsync(string loadNumber, CancellationToken ct = default);
 
     /// <summary>
+    /// Downloads the raw bytes of a single load document over the read-only #141 document surface:
+    /// it re-lists the load's documents (so the caller cannot forge a URL), finds the one whose
+    /// <see cref="AlvysLoadDocument.Id"/> matches <paramref name="documentId"/>, and GETs its
+    /// time-limited <see cref="AlvysLoadDocument.DownloadUrl"/>. Returns <c>null</c> when the document
+    /// is unknown, carries no usable download link, or the fetch fails/expires — callers fail closed
+    /// rather than inventing content. Read-only: nothing is written back to Alvys.
+    /// </summary>
+    Task<AlvysDocumentContent?> DownloadLoadDocumentAsync(
+        string loadNumber, string documentId, CancellationToken ct = default);
+
+    /// <summary>
     /// Lists notes on a load via <c>GET /api/p/v{version}/loads/{loadNumber}/notes</c>.
     /// The Alvys response is a bare array, so this returns a list rather than a paged envelope.
     /// </summary>
