@@ -229,6 +229,40 @@
   color: var(--text-secondary);
 }
 
+/* Global "go to load" quick-search — pinned to the right of the breadcrumb bar. */
+.quick-search {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quick-search-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.quick-search-input {
+  width: 200px;
+  max-width: 40vw;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-border);
+  background: var(--body-bg);
+  color: var(--text-primary);
+}
+
+.quick-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .hamburger {
   display: none;
   appearance: none;

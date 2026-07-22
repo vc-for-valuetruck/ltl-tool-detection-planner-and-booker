@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { LtlShell } from './ltl-shell';
 
@@ -77,6 +77,34 @@ describe('LtlShell', () => {
 
   it('shows the LTL breadcrumb root by default', () => {
     expect(fixture.componentInstance['breadcrumb']()).toBe('LTL');
+  });
+
+  it('focuses the global quick-search on Alt+S', () => {
+    const input = el().querySelector('[data-testid="shell-quick-search"]') as HTMLInputElement;
+    expect(input).toBeTruthy();
+    const focusSpy = spyOn(input, 'focus');
+    const event = new KeyboardEvent('keydown', { altKey: true, key: 's' });
+    const preventSpy = spyOn(event, 'preventDefault');
+    document.dispatchEvent(event);
+    expect(focusSpy).toHaveBeenCalled();
+    expect(preventSpy).toHaveBeenCalled();
+  });
+
+  it('jumps to a load detail on quick-search submit and clears the box', () => {
+    const router = TestBed.inject(Router);
+    const navSpy = spyOn(router, 'navigate').and.resolveTo(true);
+    fixture.componentInstance['quickSearch'].set(' L-100234 ');
+    fixture.componentInstance['submitQuickSearch']();
+    expect(navSpy).toHaveBeenCalledWith(['/ltl/loads', 'L-100234']);
+    expect(fixture.componentInstance['quickSearch']()).toBe('');
+  });
+
+  it('does not navigate on an empty quick-search', () => {
+    const router = TestBed.inject(Router);
+    const navSpy = spyOn(router, 'navigate').and.resolveTo(true);
+    fixture.componentInstance['quickSearch'].set('   ');
+    fixture.componentInstance['submitQuickSearch']();
+    expect(navSpy).not.toHaveBeenCalled();
   });
 });
 

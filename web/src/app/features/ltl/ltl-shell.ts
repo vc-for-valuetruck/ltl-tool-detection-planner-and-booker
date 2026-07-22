@@ -1,5 +1,16 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  HostListener,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import {
   ActivatedRoute,
   NavigationEnd,
@@ -37,7 +48,7 @@ interface NavGroup {
 @Component({
   selector: 'app-ltl-shell',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [CommonModule, FormsModule, RouterOutlet, RouterLink, RouterLinkActive],
   templateUrl: './ltl-shell.html',
   styleUrls: ['./ltl-shell.css'],
 })
@@ -49,6 +60,10 @@ export class LtlShell implements OnInit, OnDestroy {
   protected readonly collapsed = signal(false);
   /** Slide-out overlay open on tablet/narrow widths. */
   protected readonly mobileOpen = signal(false);
+
+  /** Global "go to load" quick-search box in the header (focused by Alt+S). */
+  @ViewChild('quickSearchInput') private quickSearchInput?: ElementRef<HTMLInputElement>;
+  protected readonly quickSearch = signal('');
 
   /** The active leaf route's breadcrumb label ("Dock", "Billing", …); null on the Search landing. */
   protected readonly crumb = signal<string | null>(null);
@@ -109,6 +124,25 @@ export class LtlShell implements OnInit, OnDestroy {
 
   protected closeMobile(): void {
     this.mobileOpen.set(false);
+  }
+
+  /** Alt+S focuses the global quick-search from anywhere in the workspace (familiar TMS shortcut). */
+  @HostListener('document:keydown', ['$event'])
+  protected onGlobalKeydown(event: KeyboardEvent): void {
+    if (event.altKey && (event.key === 's' || event.key === 'S')) {
+      event.preventDefault();
+      this.quickSearchInput?.nativeElement.focus();
+      this.quickSearchInput?.nativeElement.select();
+    }
+  }
+
+  /** Jump straight to a load's detail by number/id. The detail route resolves it against Alvys. */
+  protected submitQuickSearch(): void {
+    const value = this.quickSearch().trim();
+    if (!value) return;
+    this.router.navigate(['/ltl/loads', value]);
+    this.quickSearch.set('');
+    this.quickSearchInput?.nativeElement.blur();
   }
 
   /** Walks to the deepest activated child and reads its `data.crumb` for the breadcrumb bar. */
