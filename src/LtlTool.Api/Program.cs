@@ -62,6 +62,14 @@ builder.Services.AddAuthorizationBuilder()
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new AllowedEmailDomainRequirement());
     })
+    // Service-to-service policy for the Yard→LTL ingestion endpoint. Satisfied by the Yard managed
+    // identity's Entra app role / scope (not an email domain). The handler is registered in
+    // AddYardIngestion; see YardEventIngestHandler for the Demo-mode / disabled-check escape hatches.
+    .AddPolicy(AccessPolicies.YardEventIngest, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new LtlTool.Api.Features.Ltl.YardIngestion.YardEventIngestRequirement());
+    })
     .SetDefaultPolicy(new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .AddRequirements(new AllowedEmailDomainRequirement())
