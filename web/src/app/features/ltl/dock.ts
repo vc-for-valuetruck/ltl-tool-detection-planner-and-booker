@@ -14,6 +14,7 @@ import { DispatchPlannerService } from './dispatch-planner.service';
 import { DockCombineResponse, DockNotificationResult } from './dock.models';
 import { DockService } from './dock.service';
 import { LtlParentChildBadge } from './ltl-parent-child-badge';
+import { LtlStatusChip } from './ltl-status-chip';
 
 /** The dock-worker flow is a linear step machine; each value is one screen in the wizard. */
 type DockStep = 'warehouse' | 'arrivals' | 'siblings' | 'review' | 'result';
@@ -43,7 +44,7 @@ type DockCandidateSort = 'best' | 'revenue' | 'earliest';
 @Component({
   selector: 'app-dock',
   standalone: true,
-  imports: [CommonModule, FormsModule, DatePipe, LtlParentChildBadge],
+  imports: [CommonModule, FormsModule, DatePipe, LtlParentChildBadge, LtlStatusChip],
   templateUrl: './dock.html',
   styleUrls: ['./dock.css'],
   host: { '[class.printing-bol]': "printMode() === 'bol'", '[class.printing-card]': "printMode() === 'clickcard'" },

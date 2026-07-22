@@ -38,6 +38,24 @@
   --info-text: #1e40af;
   --info-row-bg: #eff6ff;
 
+  /* Status-chip families (soft tint + darker text, WCAG AA). Transit/Delivered/At-Risk/
+     Exception reuse info/success/warning/danger above; these add the remaining families. */
+  --status-open-bg: #f1f5f9;
+  --status-open-text: #334155;
+  --status-open-border: #cbd5e1;
+
+  --status-assigned-bg: #e0e7ff;
+  --status-assigned-text: #3730a3;
+  --status-assigned-border: #c7d2fe;
+
+  --status-billing-bg: #f3e8ff;
+  --status-billing-text: #6b21a8;
+  --status-billing-border: #e9d5ff;
+
+  --status-unknown-bg: #f3f4f6;
+  --status-unknown-text: #4b5563;
+  --status-unknown-border: #e5e7eb;
+
   --radius-card: 6px;
   --radius-pill: 999px;
 

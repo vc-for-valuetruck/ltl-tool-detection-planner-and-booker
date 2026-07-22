@@ -2,6 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { LtlService } from './ltl.service';
+import { LtlStatusChip } from './ltl-status-chip';
 import { LtlLoadSummary } from './ltl.models';
 
 /**
@@ -12,7 +13,7 @@ import { LtlLoadSummary } from './ltl.models';
 @Component({
   selector: 'app-ltl-exceptions',
   standalone: true,
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, LtlStatusChip],
   templateUrl: './ltl-exceptions.html',
   styleUrls: ['./ltl-worklist.css'],
 })

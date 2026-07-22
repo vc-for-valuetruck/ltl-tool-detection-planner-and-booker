@@ -3,6 +3,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { LtlService } from './ltl.service';
+import { LtlStatusChip } from './ltl-status-chip';
 import {
   AssignmentState,
   BillingBadge,
@@ -42,7 +43,7 @@ interface Column {
 @Component({
   selector: 'app-ltl-console',
   standalone: true,
-  imports: [DatePipe, DecimalPipe, FormsModule, RouterLink],
+  imports: [DatePipe, DecimalPipe, FormsModule, RouterLink, LtlStatusChip],
   templateUrl: './ltl-console.html',
   styleUrls: ['./ltl-worklist.css', './ltl-console.css'],
 })
