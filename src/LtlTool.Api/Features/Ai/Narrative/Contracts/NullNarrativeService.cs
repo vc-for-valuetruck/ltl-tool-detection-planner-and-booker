@@ -1,14 +1,12 @@
 namespace LtlTool.Api.Features.Ai.Narrative.Contracts;
 
-// TODO(#149): remove once NarrativeService lands. Honest "not wired yet" fallback so the app
-// boots and the endpoint behaves predictably before the real NarrativeService (#149) is
-// registered. Registered with TryAdd so #149's real registration wins at merge time.
-
 /// <summary>
-/// No-op <see cref="INarrativeService"/>. Always reports "no narrative available" as a definitive,
-/// non-transient result — <c>(null, Cached: false)</c> — which the endpoint maps to
-/// <c>404 plan-not-found</c> when the feature flag is on. It never calls an AI provider, so a
-/// fresh clone / CI / the demo never reach OpenAI. This is a placeholder, not the real generator.
+/// Honest fail-closed <see cref="INarrativeService"/> used when <c>AI:NarrativeEnabled</c> is off
+/// (or the real <c>NarrativeService</c> is not registered). Always reports "no narrative available"
+/// as a definitive, non-transient result — <c>(null, Cached: false)</c> — which the endpoint maps
+/// to <c>404 plan-not-found</c>. Never calls an AI provider, so a fresh clone / CI / the demo
+/// never reach OpenAI. This is the intended default when the feature flag is off; the real
+/// <see cref="INarrativeService"/> implementation (PR #149) takes over when the flag is on.
 /// </summary>
 public sealed class NullNarrativeService : INarrativeService
 {

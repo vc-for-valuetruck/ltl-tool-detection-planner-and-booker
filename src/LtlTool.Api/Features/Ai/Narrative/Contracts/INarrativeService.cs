@@ -1,10 +1,8 @@
 namespace LtlTool.Api.Features.Ai.Narrative.Contracts;
 
-// TODO(#149): remove once NarrativeService lands. This is a THIN stub contract so the
-// endpoint (#150) compiles independently of the parallel NarrativeService PR (#149).
-// The shape here is the agreed convergence contract between #149, #150 and #151 — do not
-// drift it without coordinating with those PRs. When #149 merges first, this file is
-// deleted and the endpoint binds to the real interface/DTO from the service assembly.
+// Shared contract between the narrative endpoint (PR #150), the frontend component (PR #151),
+// and the NarrativeService implementation (PR #149). Do not drift the shape without
+// coordinating changes across all three.
 
 /// <summary>
 /// Generates a short, citation-backed narrative ("why review / what to verify / next action")

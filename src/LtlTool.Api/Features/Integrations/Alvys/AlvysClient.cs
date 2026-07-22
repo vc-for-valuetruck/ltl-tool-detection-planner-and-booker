@@ -148,7 +148,7 @@ public sealed class AlvysClient(
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
         {
             logger.LogError(ex, "Alvys document {DocumentId} download transport error: {Message}",
                 documentId, ex.Message);
@@ -324,7 +324,7 @@ public sealed class AlvysClient(
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
         {
             // Log the exception type/message but not credentials or payloads.
             logger.LogError(ex, "Alvys {Path} transport error: {Message}", path, ex.Message);
@@ -366,7 +366,7 @@ public sealed class AlvysClient(
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
         {
             // Log the exception type/message but not credentials or payloads.
             logger.LogError(ex, "Alvys {Path} transport error: {Message}", path, ex.Message);
@@ -409,7 +409,7 @@ public sealed class AlvysClient(
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
         {
             // Log the exception type/message but not credentials or payloads.
             logger.LogError(ex, "Alvys {Path} transport error: {Message}", path, ex.Message);
@@ -455,7 +455,7 @@ public sealed class AlvysClient(
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
         {
             // Log the exception type/message but not credentials or payloads.
             logger.LogError(ex, "Alvys {Path} transport error: {Message}", path, ex.Message);
