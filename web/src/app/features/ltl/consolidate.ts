@@ -52,6 +52,15 @@ export interface CorridorPickerRow {
    * live lane is selected. `null` for pilot-corridor rows (which use the seed/candidate path).
    */
   opportunity: ConsolidationOpportunity | null;
+  /**
+   * Projected consolidation uplift in dollars for the representative live opportunity on this
+   * lane. `null` for pilot-corridor rows (no representative opportunity yet) and for live lanes
+   * whose backing opportunity had no uplift computed. Rendered as a `+$X` chip on the corridor
+   * picker so the tab leads with money, not just counts. Never fabricated — the value comes
+   * straight from `ConsolidationOpportunity.projectedUplift`, which is computed server-side from
+   * real Alvys revenue + mileage in `ConsolidationOpportunityService`.
+   */
+  projectedUplift: number | null;
 }
 
 /** Stable lane key from an opportunity load pair — normalises case/whitespace. */
@@ -97,6 +106,12 @@ export function buildLiveLaneRows(
       isLiveLane: true,
       outsidePilot: true,
       opportunity: rep,
+      // Representative opportunity's uplift — the same figure the plan-detail Economics panel
+      // shows if the dispatcher picks this lane and opens the plan. Never fabricated.
+      projectedUplift:
+        typeof rep.projectedUplift === 'number' && Number.isFinite(rep.projectedUplift)
+          ? rep.projectedUplift
+          : null,
     });
   }
   // Busiest lane first so the picker reads high-value → low-value.
@@ -343,6 +358,10 @@ export class Consolidate implements OnInit {
           isLiveLane: false,
           outsidePilot: false,
           opportunity: null,
+          // Pilot rows have no representative opportunity yet; the live-lane sweep is where
+          // per-opportunity uplift comes from. Stays null so the picker renders no chip until
+          // there is a real number to show.
+          projectedUplift: null,
         }));
         // A live lane whose origin→dest state pair matches a pilot corridor is folded into that
         // pilot row (not shown twice), so remember the pilot corridors' state pairs.

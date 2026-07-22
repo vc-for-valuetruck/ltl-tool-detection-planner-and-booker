@@ -32,6 +32,51 @@ export class LtlBilling implements OnInit {
 
   protected readonly hasLoads = computed(() => this.loads().length > 0);
 
+  /**
+   * Sum of `billing.unpaidBalance` across the currently-filtered worklist — the demo's
+   * headline "revenue-at-risk" number on the Billing tab. Honest by construction: rows whose
+   * unpaid balance Alvys did not populate are skipped (not counted as zero), and the pill only
+   * renders when at least one row contributed a real number. Never fabricated. Reuses the same
+   * `BillingReadinessResult.unpaidBalance` the underlying table cell already shows.
+   */
+  protected readonly revenueAtRisk = computed<number | null>(() => {
+    let sum = 0;
+    let contributed = 0;
+    for (const load of this.loads()) {
+      const v = load.billing?.unpaidBalance;
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        sum += v;
+        contributed++;
+      }
+    }
+    return contributed > 0 ? sum : null;
+  });
+
+  /**
+   * Count of loads carrying at least one risk-side billing badge (i.e. anything except
+   * ReadyToBill / AlreadyInvoiced). Displayed next to the revenue-at-risk pill so the tile
+   * reads as: "$X across N loads with revenue-blocking exceptions".
+   */
+  protected readonly loadsWithRiskBadges = computed<number>(() => {
+    const riskBadges = new Set<BillingBadge>([
+      'MissingRate',
+      'MissingPod',
+      'MissingAccessorialReview',
+      'MissingWeight',
+      'CustomerReviewNeeded',
+      'ExceptionBlockingBilling',
+      'PossibleUnbilledAccessorial',
+      'CarrierAccessorialMismatch',
+      'InvoiceAmountDrift',
+    ]);
+    let n = 0;
+    for (const load of this.loads()) {
+      const badges = load.billing?.badges ?? [];
+      if (badges.some((b) => riskBadges.has(b))) n++;
+    }
+    return n;
+  });
+
   protected readonly badgeFilters: BadgeFilter[] = [
     { value: null, label: 'All' },
     { value: 'ReadyToBill', label: 'Ready to Bill' },
