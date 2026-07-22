@@ -59,7 +59,9 @@ export class LtlSearch implements OnInit {
   protected readonly totalScanned = signal(0);
   protected readonly totalPairsFound = signal(0);
   protected readonly generatedAt = signal<string | null>(null);
-  protected readonly dataSource = signal('Alvys va336 (live)');
+  // Honest default — the real label arrives from the API's dataSource field on success. Rendering
+  // "—" in the header while loading avoids the footer contradicting the loading / error card.
+  protected readonly dataSource = signal('—');
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly expanded = signal(false);
@@ -88,7 +90,7 @@ export class LtlSearch implements OnInit {
           this.totalScanned.set(response.totalScanned ?? 0);
           this.totalPairsFound.set(response.totalPairsFound ?? 0);
           this.generatedAt.set(response.generatedAt ?? null);
-          this.dataSource.set(response.dataSource || 'Alvys va336 (live)');
+          this.dataSource.set(response.dataSource || 'Live Alvys');
           this.loading.set(false);
         },
         error: (err) => {

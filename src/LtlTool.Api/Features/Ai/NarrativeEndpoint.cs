@@ -40,7 +40,8 @@ public sealed class NarrativeEndpoint(
     /// <para>
     /// When the response is null the <c>Cached</c> tuple value is the discriminator between a
     /// definitive plan-not-found (<c>false</c>) and a transient AI outage (<c>true</c>). This is the
-    /// convergence contract with #149 — see the DTO/interface TODO(#149) notes.
+    /// shared convergence contract between this endpoint, <c>INarrativeService</c>, and the
+    /// frontend <c>&lt;ai-narrative&gt;</c> component — do not drift it in one place only.
     /// </para>
     /// </summary>
     [HttpGet("consolidation/narrative")]

@@ -79,8 +79,10 @@ on the environment to boot with no live tenant. See §7 for what that means on s
 
 Open the SPA and go to **`/ltl`**. Drive the tabs in this order.
 
-### A. Search
-1. Land on the **Search** tab — normalized LTL loads (not a raw Alvys grid).
+> **Navigation note (added 2026-07-22).** The `/ltl` landing page renders the *"Today's consolidations"* opportunity queue + Laredo arrivals board — not the saved-views/filter grid. For steps A and B below, click the **Loads** entry in the sidebar (URL: `/ltl/loads`, the `ltl-console` component). Saved-view chips + row actions live there. Following steps A/B without switching to Loads first lands on a screen that has no saved-view chips and looks like the feature is missing.
+
+### A. Search (click **Loads** in the sidebar first — URL `/ltl/loads`)
+1. Land on the **Loads** tab — normalized LTL loads (not a raw Alvys grid).
 2. Apply a **saved view** chip: *Unassigned LTL*, *High Revenue / Low Complexity*,
    *Today's Pickup*, *This Week's Deliveries*, *Missing Billing Data*, *Ready to Bill*,
    or *Exceptions*. **Talking point:** presets encode a dispatcher's recurring questions.
