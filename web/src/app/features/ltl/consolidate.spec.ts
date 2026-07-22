@@ -365,6 +365,7 @@ function pilotRow(overrides: Partial<CorridorPickerRow> = {}): CorridorPickerRow
     isLiveLane: false,
     outsidePilot: false,
     opportunity: null,
+    projectedUplift: null,
     ...overrides,
   };
 }
