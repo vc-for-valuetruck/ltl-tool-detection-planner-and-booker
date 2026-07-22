@@ -90,8 +90,10 @@ builder.Services.AddAlvysIntegration(builder.Configuration);
 // internal assignment audit) on top of the read-only Alvys integration.
 builder.Services.AddLtlDecisionSupport(builder.Configuration);
 
-// AI narrative HTTP surface (Phase 2 Sprint 1, #150). Binds AI options and registers a fallback
-// INarrativeService until the real NarrativeService (#149) lands. Read-only against Alvys.
+// AI narrative HTTP surface (Phase 2 · Sprint 1, #149/#150). Binds AI options and registers the
+// real NarrativeService (Azure OpenAI, DefaultAzureCredential, 10-min in-memory cache) when
+// AI:NarrativeEnabled=true, else a fail-closed NullNarrativeService. Kill-switched off by default
+// and read-only against Alvys — no writeback path, no EF DbSet.
 builder.Services.AddAiNarrative(builder.Configuration);
 
 // CORS for the SPA.
