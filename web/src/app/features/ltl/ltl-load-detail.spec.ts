@@ -2,6 +2,7 @@ import { LtlLoadDetail } from './ltl-load-detail';
 import { LtlService } from './ltl.service';
 import { LtlLoadSummary, LtlPlace, MatchFactor, MatchResult } from './ltl.models';
 import { YardArtifactView } from './yard-artifacts.models';
+import { AlvysLoadDocument, BolFieldSuggestionView } from './bol.models';
 import { ActivatedRoute } from '@angular/router';
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
@@ -20,6 +21,8 @@ describe('LtlLoadDetail', () => {
     const withArtifacts: Partial<LtlService> = {
       yardArtifacts: () => of([]),
       getMatches: () => of([]),
+      loadDocuments: () => of([]),
+      bolSuggestions: () => of([]),
       ...stub,
     };
     TestBed.configureTestingModule({
@@ -260,5 +263,140 @@ describe('LtlLoadDetail', () => {
     });
     c.ngOnInit();
     expect(c['documentCount']()).toBe(2);
+  });
+
+  // --- BOL intelligence (suggest-only, fail-closed) ------------------------
+
+  function bolDoc(overrides: Partial<AlvysLoadDocument> = {}): AlvysLoadDocument {
+    return { id: 'doc-1', attachmentPath: 'BOL.pdf', attachmentType: 'BillOfLading', ...overrides };
+  }
+
+  function suggestion(overrides: Partial<BolFieldSuggestionView> = {}): BolFieldSuggestionView {
+    return {
+      id: 's1',
+      loadNumber: 'L-1',
+      documentId: 'doc-1',
+      documentName: 'BOL.pdf',
+      field: 'PalletCount',
+      value: '12',
+      confidence: 0.9,
+      evidenceQuote: 'Pallet count: 12',
+      extractorName: 'RegexBolFieldExtractor',
+      status: 'Pending',
+      createdBy: 'dispatch@valuetruck.com',
+      createdAt: '2026-07-22T00:00:00Z',
+      ...overrides,
+    };
+  }
+
+  it('loads BOL documents and stored suggestions for the load number', () => {
+    let askedDocs: string | undefined;
+    const c = build('L-100234', {
+      getLoad: () => of(load({ loadNumber: 'L-100234' })),
+      loadDocuments: (n) => {
+        askedDocs = n;
+        return of([bolDoc({})]);
+      },
+      bolSuggestions: () => of([suggestion({ status: 'Accepted', decidedBy: 'ops@valuetruck.com' })]),
+    });
+    c.ngOnInit();
+    expect(askedDocs).toBe('L-100234');
+    expect(c['bolDocuments']().length).toBe(1);
+    expect(c['bolSuggestions']().length).toBe(1);
+  });
+
+  it('keeps the load visible when the BOL context fetch fails', () => {
+    const c = build('L-1', {
+      getLoad: () => of(load({ loadNumber: 'L-1' })),
+      loadDocuments: () => throwError(() => ({ message: 'boom' })),
+      bolSuggestions: () => throwError(() => ({ message: 'boom' })),
+    });
+    c.ngOnInit();
+    expect(c['hasLoad']()).toBeTrue();
+    expect(c['bolDocuments']()).toEqual([]);
+    expect(c['bolSuggestions']()).toEqual([]);
+  });
+
+  it('reads a BOL document and merges fresh suggestions ahead of existing ones', () => {
+    let askedDoc: string | undefined;
+    const c = build('L-1', {
+      getLoad: () => of(load({ loadNumber: 'L-1' })),
+      bolSuggestions: () => of([suggestion({ id: 'old', documentId: 'doc-2', field: 'Weight' })]),
+      readBol: (_n, docId) => {
+        askedDoc = docId;
+        return of({
+          loadNumber: 'L-1',
+          documentId: 'doc-1',
+          extractorName: 'RegexBolFieldExtractor',
+          count: 1,
+          suggestions: [suggestion({ id: 'new' })],
+        });
+      },
+    });
+    c.ngOnInit();
+    c['readBol'](bolDoc({}));
+    expect(askedDoc).toBe('doc-1');
+    expect(c['bolSuggestions']().map((s) => s.id)).toEqual(['new', 'old']);
+    expect(c['bolReadingDocId']()).toBeNull();
+    expect(c['bolError']()).toBeNull();
+  });
+
+  it('fails closed: a zero-count read shows a legible message and stores no suggestions', () => {
+    const c = build('L-1', {
+      getLoad: () => of(load({ loadNumber: 'L-1' })),
+      readBol: () => of({
+        loadNumber: 'L-1',
+        documentId: 'doc-1',
+        extractorName: 'RegexBolFieldExtractor',
+        count: 0,
+        suggestions: [],
+      }),
+    });
+    c.ngOnInit();
+    c['readBol'](bolDoc({}));
+    expect(c['bolSuggestions']()).toEqual([]);
+    expect(c['bolError']()).toContain('No BOL fields could be read');
+  });
+
+  it('fails closed: a read error (422) surfaces inline and never blanks the tab', () => {
+    const c = build('L-1', {
+      getLoad: () => of(load({ loadNumber: 'L-1' })),
+      readBol: () => throwError(() => ({ error: { error: 'No text layer in this scan.' } })),
+    });
+    c.ngOnInit();
+    c['readBol'](bolDoc({}));
+    expect(c['bolError']()).toBe('No text layer in this scan.');
+    expect(c['bolReadingDocId']()).toBeNull();
+    expect(c['hasLoad']()).toBeTrue();
+  });
+
+  it('accepts a suggestion and replaces it with the decided view in place', () => {
+    const c = build('L-1', {
+      getLoad: () => of(load({ loadNumber: 'L-1' })),
+      bolSuggestions: () => of([suggestion({ id: 's1' })]),
+      acceptBolSuggestion: (id) => of(suggestion({ id, status: 'Accepted', decidedBy: 'ops@valuetruck.com' })),
+    });
+    c.ngOnInit();
+    c['acceptBol'](suggestion({ id: 's1' }));
+    expect(c['bolSuggestions']()[0].status).toBe('Accepted');
+    expect(c['bolDecidingId']()).toBeNull();
+  });
+
+  it('rejects a suggestion and replaces it with the decided view in place', () => {
+    const c = build('L-1', {
+      getLoad: () => of(load({ loadNumber: 'L-1' })),
+      bolSuggestions: () => of([suggestion({ id: 's1' })]),
+      rejectBolSuggestion: (id) => of(suggestion({ id, status: 'Rejected' })),
+    });
+    c.ngOnInit();
+    c['rejectBol'](suggestion({ id: 's1' }));
+    expect(c['bolSuggestions']()[0].status).toBe('Rejected');
+  });
+
+  it('labels BOL fields and formats confidence as a percentage', () => {
+    const c = build('L-1', { getLoad: () => of(load({})) });
+    expect(c['bolFieldLabel']('PalletCount')).toBe('Pallet count');
+    expect(c['bolFieldLabel']('HazmatFlag')).toBe('Hazmat');
+    expect(c['bolConfidencePct'](0.9)).toBe('90%');
   });
 });

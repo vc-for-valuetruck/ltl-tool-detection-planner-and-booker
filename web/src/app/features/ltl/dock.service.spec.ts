@@ -77,4 +77,18 @@ describe('DockService', () => {
     req.flush({ plan: {}, audit: {} } as unknown as DockCombineResponse);
     expect(result).toBeDefined();
   });
+
+  it('POST bol-packet.pdf requests a blob and returns the raw PDF bytes', () => {
+    let result: Blob | undefined;
+    service
+      .downloadBolPacket({ parentLoadId: 'L-1', siblingLoadIds: ['L-2'], corridorCode: 'LAREDO_TO_DALLAS' })
+      .subscribe((v) => (result = v));
+
+    const req = http.expectOne(`${base}/bol-packet.pdf`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.responseType).toBe('blob');
+    expect(req.request.body.parentLoadId).toBe('L-1');
+    req.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
+    expect(result).toBeInstanceOf(Blob);
+  });
 });
