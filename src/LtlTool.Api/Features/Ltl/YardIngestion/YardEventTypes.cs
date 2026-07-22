@@ -141,7 +141,7 @@ public static class YardEventClassifier
     /// Lower-cases and collapses <c>_</c>, <c>-</c>, whitespace, and <c>/</c> to <c>.</c> so
     /// <c>Truck_Arrived</c>, <c>truck-arrived</c>, and <c>truck.arrived</c> all match one key.
     /// </summary>
-    internal static string Normalize(string eventType)
+    public static string Normalize(string eventType)
     {
         var chars = new char[eventType.Length];
         var length = 0;

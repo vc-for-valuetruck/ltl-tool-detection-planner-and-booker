@@ -1,3 +1,4 @@
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using LtlTool.Api.Data;
 using LtlTool.Api.Features.Ltl.YardIngestion;
@@ -45,7 +46,7 @@ public sealed class YardEventIngestionServiceTests : IDisposable
     private YardEventIngestionService NewService(AppDbContext ctx, YardIngestionOptions? options = null) =>
         new(
             new EfYardEventStore(ctx),
-            Options.Create(options ?? new YardIngestionOptions()),
+            Microsoft.Extensions.Options.Options.Create(options ?? new YardIngestionOptions()),
             new YardIngestionMetrics(_metricsProvider.GetRequiredService<IMeterFactory>()),
             new FixedTimeProvider(Now),
             NullLogger<YardEventIngestionService>.Instance);
