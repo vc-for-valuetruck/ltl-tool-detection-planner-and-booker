@@ -252,6 +252,38 @@ set to an earlier commit SHA. Database changes are **not** reverted by an app ro
 if a migration must be undone, apply the corresponding down-migration deliberately and
 treat it as a separate, reviewed change.
 
+## Dock combine email notifications (Microsoft Graph sendMail)
+
+When a dock worker commits a combine, the API emails a plan summary to the recipients
+configured for that yard (`Ltl:Dock:NotifyRecipients`). Delivery uses **Microsoft Graph
+`sendMail`** (app-only / client-credentials), which fits the existing Entra stack. Until
+the app registration below is provisioned the email channel reports **NotConfigured**
+(honest — nothing is sent, and the combine is never blocked). Once configured, real sends
+move to **Delivered**; a genuine failure reports **Failed** with a retry chip.
+
+**One-time Entra setup (owner: Dustin):**
+
+1. Entra ID → App registrations → **New registration** (or reuse a dedicated mail app).
+2. API permissions → **Microsoft Graph → Application permissions → `Mail.Send`**.
+3. **Grant admin consent** for the tenant (required — application permission).
+4. Certificates & secrets → create a client secret (store in Key Vault, not source).
+5. Choose a real **sender mailbox** the app may send as (licensed or shared mailbox).
+
+**Server-side config the API expects** (env / Key Vault, never client-side):
+
+| Setting | Value |
+| --- | --- |
+| `Notifications__Email__Enabled` | `true` |
+| `Notifications__Email__FromAddress` | the sender mailbox (e.g. `dispatch@valuetruck.com`) |
+| `Notifications__Email__Graph__TenantId` | Entra tenant id |
+| `Notifications__Email__Graph__ClientId` | app registration (client) id |
+| `Notifications__Email__Graph__ClientSecret` | client secret (Key Vault reference) |
+
+Optional: `Notifications__Email__MaxSendAttempts` (default 3) and
+`Notifications__Email__RetryBaseDelayMs` (default 500) tune the transient-failure backoff.
+Channel health (Configured/NotConfigured + last send result) is readable at
+`GET /api/ltl/notifications/channels`. No secrets are ever returned to the SPA.
+
 ## Safety posture
 
 - Alvys credentials stay server-side in the API container.

@@ -16,7 +16,8 @@ namespace LtlTool.Api.Features.Ltl.Notifications;
 [Produces("application/json")]
 public sealed class NotificationController(
     INotificationStore store,
-    IEnumerable<INotificationChannel> channels) : ControllerBase
+    IEnumerable<INotificationChannel> channels,
+    IMailOutbox mailOutbox) : ControllerBase
 {
     private readonly IReadOnlyList<INotificationChannel> _channels = channels.ToArray();
 
@@ -47,15 +48,23 @@ public sealed class NotificationController(
     public ActionResult<IReadOnlyList<NotificationChannelStatus>> GetChannels() =>
         Ok(ChannelStatuses());
 
-    private IReadOnlyList<NotificationChannelStatus> ChannelStatuses() =>
-        _channels
+    private IReadOnlyList<NotificationChannelStatus> ChannelStatuses()
+    {
+        // Only the email channel tracks a durable last-send result (via the mail outbox). Other
+        // channels report configuration state only. Honest: null last-result means "nothing sent yet".
+        var lastMail = mailOutbox.MostRecent();
+        return _channels
             .Select(c => new NotificationChannelStatus
             {
                 Channel = c.Kind,
                 Configured = c.IsConfigured,
+                LastSendState = c.Kind == NotificationChannelKind.Email ? lastMail?.State.ToString() : null,
+                LastSendDetail = c.Kind == NotificationChannelKind.Email ? lastMail?.Detail : null,
+                LastSendAt = c.Kind == NotificationChannelKind.Email ? lastMail?.UpdatedAt : null,
             })
             .OrderBy(c => c.Channel)
             .ToArray();
+    }
 }
 
 /// <summary>Feed payload: fired events (newest first), lifetime count, and channel state.</summary>
@@ -66,9 +75,16 @@ public sealed class NotificationFeedResponse
     public required IReadOnlyList<NotificationChannelStatus> Channels { get; init; }
 }
 
-/// <summary>Honest configuration state for one channel (no secrets — a boolean only).</summary>
+/// <summary>
+/// Honest configuration state for one channel (no secrets). For the email channel it also carries the
+/// last send outcome (Delivered/Failed/NotConfigured) + detail + timestamp so ops can see channel
+/// health without reading logs. Null last-send fields mean nothing has been sent on this channel yet.
+/// </summary>
 public sealed class NotificationChannelStatus
 {
     public required NotificationChannelKind Channel { get; init; }
     public required bool Configured { get; init; }
+    public string? LastSendState { get; init; }
+    public string? LastSendDetail { get; init; }
+    public DateTimeOffset? LastSendAt { get; init; }
 }

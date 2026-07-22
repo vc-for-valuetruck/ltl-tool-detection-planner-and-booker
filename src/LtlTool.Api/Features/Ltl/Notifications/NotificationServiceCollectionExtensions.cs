@@ -33,8 +33,14 @@ public static class NotificationServiceCollectionExtensions
         // is set. Registered with its own HttpClient so the POST has a bounded transport.
         services.AddHttpClient<INotificationChannel, TeamsNotificationChannel>();
 
-        // Email: honest "not configured" until Notifications:Email is enabled with SMTP host +
-        // from-address. SMTP transport is a documented follow-up (reports Pending, never a fake send).
+        // Email via Microsoft Graph sendMail (app-only). Honest "not configured" until
+        // Notifications:Email is enabled with a sender mailbox + Graph app registration (Mail.Send +
+        // admin consent). The idempotent mail outbox is a singleton so a Delivered event is never
+        // re-sent across scopes/retries; the Graph transport is a typed HttpClient used for both the
+        // token POST and the sendMail POST.
+        services.AddSingleton<IMailOutbox, InMemoryMailOutbox>();
+        services.AddHttpClient(GraphMailClient.HttpClientName);
+        services.AddSingleton<IGraphMailClient, GraphMailClient>();
         services.AddScoped<INotificationChannel, EmailNotificationChannel>();
 
         // Background poller that diffs internal source state → fires new events through the dispatcher.

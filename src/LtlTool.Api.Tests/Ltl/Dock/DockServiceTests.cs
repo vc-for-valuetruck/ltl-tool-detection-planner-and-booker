@@ -6,6 +6,7 @@ using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using LtlTool.Api.Features.Ltl.Dock;
 using LtlTool.Api.Features.Ltl.Notifications;
+using LtlTool.Api.Tests.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
 using LtlTool.Api.Tests.Ltl.Consolidation;
 using Microsoft.Extensions.Caching.Memory;
@@ -55,7 +56,7 @@ public sealed class DockServiceTests
         var audits = auditStore ?? new InMemoryConsolidationAuditStore(LtlTestFactory.Clock());
 
         var notifications = new DockNotificationService(
-            [new InAppNotificationChannel(), new EmailNotificationChannel(NotificationOptionsWrap())],
+            [new InAppNotificationChannel(), NotificationTestFactory.UnconfiguredEmailChannel()],
             new InMemoryNotificationStore(),
             Microsoft.Extensions.Options.Options.Create(dockOptions ?? new DockOptions()),
             LtlTestFactory.Clock(),
@@ -67,9 +68,6 @@ public sealed class DockServiceTests
 
         return new DockService(arrivals, candidates, plans, audits, notifications, dispatchPlanner, optsWrap);
     }
-
-    private static Microsoft.Extensions.Options.IOptions<NotificationOptions> NotificationOptionsWrap()
-        => Microsoft.Extensions.Options.Options.Create(new NotificationOptions());
 
     private static DateTimeOffset OnDay(int hour) =>
         new(Day.Year, Day.Month, Day.Day, hour, 0, 0, TimeSpan.Zero);
