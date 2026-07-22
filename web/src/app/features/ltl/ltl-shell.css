@@ -172,8 +172,44 @@
   color: var(--text-primary);
 }
 
+/* Attention count pill pinned to the right of a nav item (Exceptions = red, Signals = neutral). */
+.nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--info-bg);
+  color: var(--info-text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.nav-badge-danger {
+  background: var(--danger, #b42318);
+  color: #fff;
+}
+
 .collapsed .nav-label {
   display: none;
+}
+
+/* Collapsed rail: shrink the badge to a corner dot so it doesn't crowd the icon. */
+.collapsed .nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  min-width: 8px;
+  height: 8px;
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+}
+
+.collapsed .nav-item {
+  position: relative;
 }
 
 .side-foot {
@@ -227,6 +263,40 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+/* Global "go to load" quick-search — pinned to the right of the breadcrumb bar. */
+.quick-search {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quick-search-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.quick-search-input {
+  width: 200px;
+  max-width: 40vw;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-border);
+  background: var(--body-bg);
+  color: var(--text-primary);
+}
+
+.quick-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .hamburger {

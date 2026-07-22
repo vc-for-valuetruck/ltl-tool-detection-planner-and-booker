@@ -46,6 +46,15 @@
             >
               <span class="nav-mono" aria-hidden="true">{{ item.monogram }}</span>
               <span class="nav-label">{{ item.label }}</span>
+              @if (badgeCount(item); as n) {
+                <span
+                  class="nav-badge"
+                  [class.nav-badge-danger]="item.badge === 'exceptions'"
+                  [attr.data-testid]="'nav-badge-' + item.badge"
+                  [attr.aria-label]="n + ' needs attention'"
+                  >{{ n }}</span
+                >
+              }
             </a>
           }
         </div>
@@ -75,6 +84,22 @@
         <span aria-hidden="true">☰</span>
       </button>
       <span class="crumb" aria-label="Breadcrumb">{{ breadcrumb() }}</span>
+
+      <form class="quick-search" (ngSubmit)="submitQuickSearch()" role="search">
+        <label class="quick-search-label" for="ltl-quick-search">Go to load</label>
+        <input
+          #quickSearchInput
+          id="ltl-quick-search"
+          type="search"
+          class="quick-search-input"
+          [ngModel]="quickSearch()"
+          (ngModelChange)="quickSearch.set($event)"
+          name="quickSearch"
+          placeholder="Load #… (Alt+S)"
+          autocomplete="off"
+          data-testid="shell-quick-search"
+        />
+      </form>
     </div>
 
     <router-outlet />

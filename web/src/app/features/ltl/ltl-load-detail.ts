@@ -6,6 +6,9 @@ import { LtlLoadSummary, LtlPlace, MatchFactor, MatchResult } from './ltl.models
 import { LtlDocumentUpload } from './ltl-document-upload';
 import { YardArtifactFileView, YardArtifactView } from './yard-artifacts.models';
 
+/** The familiar TMS load-detail tab layout. */
+type DetailTab = 'details' | 'documents' | 'tracking' | 'billing';
+
 /**
  * Internal, read-only load-detail view (issue #104). Replaces the old `va336.alvys.com/loads/{n}`
  * deep-link, which 404'd because Alvys has no per-tenant subdomain and no stable public deep-link
@@ -43,6 +46,22 @@ export class LtlLoadDetail implements OnInit {
   protected readonly alvysHomeUrl = 'https://app.alvys.com/';
 
   protected readonly hasLoad = computed(() => this.load() !== null);
+
+  /** Active load-detail tab (Details / Documents / Tracking / Billing). */
+  protected readonly tab = signal<DetailTab>('details');
+  protected readonly tabs: readonly { readonly id: DetailTab; readonly label: string }[] = [
+    { id: 'details', label: 'Details' },
+    { id: 'documents', label: 'Documents' },
+    { id: 'tracking', label: 'Tracking' },
+    { id: 'billing', label: 'Billing' },
+  ];
+
+  /** Count of read-only document artifacts (#141 yard surfaces) — powers the Documents tab badge. */
+  protected readonly documentCount = computed(() => this.artifacts().length);
+
+  protected setTab(tab: DetailTab): void {
+    this.tab.set(tab);
+  }
 
   ngOnInit(): void {
     this.loadNumber.set(this.route.snapshot.paramMap.get('loadNumber') ?? '');

@@ -243,4 +243,22 @@ describe('LtlLoadDetail', () => {
     ).toBe('48×40×60 in');
     expect(c['verifiedDims'](artifact({ verifiedPallets: null }))).toBeNull();
   });
+
+  it('defaults to the Details tab and switches tabs on setTab', () => {
+    const c = build('L-1', { getLoad: () => of(load({})) });
+    expect(c['tab']()).toBe('details');
+    c['setTab']('billing');
+    expect(c['tab']()).toBe('billing');
+    c['setTab']('documents');
+    expect(c['tab']()).toBe('documents');
+  });
+
+  it('derives the Documents tab count from the yard-artifact feed', () => {
+    const c = build('L-100234', {
+      getLoad: () => of(load({ loadNumber: 'L-100234' })),
+      yardArtifacts: () => of([artifact({}), artifact({ id: 'a2' })]),
+    });
+    c.ngOnInit();
+    expect(c['documentCount']()).toBe(2);
+  });
 });

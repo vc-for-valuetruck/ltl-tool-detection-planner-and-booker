@@ -36,6 +36,26 @@
       </a>
     </div>
 
+    <div class="detail-tabs" role="tablist" aria-label="Load detail sections">
+      @for (t of tabs; track t.id) {
+        <button
+          type="button"
+          class="detail-tab"
+          role="tab"
+          [class.active]="tab() === t.id"
+          [attr.aria-selected]="tab() === t.id"
+          [attr.data-testid]="'detail-tab-' + t.id"
+          (click)="setTab(t.id)"
+        >
+          {{ t.label }}
+          @if (t.id === 'documents' && documentCount() > 0) {
+            <span class="tab-count" data-testid="detail-tab-documents-count">{{ documentCount() }}</span>
+          }
+        </button>
+      }
+    </div>
+
+    @if (tab() === 'details') {
     <div class="detail-grid">
       <div class="card detail-card">
         <h2>Customer</h2>
@@ -43,34 +63,6 @@
           <dt>Customer</dt><dd>{{ l.customerName ?? '—' }}</dd>
           <dt>PO #</dt><dd>{{ l.poNumber ?? '—' }}</dd>
           <dt>Order #</dt><dd>{{ l.orderNumber ?? '—' }}</dd>
-        </dl>
-      </div>
-
-      <div class="card detail-card">
-        <h2>Lane &amp; schedule</h2>
-        <dl>
-          <dt>Origin</dt><dd>{{ place(l.origin) }}</dd>
-          <dt>Destination</dt><dd>{{ place(l.destination) }}</dd>
-          <dt>Pickup (scheduled)</dt>
-          <dd>{{ l.scheduledPickupAt ? (l.scheduledPickupAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
-          <dt>Pickup (actual)</dt>
-          <dd>{{ l.actualPickupAt ? (l.actualPickupAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
-          <dt>Delivery (scheduled)</dt>
-          <dd>{{ l.scheduledDeliveryAt ? (l.scheduledDeliveryAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
-          <dt>Delivery (actual)</dt>
-          <dd>{{ l.actualDeliveryAt ? (l.actualDeliveryAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
-          @if (l.predictedDeliveryAt) {
-            <dt>Delivery (predicted)</dt>
-            <dd data-testid="detail-predicted-eta">
-              {{ l.predictedDeliveryAt | date: 'MMM d, y, h:mm a' }}
-              @if (l.predictedLate) {
-                <span class="chip chip-warn" data-testid="detail-predicted-late">Predicted late</span>
-              }
-              @if (l.etaBasis) {
-                <span class="eta-basis">{{ l.etaBasis }}</span>
-              }
-            </dd>
-          }
         </dl>
       </div>
 
@@ -94,54 +86,6 @@
         </dl>
       </div>
     </div>
-
-    <div class="card detail-card">
-      <h2>Billing readiness</h2>
-      <div class="chip-row">
-        @for (badge of l.billing.badges; track badge) {
-          <span [class]="badgeClass(badge)">{{ badge }}</span>
-        } @empty {
-          <span class="muted">No billing badges.</span>
-        }
-      </div>
-      @if (l.billing.missingFields.length) {
-        <p class="detail-note">Missing: {{ l.billing.missingFields.join(', ') }}</p>
-      }
-      @if (l.billing.badges.includes('MissingPod')) {
-        <app-ltl-document-upload [loadNumber]="l.loadNumber ?? l.id" data-testid="missing-pod-upload" />
-      }
-    </div>
-
-    <div class="card detail-card" data-testid="accessorial-review">
-      <h2>Accessorial review</h2>
-      @if (!l.accessorialReview.evaluated) {
-        <p class="detail-note">Not evaluated — no trip stops, notes, or documents were available. This is not a clean bill of health.</p>
-      } @else if (l.accessorialReview.candidates.length) {
-        <div class="chip-row">
-          @for (c of l.accessorialReview.candidates; track $index) {
-            <span [class]="candidateChipClass(c.status)" [title]="c.evidence">
-              {{ c.reason }}@if (c.status !== 'Likely') { · {{ c.status }} }
-            </span>
-          }
-        </div>
-        <p class="detail-note">Deterministic evidence only — no dollar amount is computed. The accessorial team prices from the cited Alvys record.</p>
-      } @else {
-        <p class="detail-note">Evaluated — no accessorial evidence found in stops, notes, or documents.</p>
-      }
-    </div>
-
-    @if (l.hasExceptions) {
-      <div class="card detail-card">
-        <h2>Exceptions</h2>
-        <div class="chip-row">
-          @for (ex of l.exceptions; track ex.code) {
-            <span [class]="ex.blocksBilling ? 'chip chip-danger' : 'chip chip-warn'" [title]="ex.message">
-              {{ ex.message }}@if (ex.blocksBilling) { · blocks billing }
-            </span>
-          }
-        </div>
-      </div>
-    }
 
     <div class="card detail-card" data-testid="recommended-matches">
       <h2>Recommended matches</h2>
@@ -217,6 +161,103 @@
         <p class="muted" data-testid="matches-empty">No fleet candidates could be ranked for this load.</p>
       }
     </div>
+    }
+
+    @if (tab() === 'tracking') {
+    <div class="card detail-card">
+      <h2>Lane &amp; schedule</h2>
+      <dl>
+        <dt>Origin</dt><dd>{{ place(l.origin) }}</dd>
+        <dt>Destination</dt><dd>{{ place(l.destination) }}</dd>
+        <dt>Pickup (scheduled)</dt>
+        <dd>{{ l.scheduledPickupAt ? (l.scheduledPickupAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
+        <dt>Pickup (actual)</dt>
+        <dd>{{ l.actualPickupAt ? (l.actualPickupAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
+        <dt>Delivery (scheduled)</dt>
+        <dd>{{ l.scheduledDeliveryAt ? (l.scheduledDeliveryAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
+        <dt>Delivery (actual)</dt>
+        <dd>{{ l.actualDeliveryAt ? (l.actualDeliveryAt | date: 'MMM d, y, h:mm a') : '—' }}</dd>
+        @if (l.predictedDeliveryAt) {
+          <dt>Delivery (predicted)</dt>
+          <dd data-testid="detail-predicted-eta">
+            {{ l.predictedDeliveryAt | date: 'MMM d, y, h:mm a' }}
+            @if (l.predictedLate) {
+              <span class="chip chip-warn" data-testid="detail-predicted-late">Predicted late</span>
+            }
+            @if (l.etaBasis) {
+              <span class="eta-basis">{{ l.etaBasis }}</span>
+            }
+          </dd>
+        }
+      </dl>
+    </div>
+
+    @if (l.hasExceptions) {
+      <div class="card detail-card">
+        <h2>Exceptions</h2>
+        <div class="chip-row">
+          @for (ex of l.exceptions; track ex.code) {
+            <span [class]="ex.blocksBilling ? 'chip chip-danger' : 'chip chip-warn'" [title]="ex.message">
+              {{ ex.message }}@if (ex.blocksBilling) { · blocks billing }
+            </span>
+          }
+        </div>
+      </div>
+    } @else {
+      <div class="card detail-card">
+        <h2>Exceptions</h2>
+        <p class="detail-note" data-testid="tracking-no-exceptions">No exceptions on this load.</p>
+      </div>
+    }
+    }
+
+    @if (tab() === 'billing') {
+    <div class="card detail-card">
+      <h2>Billing readiness</h2>
+      <div class="chip-row">
+        @for (badge of l.billing.badges; track badge) {
+          <span [class]="badgeClass(badge)">{{ badge }}</span>
+        } @empty {
+          <span class="muted">No billing badges.</span>
+        }
+      </div>
+      @if (l.billing.missingFields.length) {
+        <p class="detail-note">Missing: {{ l.billing.missingFields.join(', ') }}</p>
+      }
+      @if (l.billing.badges.includes('MissingPod')) {
+        <app-ltl-document-upload [loadNumber]="l.loadNumber ?? l.id" data-testid="missing-pod-upload" />
+      }
+    </div>
+
+    <div class="card detail-card" data-testid="accessorial-review">
+      <h2>Accessorial review</h2>
+      @if (!l.accessorialReview.evaluated) {
+        <p class="detail-note">Not evaluated — no trip stops, notes, or documents were available. This is not a clean bill of health.</p>
+      } @else if (l.accessorialReview.candidates.length) {
+        <div class="chip-row">
+          @for (c of l.accessorialReview.candidates; track $index) {
+            <span [class]="candidateChipClass(c.status)" [title]="c.evidence">
+              {{ c.reason }}@if (c.status !== 'Likely') { · {{ c.status }} }
+            </span>
+          }
+        </div>
+        <p class="detail-note">Deterministic evidence only — no dollar amount is computed. The accessorial team prices from the cited Alvys record.</p>
+      } @else {
+        <p class="detail-note">Evaluated — no accessorial evidence found in stops, notes, or documents.</p>
+      }
+    </div>
+    }
+
+    @if (tab() === 'documents') {
+    <div class="card detail-card" data-testid="documents-pod">
+      <h2>Proof of delivery</h2>
+      @if (l.billing.badges.includes('MissingPod')) {
+        <p class="detail-note">POD is missing for this load — upload the signed document below.</p>
+        <app-ltl-document-upload [loadNumber]="l.loadNumber ?? l.id" data-testid="documents-pod-upload" />
+      } @else {
+        <p class="detail-note" data-testid="documents-pod-ok">No missing-POD flag on this load.</p>
+      }
+    </div>
 
     @if (artifacts().length) {
       <div class="card detail-card" data-testid="yard-artifacts">
@@ -266,6 +307,11 @@
           </div>
         }
       </div>
+    } @else {
+      <div class="card detail-card" data-testid="documents-empty">
+        <p class="detail-note">No yard artifacts or dock documents attached to this load.</p>
+      </div>
+    }
     }
 
     <div class="worklist-footer" data-testid="load-detail-footer">

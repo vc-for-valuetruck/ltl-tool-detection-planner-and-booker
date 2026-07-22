@@ -329,6 +329,59 @@ describe('Dock', () => {
     expect(c['loading']()).toBeFalse();
   });
 
+  it('defaults sibling sort to Best match (untouched server order)', () => {
+    const c = build({
+      getCandidates: () =>
+        of({
+          corridorCode: 'LAREDO_TO_DALLAS',
+          candidates: [
+            candidate({ loadId: 'A', revenue: 100 }),
+            candidate({ loadId: 'B', revenue: 900 }),
+          ],
+          scanTruncated: false,
+        } as ConsolidationCandidateResponse),
+    });
+    c['pickParent'](arrival({ loadNumber: 'L1' }));
+    expect(c['candidateSort']()).toBe('best');
+    expect(c['sortedCandidates']().map((x) => x.loadId)).toEqual(['A', 'B']);
+  });
+
+  it('sorts by highest revenue with missing revenue pushed to the bottom', () => {
+    const c = build({
+      getCandidates: () =>
+        of({
+          corridorCode: 'LAREDO_TO_DALLAS',
+          candidates: [
+            candidate({ loadId: 'A', revenue: 100 }),
+            candidate({ loadId: 'B', revenue: undefined }),
+            candidate({ loadId: 'C', revenue: 900 }),
+          ],
+          scanTruncated: false,
+        } as ConsolidationCandidateResponse),
+    });
+    c['pickParent'](arrival({ loadNumber: 'L1' }));
+    c['setCandidateSort']('revenue');
+    expect(c['sortedCandidates']().map((x) => x.loadId)).toEqual(['C', 'A', 'B']);
+  });
+
+  it('sorts by earliest pickup with missing pickup pushed to the bottom', () => {
+    const c = build({
+      getCandidates: () =>
+        of({
+          corridorCode: 'LAREDO_TO_DALLAS',
+          candidates: [
+            candidate({ loadId: 'A', scheduledPickupAt: '2026-07-24T08:00:00Z' }),
+            candidate({ loadId: 'B', scheduledPickupAt: undefined }),
+            candidate({ loadId: 'C', scheduledPickupAt: '2026-07-22T08:00:00Z' }),
+          ],
+          scanTruncated: false,
+        } as ConsolidationCandidateResponse),
+    });
+    c['pickParent'](arrival({ loadNumber: 'L1' }));
+    c['setCandidateSort']('earliest');
+    expect(c['sortedCandidates']().map((x) => x.loadId)).toEqual(['C', 'A', 'B']);
+  });
+
   it('formats missing values honestly as an em dash', () => {
     const c = build({});
     expect(c['formatCurrency'](null)).toBe('—');
