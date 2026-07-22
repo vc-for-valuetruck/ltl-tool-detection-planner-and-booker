@@ -89,8 +89,35 @@ Considered and rejected because:
 Same latency and safety guarantees are achievable through an API + webhooks; the coupling costs
 are not.
 
+## Alvys read contract (LTL Tool)
+
+LTL reads from Alvys only through the endpoints below. Every read is unfiltered on raw ALVYS
+statuses; server-side status-bucket mapping happens *after* the read (mirrors the FreightDNA
+PR #226 discipline). Empirical field shapes captured 2026-07-22 from the live Alvys tenant
+(`alvys_f4df3d…`) via the MCP connector; use these when writing new normalizers so the LTL
+models match observed tenant shape, not assumed shape (PR #56 field-shape record pattern).
+
+| Endpoint (Public API + MCP tool) | Consumer inside LTL | Key fields LTL depends on (verified live) |
+|---|---|---|
+| `loads_search` / `loads_get_by_id` | `LtlLoadService`, Consolidation, Billing, Dock arrivals | `Id`, `LoadNumber`, `OrderNumber`, `CustomerId`, `CustomerName`, `Status` (raw — map before filtering), `Stops[].{StopType, Status, Address, Coordinates, ScheduleType, StopWindow, AppointmentDate, ArrivedAt, DepartedAt, References[]}`, `CustomerRate.{Amount,Currency}`, `CustomerMileage.Distance.{Value,UnitOfMeasure}`, `Weight.{Value,UnitOfMeasure}`, `ScheduledPickupAt`, `ScheduledDeliveryAt`, `Fleet.{Id,Name}`, `RequiredEquipment[]`. |
+| `trips_search` / `trips_get_by_id` | `MatchScoringService` (Combined-RPM), Consolidation, Assignment history | `TripNumber`, `LoadNumber`, `Status` (raw), `Stops[]` (same shape as loads), `LoadedMileage.Distance.Value` + `EmptyMileage.Distance.Value`, `TripValue.{Amount,Currency}`, `Truck.{Id,Fleet}`, `Trailer.{Id,EquipmentType,EquipmentLength}`, `Driver1.{Id,ContractorType,Fleet,RatesV2}`. |
+| `visibility_inbound_history` | Exceptions tab (predicted-late, stuck-at-stop, active-transit union sweep — PRs #112/#122/#123/#125) | Array of `{Id, TripNumber, EventType, SharedAt, Destination, Address, Coordinates, Status}`. Never assume ordering — sort by `SharedAt` client-side. |
+| `tenders_search` / `tenders_get_by_id` | Tenders board (PRs #29/#111/#115) | Tender status, source, linked load. Reads only — writes internal. |
+| `drivers_search` / `drivers_get_by_id` | `AssignmentValidationService` driver-prediction fallback | `Status` is **ELD duty state** (`DRIVING`/`ON DUTY`/`OFF DUTY`/`SLEEPING`/`ONLINE`/`OFFLINE`) — **not** dispatch availability. Honour the CAVEAT in the tool description. Never fabricate a prediction when the endpoint returns error — render `Unavailable`. |
+| `trucks_search` / `trucks_get_by_id` | Equipment context in Match + Assign | `TruckNum`, `VinNumber`, `Year`, `Make`, `Model`, `LicenseNum`, `Status` (case-sensitive: `Active`/`Inactive`/`Repair`/`Crashed`/`Planned`/`Temporary`/`Leased Out`/`In Shop`), `Fleet.{Id,Name}`. |
+| `trailers_search` / `trailers_get_by_id` | Trailer-fit sidecar + equipment context | `TrailerNum`, `EquipmentType`, `EquipmentSize`, `Status` (same allowed set as trucks), `Fleet`. **Watch:** many rows carry `VinNum:"UNKNOWN"` and `LicenseExpiresAt:"1970-01-01"` — do not misread as a fresh timestamp; treat as `MissingDataFlag`. |
+| `carriers_*` / `customers_*` / `invoices_*` / `deductions_*` / `fuel_transactions_*` / `drivers_events_search` / `trucks_events_search` | Billing readiness, revenue-protection signals, HOS context | Reads only. `customers_search` has **no name filter** — iterate/status-filter. |
+
+### Two Alvys tenants
+
+Production tenant: `alvys_f4df3d…` (verified live 2026-07-22).
+Secondary tenant: `alvys_7cb72de…` — was `TEMPORARILY_UNAVAILABLE` at 2026-07-22 22:59 UTC; do
+not treat as an auth issue, retry via `list_external_tools` on the source id.
+
 ## How to update this doc
 
 1. New cross-app contract → add a row to the tables above **and** to the peer doc in the Yard repo.
 2. New rule discovered by a real bug → add it as a numbered rule and link the incident.
 3. Row of the workbook that references a boundary → cite this file under `Source`.
+4. New Alvys field a normalizer starts to depend on → add it to the Alvys read contract table
+   with the verified live shape, so future consumers don't assume a shape that doesn't exist.
