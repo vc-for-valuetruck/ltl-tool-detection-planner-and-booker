@@ -1,0 +1,316 @@
+name: Provision Narrative AOAI
+
+# Manual-trigger only. This workflow provisions Azure OpenAI, wires it into the
+# ltl-uat-api App Service via managed identity, and flips AI:NarrativeEnabled=true so the
+# Phase 2 Sprint 1 narrative endpoint (GET /api/ai/consolidation/narrative) can serve.
+#
+# It is the network-unblocked equivalent of a local `az` runbook: the user's corporate
+# proxy kills every `az` call with ConnectionResetError(10054). GitHub-hosted runners sit
+# outside that proxy and reach Azure cleanly.
+#
+# Every mutating step is guarded by a `show` read first, so re-running is safe: an already
+# provisioned environment prints "already provisioned" for each step and exits 0. Set
+# dry_run=true to print every mutating command (with variable expansion) without changing
+# any state.
+on:
+  workflow_dispatch:
+    inputs:
+      rg:
+        description: Resource group that holds the UAT API + AOAI resource
+        required: true
+        default: ltl-uat-rg
+        type: string
+      api_app:
+        description: API App Service name to wire the AOAI resource into
+        required: true
+        default: ltl-uat-api
+        type: string
+      aoai_name:
+        description: Azure OpenAI (Cognitive Services) account name
+        required: true
+        default: ltl-uat-openai-eastus2
+        type: string
+      aoai_location:
+        description: Azure region for the AOAI resource
+        required: true
+        default: eastus2
+        type: string
+      deployment_name:
+        description: Model deployment name (the name the app calls)
+        required: true
+        default: gpt-5-4-mini
+        type: string
+      model_name:
+        description: Underlying model name
+        required: true
+        default: gpt-5.4-mini
+        type: string
+      model_version:
+        description: Underlying model version
+        required: true
+        default: '2026-03-17'
+        type: string
+      api_version:
+        description: Azure OpenAI API version (config parity; SDK negotiates a compatible version)
+        required: true
+        default: '2024-06-01'
+        type: string
+      sku_capacity:
+        description: Deployment SKU capacity (thousands of tokens per minute)
+        required: true
+        default: '20'
+        type: string
+      dry_run:
+        description: Print everything that would happen but change no state.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: provision-narrative-aoai
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision Azure OpenAI + enable narrative feature flag
+    runs-on: ubuntu-latest
+    environment: uat
+    env:
+      RG: ${{ inputs.rg }}
+      API_APP: ${{ inputs.api_app }}
+      AOAI_NAME: ${{ inputs.aoai_name }}
+      AOAI_LOCATION: ${{ inputs.aoai_location }}
+      DEPLOYMENT_NAME: ${{ inputs.deployment_name }}
+      MODEL_NAME: ${{ inputs.model_name }}
+      MODEL_VERSION: ${{ inputs.model_version }}
+      API_VERSION: ${{ inputs.api_version }}
+      SKU_CAPACITY: ${{ inputs.sku_capacity }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - name: Azure login with ltl-uat-github-deploy (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify subscription
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Verify subscription"
+          SUB_NAME=$(az account show --query name -o tsv)
+          SUB_ID=$(az account show --query id -o tsv)
+          echo "Operating on subscription: $SUB_NAME ($SUB_ID)"
+          echo "Resource group (only RG this workflow touches): $RG"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN — no mutating step will execute."
+          fi
+          echo "::endgroup::"
+
+      - name: Verify / create AOAI resource
+        id: aoai
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Verify / create AOAI resource"
+          if az cognitiveservices account show --name "$AOAI_NAME" --resource-group "$RG" >/dev/null 2>&1; then
+            echo "AOAI account $AOAI_NAME already provisioned in $RG."
+          else
+            echo "Creating AOAI $AOAI_NAME in $AOAI_LOCATION (kind OpenAI, sku S0)..."
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY RUN: az cognitiveservices account create --name $AOAI_NAME --resource-group $RG --location $AOAI_LOCATION --kind OpenAI --sku S0 --custom-domain \"$AOAI_NAME\" --yes"
+            else
+              az cognitiveservices account create \
+                --name "$AOAI_NAME" \
+                --resource-group "$RG" \
+                --location "$AOAI_LOCATION" \
+                --kind OpenAI \
+                --sku S0 \
+                --custom-domain "$AOAI_NAME" \
+                --yes
+            fi
+          fi
+
+          if [ "$DRY_RUN" = "true" ] && ! az cognitiveservices account show --name "$AOAI_NAME" --resource-group "$RG" >/dev/null 2>&1; then
+            echo "DRY RUN: AOAI resource does not exist yet; endpoint/scope would be resolved after creation."
+            ENDPOINT=""
+            SCOPE=""
+          else
+            ENDPOINT=$(az cognitiveservices account show --name "$AOAI_NAME" --resource-group "$RG" --query "properties.endpoint" -o tsv)
+            SCOPE=$(az cognitiveservices account show --name "$AOAI_NAME" --resource-group "$RG" --query "id" -o tsv)
+            echo "AOAI endpoint: $ENDPOINT"
+          fi
+          echo "endpoint=$ENDPOINT" >> "$GITHUB_OUTPUT"
+          echo "scope=$SCOPE" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      - name: Deploy the model
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Deploy the model"
+          if az cognitiveservices account deployment show \
+              --name "$AOAI_NAME" --resource-group "$RG" \
+              --deployment-name "$DEPLOYMENT_NAME" >/dev/null 2>&1; then
+            echo "Deployment $DEPLOYMENT_NAME already provisioned — skipping."
+          else
+            echo "Deploying model $MODEL_NAME v$MODEL_VERSION as deployment $DEPLOYMENT_NAME (capacity $SKU_CAPACITY)..."
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY RUN: az cognitiveservices account deployment create --name $AOAI_NAME --resource-group $RG --deployment-name $DEPLOYMENT_NAME --model-name $MODEL_NAME --model-version $MODEL_VERSION --model-format OpenAI --sku-name GlobalStandard --sku-capacity $SKU_CAPACITY (fallback --sku-name Standard on failure)"
+            else
+              if ! az cognitiveservices account deployment create \
+                  --name "$AOAI_NAME" --resource-group "$RG" \
+                  --deployment-name "$DEPLOYMENT_NAME" \
+                  --model-name "$MODEL_NAME" \
+                  --model-version "$MODEL_VERSION" \
+                  --model-format OpenAI \
+                  --sku-name GlobalStandard \
+                  --sku-capacity "$SKU_CAPACITY"; then
+                echo "GlobalStandard SKU failed; retrying with Standard..."
+                az cognitiveservices account deployment create \
+                  --name "$AOAI_NAME" --resource-group "$RG" \
+                  --deployment-name "$DEPLOYMENT_NAME" \
+                  --model-name "$MODEL_NAME" \
+                  --model-version "$MODEL_VERSION" \
+                  --model-format OpenAI \
+                  --sku-name Standard \
+                  --sku-capacity "$SKU_CAPACITY"
+              fi
+            fi
+          fi
+          echo "::endgroup::"
+
+      - name: Enable system-assigned managed identity on the API app
+        id: mi
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Enable system-assigned managed identity on the API app"
+          PRINCIPAL_ID=$(az webapp identity show --name "$API_APP" --resource-group "$RG" --query "principalId" -o tsv 2>/dev/null || true)
+          if [ -n "$PRINCIPAL_ID" ] && [ "$PRINCIPAL_ID" != "null" ]; then
+            echo "Managed identity already enabled on $API_APP (principalId=$PRINCIPAL_ID)."
+          else
+            echo "Enabling system-assigned managed identity on $API_APP..."
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "DRY RUN: az webapp identity assign --name $API_APP --resource-group $RG"
+              PRINCIPAL_ID=""
+            else
+              PRINCIPAL_ID=$(az webapp identity assign --name "$API_APP" --resource-group "$RG" --query "principalId" -o tsv)
+              echo "Assigned principalId=$PRINCIPAL_ID"
+            fi
+          fi
+          echo "principal_id=$PRINCIPAL_ID" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      - name: Grant Cognitive Services OpenAI User role to the API MI
+        shell: bash
+        env:
+          SCOPE: ${{ steps.aoai.outputs.scope }}
+          PRINCIPAL_ID: ${{ steps.mi.outputs.principal_id }}
+        run: |
+          set -euo pipefail
+          echo "::group::Grant Cognitive Services OpenAI User role to the API MI"
+          echo "Granting 'Cognitive Services OpenAI User' on $SCOPE to principal $PRINCIPAL_ID..."
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN: az role assignment create --assignee-object-id $PRINCIPAL_ID --assignee-principal-type ServicePrincipal --role \"Cognitive Services OpenAI User\" --scope $SCOPE"
+          elif [ -z "$PRINCIPAL_ID" ] || [ -z "$SCOPE" ]; then
+            echo "::error::Missing principal id or AOAI scope — cannot create role assignment."
+            exit 1
+          else
+            # Role assignment create returns non-zero when the assignment already exists; swallow that
+            # specific case and continue, but fail on any other error.
+            if az role assignment create \
+                --assignee-object-id "$PRINCIPAL_ID" \
+                --assignee-principal-type ServicePrincipal \
+                --role "Cognitive Services OpenAI User" \
+                --scope "$SCOPE"; then
+              echo "Role assignment created."
+            else
+              echo "Role assignment create returned non-zero — treating as already-exists and continuing."
+            fi
+          fi
+          echo "::endgroup::"
+
+      - name: Set app settings on the API app
+        shell: bash
+        env:
+          ENDPOINT: ${{ steps.aoai.outputs.endpoint }}
+        run: |
+          set -euo pipefail
+          echo "::group::Set app settings on the API app"
+          echo "Setting AI__NarrativeEnabled=true, AI__AzureOpenAI__Endpoint, __Deployment, __ApiVersion on $API_APP..."
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN: az webapp config appsettings set --name $API_APP --resource-group $RG --settings AI__NarrativeEnabled=true AI__AzureOpenAI__Endpoint=$ENDPOINT AI__AzureOpenAI__Deployment=$DEPLOYMENT_NAME AI__AzureOpenAI__ApiVersion=$API_VERSION"
+          elif [ -z "$ENDPOINT" ]; then
+            echo "::error::AOAI endpoint is empty — cannot set app settings."
+            exit 1
+          else
+            az webapp config appsettings set \
+              --name "$API_APP" --resource-group "$RG" \
+              --settings \
+                "AI__NarrativeEnabled=true" \
+                "AI__AzureOpenAI__Endpoint=$ENDPOINT" \
+                "AI__AzureOpenAI__Deployment=$DEPLOYMENT_NAME" \
+                "AI__AzureOpenAI__ApiVersion=$API_VERSION" \
+              --output none
+            echo "App settings applied."
+          fi
+          echo "::endgroup::"
+
+      - name: Print resulting AI__* settings
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Print resulting AI__* settings"
+          az webapp config appsettings list --name "$API_APP" --resource-group "$RG" \
+            --query "[?starts_with(name, 'AI__')].{Name:name, Value:value}" -o table || \
+            echo "(could not read app settings — the app may not exist yet)"
+          echo "::endgroup::"
+
+      - name: Restart the API app
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::group::Restart the API app"
+          echo "Restarting $API_APP..."
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN: az webapp restart --name $API_APP --resource-group $RG"
+          else
+            az webapp restart --name "$API_APP" --resource-group "$RG"
+            echo "Restart requested."
+          fi
+          echo "::endgroup::"
+
+      - name: Summary
+        shell: bash
+        env:
+          ENDPOINT: ${{ steps.aoai.outputs.endpoint }}
+        run: |
+          set -euo pipefail
+          echo "::group::Summary"
+          {
+            echo "## Narrative AOAI provisioning"
+            echo ""
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "**DRY RUN** — no state was changed."
+              echo ""
+            fi
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Resource group | \`$RG\` |"
+            echo "| AOAI resource | \`$AOAI_NAME\` ($AOAI_LOCATION) |"
+            echo "| AOAI endpoint | \`${ENDPOINT:-<pending creation>}\` |"
+            echo "| Deployment | \`$DEPLOYMENT_NAME\` ($MODEL_NAME v$MODEL_VERSION) |"
+            echo "| API app | \`$API_APP\` |"
+            echo "| API version | \`$API_VERSION\` |"
+            echo "| AI__NarrativeEnabled | \`true\` |"
+            echo ""
+            echo "Next step: wait ~30s for the app to restart, then hit"
+            echo "\`GET {api-host}/api/ai/consolidation/narrative?planId={id}\` to confirm the narrative serves."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::endgroup::"
