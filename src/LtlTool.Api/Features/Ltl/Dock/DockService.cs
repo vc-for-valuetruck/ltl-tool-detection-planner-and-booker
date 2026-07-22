@@ -142,6 +142,34 @@ public sealed class DockService(
         return await _notifications.NotifyCombineAsync(request.WarehouseCode, plan, ct);
     }
 
+    /// <summary>
+    /// Renders the combined BOL packet / dock manifest as a downloadable server-side PDF. Rebuilds the
+    /// plan read-only (same path as the combine preview) and hands it to <see cref="BolPacketPdfBuilder"/>.
+    /// Records nothing — no audit, no notification, no Alvys writeback. The one-tap "Download PDF"
+    /// companion to the existing print-CSS view. Throws <see cref="ConsolidationPlanBlockedException"/>
+    /// on a blocked plan so the UI never hands out a manifest for an illegal consolidation.
+    /// </summary>
+    public async Task<byte[]> BuildBolPacketPdfAsync(
+        DockCombineRequest request, CancellationToken ct)
+    {
+        var plan = await BuildPlanAsync(request.ParentLoadId, request.SiblingLoadIds, request.CorridorCode, ct);
+        if (plan.Blockers.Count > 0)
+            throw new ConsolidationPlanBlockedException(plan);
+
+        var warehouse = await ResolveWarehouseAsync(request.WarehouseCode, ct);
+        return new BolPacketPdfBuilder().Build(plan, warehouse);
+    }
+
+    private async Task<WarehouseSummary?> ResolveWarehouseAsync(string? warehouseCode, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(warehouseCode))
+            return null;
+
+        var response = await ListWarehousesAsync(ct);
+        return response.Warehouses.FirstOrDefault(
+            w => string.Equals(w.Code, warehouseCode.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
     private Task<ConsolidationPlanResponse> BuildPlanAsync(
         string parentLoadId, List<string> siblingLoadIds, string? corridorCode, CancellationToken ct)
         => _plans.BuildAsync(

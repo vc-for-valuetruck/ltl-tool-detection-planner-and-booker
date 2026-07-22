@@ -142,6 +142,39 @@ public sealed class DockController(DockService dock, ILogger<DockController> log
     }
 
     /// <summary>
+    /// Downloads the combined BOL packet / dock manifest as a server-side PDF (the "Download PDF"
+    /// companion to the print-CSS view). Rebuilds the plan read-only and renders it — records no
+    /// audit, sends no notification, writes nothing to Alvys. 422 with the plan on a blocked plan,
+    /// 400 on missing parent/siblings/unknown corridor.
+    /// </summary>
+    [HttpPost("bol-packet.pdf")]
+    [Produces("application/pdf")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ConsolidationPlanResponse), StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> DownloadBolPacket(
+        [FromBody] DockCombineRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var pdf = await _dock.BuildBolPacketPdfAsync(request, ct);
+            var name = string.IsNullOrWhiteSpace(request.ParentLoadId)
+                ? "bol-packet"
+                : $"bol-packet-{request.ParentLoadId}";
+            return File(pdf, "application/pdf", $"{name}.pdf");
+        }
+        catch (ConsolidationPlanBlockedException ex)
+        {
+            return UnprocessableEntity(ex.Plan);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Effectiveness metrics (Phase 2.5, consistent with the #140 instrumentation): time-to-combine
     /// (parent tap → docs rendered) and tap count per combine. Fire-and-forget, status-only — no plan
     /// body, no PII — so leadership can see how minimal-tap the dock flow actually is in the field.
