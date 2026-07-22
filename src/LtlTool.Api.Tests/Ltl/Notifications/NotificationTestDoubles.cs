@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using LtlTool.Api.Features.Ltl.Notifications;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Tests.Ltl.Notifications;
 
@@ -53,7 +52,7 @@ public static class NotificationTestFactory
         new(
             graph,
             outbox,
-            Options.Create(new NotificationOptions { Email = email ?? ConfiguredEmail() }),
+            Microsoft.Extensions.Options.Options.Create(new NotificationOptions { Email = email ?? ConfiguredEmail() }),
             TimeProvider.System,
             NullLogger<EmailNotificationChannel>.Instance);
 
