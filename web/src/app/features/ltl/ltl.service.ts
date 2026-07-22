@@ -35,6 +35,13 @@ import {
   SignalStatus,
   SignalView,
 } from './signals.models';
+import {
+  AlvysLoadDocument,
+  BolExtractorStatus,
+  BolFieldSuggestionView,
+  BolReadResponse,
+  BolSuggestionStatus,
+} from './bol.models';
 
 /**
  * Client for the read-only LTL decision-support API. Bearer tokens are attached by the MSAL
@@ -43,7 +50,8 @@ import {
 @Injectable({ providedIn: 'root' })
 export class LtlService {
   private readonly http = inject(HttpClient);
-  private readonly base = `${inject(RUNTIME_CONFIG).apiBaseUrl}/ltl`;
+  private readonly apiBaseUrl = inject(RUNTIME_CONFIG).apiBaseUrl;
+  private readonly base = `${this.apiBaseUrl}/ltl`;
 
   search(query: LtlSearchQuery): Observable<LtlSearchResponse> {
     return this.http.get<LtlSearchResponse>(`${this.base}/search`, { params: toParams(query) });
@@ -258,6 +266,59 @@ export class LtlService {
     return this.http.post<AssignmentBatchValidateResponse>(
       `${this.base}/assign/validate-batch`,
       request,
+    );
+  }
+
+  /**
+   * Read-only listing of the Alvys documents attached to a load (BOL / rate confirmation / POD).
+   * Powers the "Read BOL" picker on the Documents tab. Server-side proxy — Alvys credentials never
+   * reach the browser.
+   */
+  loadDocuments(loadNumber: string): Observable<AlvysLoadDocument[]> {
+    return this.http.get<AlvysLoadDocument[]>(
+      `${this.apiBaseUrl}/alvys/loads/${encodeURIComponent(loadNumber)}/documents`,
+    );
+  }
+
+  /**
+   * Reads one BOL document and returns suggested fields (pallet/piece/weight/class/commodity/hazmat),
+   * each with a verbatim evidence quote. Suggest-only: nothing is applied, nothing is written to
+   * Alvys. Fails closed server-side (HTTP 422 with a legible error) when the document can't be
+   * fetched, no text can be extracted, or a field lacks evidence — nothing is stored in that case.
+   */
+  readBol(loadNumber: string, documentId: string): Observable<BolReadResponse> {
+    return this.http.post<BolReadResponse>(
+      `${this.base}/loads/${encodeURIComponent(loadNumber)}/bol/documents/${encodeURIComponent(documentId)}/read`,
+      {},
+    );
+  }
+
+  /** Stored BOL suggestions, newest first, filterable by load number / status. */
+  bolSuggestions(opts: { loadNumber?: string; status?: BolSuggestionStatus; max?: number } = {}):
+    Observable<BolFieldSuggestionView[]> {
+    let params = new HttpParams();
+    if (opts.loadNumber) params = params.set('loadNumber', opts.loadNumber);
+    if (opts.status) params = params.set('status', opts.status);
+    if (opts.max) params = params.set('max', String(opts.max));
+    return this.http.get<BolFieldSuggestionView[]>(`${this.base}/bol/suggestions`, { params });
+  }
+
+  /** Honest snapshot of which text + field extractor is active (deterministic vs. cloud OCR stub). */
+  bolExtractor(): Observable<BolExtractorStatus> {
+    return this.http.get<BolExtractorStatus>(`${this.base}/bol/extractor`);
+  }
+
+  /** Accept a BOL suggestion — annotates internal surfaces only, audited. Never writes to Alvys. */
+  acceptBolSuggestion(id: string): Observable<BolFieldSuggestionView> {
+    return this.http.post<BolFieldSuggestionView>(
+      `${this.base}/bol/suggestions/${encodeURIComponent(id)}/accept`, {},
+    );
+  }
+
+  /** Reject a BOL suggestion — kept for audit, annotates nothing. */
+  rejectBolSuggestion(id: string): Observable<BolFieldSuggestionView> {
+    return this.http.post<BolFieldSuggestionView>(
+      `${this.base}/bol/suggestions/${encodeURIComponent(id)}/reject`, {},
     );
   }
 

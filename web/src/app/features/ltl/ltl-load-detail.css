@@ -312,3 +312,93 @@
 .yard-pdf:hover {
   text-decoration: underline;
 }
+
+/* --- BOL intelligence (suggest-only) ------------------------------------ */
+.bol-doc-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bol-doc {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+}
+
+.bol-doc-name {
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.btn-sm {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.btn-ghost {
+  background: transparent;
+}
+
+.bol-error {
+  color: var(--danger, #b42318);
+  font-weight: 600;
+}
+
+.bol-suggestions {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bol-suggestion {
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+}
+
+.bol-suggestion.decided {
+  opacity: 0.7;
+}
+
+.bol-suggestion-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bol-field {
+  font-weight: 600;
+}
+
+.bol-value {
+  font-weight: 600;
+}
+
+.bol-evidence {
+  margin: 8px 0 2px;
+  font-style: italic;
+  color: var(--text-muted, #667085);
+  font-size: 13px;
+}
+
+.bol-source {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted, #667085);
+}
+
+.bol-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}

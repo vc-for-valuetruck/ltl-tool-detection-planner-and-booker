@@ -5,6 +5,7 @@ import { LtlService } from './ltl.service';
 import { LtlLoadSummary, LtlPlace, MatchFactor, MatchResult } from './ltl.models';
 import { LtlDocumentUpload } from './ltl-document-upload';
 import { YardArtifactFileView, YardArtifactView } from './yard-artifacts.models';
+import { AlvysLoadDocument, BolField, BolFieldSuggestionView } from './bol.models';
 
 /** The familiar TMS load-detail tab layout. */
 type DetailTab = 'details' | 'documents' | 'tracking' | 'billing';
@@ -59,6 +60,31 @@ export class LtlLoadDetail implements OnInit {
   /** Count of read-only document artifacts (#141 yard surfaces) — powers the Documents tab badge. */
   protected readonly documentCount = computed(() => this.artifacts().length);
 
+  // --- BOL intelligence (suggest-only, fail-closed) ------------------------
+  /** Alvys documents attached to this load — the "Read BOL" picker source. */
+  protected readonly bolDocuments = signal<AlvysLoadDocument[]>([]);
+  /** Stored BOL field suggestions for this load (Pending + decided), newest first. */
+  protected readonly bolSuggestions = signal<BolFieldSuggestionView[]>([]);
+  /** Document id currently being read, so its button shows a spinner and can't double-fire. */
+  protected readonly bolReadingDocId = signal<string | null>(null);
+  /** Last BOL read error (fail-closed message) — shown inline, never blanks the tab. */
+  protected readonly bolError = signal<string | null>(null);
+  /** Id of a suggestion whose accept/reject is in flight. */
+  protected readonly bolDecidingId = signal<string | null>(null);
+
+  protected readonly pendingBolSuggestions = computed(() =>
+    this.bolSuggestions().filter((s) => s.status === 'Pending'),
+  );
+
+  private static readonly bolFieldLabels: Record<BolField, string> = {
+    PalletCount: 'Pallet count',
+    PieceCount: 'Piece count',
+    Weight: 'Weight',
+    FreightClass: 'Freight class',
+    CommodityDescription: 'Commodity',
+    HazmatFlag: 'Hazmat',
+  };
+
   protected setTab(tab: DetailTab): void {
     this.tab.set(tab);
   }
@@ -83,6 +109,7 @@ export class LtlLoadDetail implements OnInit {
         this.loading.set(false);
         this.fetchArtifacts(load.loadNumber ?? ref);
         this.fetchMatches(load.loadNumber ?? load.id ?? ref);
+        this.fetchBolContext(load.loadNumber ?? ref);
       },
       error: (err) => {
         this.error.set(err?.error?.error ?? err?.message ?? "Couldn't reach Alvys.");
@@ -116,6 +143,79 @@ export class LtlLoadDetail implements OnInit {
         this.matchesLoading.set(false);
       },
     });
+  }
+
+  private fetchBolContext(loadNumber: string): void {
+    if (!loadNumber) return;
+    // Both reads are supplementary — a failure surfaces an empty list / inline error, never blanks
+    // the load view.
+    this.ltl.loadDocuments(loadNumber).subscribe({
+      next: (docs) => this.bolDocuments.set(docs ?? []),
+      error: () => this.bolDocuments.set([]),
+    });
+    this.ltl.bolSuggestions({ loadNumber }).subscribe({
+      next: (s) => this.bolSuggestions.set(s ?? []),
+      error: () => this.bolSuggestions.set([]),
+    });
+  }
+
+  /** Reads a chosen BOL document into suggested fields. Fail-closed: a 422 shows the reason inline. */
+  protected readBol(doc: AlvysLoadDocument): void {
+    const loadNumber = this.load()?.loadNumber ?? this.loadNumber();
+    if (!loadNumber || this.bolReadingDocId()) return;
+    this.bolReadingDocId.set(doc.id);
+    this.bolError.set(null);
+    this.ltl.readBol(loadNumber, doc.id).subscribe({
+      next: (res) => {
+        // Merge fresh Pending suggestions ahead of anything already loaded for this document.
+        const others = this.bolSuggestions().filter((s) => s.documentId !== doc.id);
+        this.bolSuggestions.set([...res.suggestions, ...others]);
+        this.bolReadingDocId.set(null);
+        if (res.count === 0) {
+          this.bolError.set('No BOL fields could be read from this document (no partial guesses were made).');
+        }
+      },
+      error: (err) => {
+        this.bolError.set(err?.error?.error ?? err?.message ?? 'Could not read this document.');
+        this.bolReadingDocId.set(null);
+      },
+    });
+  }
+
+  protected acceptBol(s: BolFieldSuggestionView): void {
+    this.decideBol(s, true);
+  }
+
+  protected rejectBol(s: BolFieldSuggestionView): void {
+    this.decideBol(s, false);
+  }
+
+  private decideBol(s: BolFieldSuggestionView, accept: boolean): void {
+    if (this.bolDecidingId()) return;
+    this.bolDecidingId.set(s.id);
+    const call = accept ? this.ltl.acceptBolSuggestion(s.id) : this.ltl.rejectBolSuggestion(s.id);
+    call.subscribe({
+      next: (updated) => {
+        this.bolSuggestions.set(this.bolSuggestions().map((x) => (x.id === updated.id ? updated : x)));
+        this.bolDecidingId.set(null);
+      },
+      error: (err) => {
+        this.bolError.set(err?.error?.error ?? err?.message ?? 'Could not record the decision.');
+        this.bolDecidingId.set(null);
+      },
+    });
+  }
+
+  protected bolFieldLabel(field: BolField): string {
+    return LtlLoadDetail.bolFieldLabels[field] ?? field;
+  }
+
+  protected bolConfidencePct(confidence: number): string {
+    return `${Math.round(confidence * 100)}%`;
+  }
+
+  protected bolDocLabel(doc: AlvysLoadDocument): string {
+    return doc.attachmentPath || doc.attachmentType || doc.id;
   }
 
   protected matchKey(match: MatchResult, index: number): string {
