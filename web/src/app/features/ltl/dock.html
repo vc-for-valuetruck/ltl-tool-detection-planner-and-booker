@@ -108,8 +108,26 @@
           <div class="note">Suggestion sweep was bounded — a sibling may not appear. Use manual add below.</div>
         }
 
+        @if (candidateList().length > 1) {
+          <div class="sort-chips" role="group" aria-label="Sort suggestions">
+            <span class="sort-label">Sort</span>
+            @for (s of candidateSorts; track s.id) {
+              <button
+                type="button"
+                class="sort-chip"
+                [class.active]="candidateSort() === s.id"
+                [attr.aria-pressed]="candidateSort() === s.id"
+                [attr.data-testid]="'dock-sort-' + s.id"
+                (click)="setCandidateSort(s.id)"
+              >
+                {{ s.label }}
+              </button>
+            }
+          </div>
+        }
+
         <div class="tap-grid">
-          @for (c of candidateList(); track c.loadId) {
+          @for (c of sortedCandidates(); track c.loadId) {
             <button
               type="button"
               class="tap-card sibling"

@@ -89,6 +89,46 @@
 }
 
 /* ===================== Tap grid (tablet-first big targets) ===================== */
+.sort-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.sort-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sort-chip {
+  appearance: none;
+  cursor: pointer;
+  border: 1px solid var(--card-border);
+  background: var(--body-bg);
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sort-chip:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.sort-chip.active {
+  border-color: var(--accent);
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
 .tap-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));

@@ -22,6 +22,14 @@ type DockStep = 'warehouse' | 'arrivals' | 'siblings' | 'review' | 'result';
 type PrintMode = 'none' | 'bol' | 'clickcard';
 
 /**
+ * Client-side sort applied to the already-loaded sibling suggestions. `best` keeps the server's own
+ * fit ranking; `revenue`/`earliest` reorder over fields Alvys actually supplies on a candidate.
+ * (There is no per-candidate driver-RPM in the candidate contract, so revenue is the honest
+ * money proxy here — RPM is computed only once at the combined-plan level.)
+ */
+type DockCandidateSort = 'best' | 'revenue' | 'earliest';
+
+/**
  * Dock mode (Phase 2.5): the tablet-first "easy match loads" flow a dock worker walks when a truck
  * lands at a yard. Pick a yard → tap the parent (BOL-controlling) truck/load → add auto-suggested or
  * manually-searched siblings → review the combined driver-RPM economics → combine. A combine records
@@ -112,6 +120,62 @@ export class Dock implements OnInit, OnDestroy {
   protected readonly selectableCandidates = computed(() =>
     this.candidateList().filter((c) => !c.isBlocked),
   );
+
+  /** Active sibling sort chip. Defaults to the server's fit ranking; reset when candidates reload. */
+  protected readonly candidateSort = signal<DockCandidateSort>('best');
+  protected readonly candidateSorts: readonly { readonly id: DockCandidateSort; readonly label: string }[] = [
+    { id: 'best', label: 'Best match' },
+    { id: 'revenue', label: 'Highest revenue' },
+    { id: 'earliest', label: 'Earliest pickup' },
+  ];
+
+  /**
+   * The sibling list reordered by the active chip. `best` is the server order untouched. Candidates
+   * missing the sort field (no revenue / no pickup time) always sort to the bottom — never coerced
+   * to zero or "now" — so an honest "—" card never jumps above a real value.
+   */
+  protected readonly sortedCandidates = computed<ConsolidationCandidate[]>(() => {
+    const list = this.candidateList();
+    const sort = this.candidateSort();
+    if (sort === 'best') return list;
+    const copy = [...list];
+    if (sort === 'revenue') {
+      copy.sort((a, b) => this.compareNullableDesc(this.revenueOf(a), this.revenueOf(b)));
+    } else {
+      copy.sort((a, b) => this.compareNullableAsc(this.pickupMsOf(a), this.pickupMsOf(b)));
+    }
+    return copy;
+  });
+
+  protected setCandidateSort(sort: DockCandidateSort): void {
+    this.candidateSort.set(sort);
+  }
+
+  private revenueOf(c: ConsolidationCandidate): number | null {
+    return typeof c.revenue === 'number' && !Number.isNaN(c.revenue) ? c.revenue : null;
+  }
+
+  private pickupMsOf(c: ConsolidationCandidate): number | null {
+    if (!c.scheduledPickupAt) return null;
+    const ms = Date.parse(c.scheduledPickupAt);
+    return Number.isNaN(ms) ? null : ms;
+  }
+
+  /** Descending compare with nulls last (stable-friendly: equal → 0). */
+  private compareNullableDesc(a: number | null, b: number | null): number {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return b - a;
+  }
+
+  /** Ascending compare with nulls last. */
+  private compareNullableAsc(a: number | null, b: number | null): number {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a - b;
+  }
   protected readonly hasSelection = computed(() => this.selectedSiblingIds().length > 0);
   protected readonly plan = computed(() => this.combineResult()?.plan ?? null);
   protected readonly audit = computed(() => this.combineResult()?.audit ?? null);
@@ -181,6 +245,7 @@ export class Dock implements OnInit, OnDestroy {
     this.loading.set(true);
     this.error.set(null);
     this.candidates.set(null);
+    this.candidateSort.set('best');
     this.dock.getCandidates(parentLoadId).subscribe({
       next: (res) => {
         this.candidates.set(res);
