@@ -134,6 +134,13 @@ public static class LtlServiceCollectionExtensions
         services.AddScoped<ConsolidationOpportunityService>();
         services.AddScoped<ConsolidationPlanService>();
 
+        // Consolidation auto-execute orchestrator (docs/AUTO_CONSOLIDATE_SPEC.md). Sequences the five
+        // §2 click-card operations through the existing internal-API write boundary on the dispatcher's
+        // behalf. Introduces no new writer. The feature flag (Ltl:Writeback:AutoConsolidate) defaults
+        // OFF and — even when on — every internal op stays AlvysLiveSupport.Unsupported in Phase 1a, so
+        // the sign-off gate keeps live execution architecturally unreachable (spec §6, §7).
+        services.AddScoped<IConsolidationAutoExecuteService, ConsolidationAutoExecuteService>();
+
         // Corridor-health sweep: the expensive per-corridor Alvys walk lives in a scoped probe;
         // a singleton cache serves the last snapshot to the request path instantly and refreshes it
         // in the background (stale-while-revalidate + hard timeout) so /corridors/health never hangs

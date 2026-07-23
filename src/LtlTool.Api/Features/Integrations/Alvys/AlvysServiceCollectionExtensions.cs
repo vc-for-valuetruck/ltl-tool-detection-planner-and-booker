@@ -32,6 +32,15 @@ public static class AlvysServiceCollectionExtensions
         services
             .AddOptions<AlvysInternalApiOptions>()
             .Bind(configuration.GetSection(AlvysInternalApiOptions.SectionName));
+
+        // Consolidation auto-execute orchestrator flag. Bound from "Ltl:Writeback:AutoConsolidate";
+        // defaults to Enabled=false so a fresh clone / CI / production never offers "Execute now".
+        // Gates only the orchestrator — the internal-API arm switches above still apply independently
+        // (spec §3.1). Bound here so AlvysReadinessService (which reports AutoConsolidateEnabled) can
+        // read it without a layering cycle into the Ltl feature.
+        services
+            .AddOptions<ConsolidationAutoExecuteOptions>()
+            .Bind(configuration.GetSection(ConsolidationAutoExecuteOptions.SectionName));
         // Inbound webhook receiver. Bound from "Alvys:Webhooks"; the signing secret lives server-side
         // (config / Key Vault) and is never exposed to the SPA. When blank the receiver fails closed.
         services

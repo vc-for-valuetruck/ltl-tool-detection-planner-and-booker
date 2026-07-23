@@ -50,6 +50,18 @@ public sealed class AlvysReadinessStatus
     /// <summary>True only when sandbox mode is selected AND fully configured for execution.</summary>
     public required bool SandboxExecutionConfigured { get; init; }
 
+    /// <summary>
+    /// True when the consolidation auto-execute orchestrator flag
+    /// (<c>Ltl:Writeback:AutoConsolidate:Enabled</c>) is on AND neither the internal-API base URL nor
+    /// the sandbox base URL is production-shaped. This is the flag the Plan Detail "Execute now"
+    /// toggle reads (spec §3.5). It never implies an operation is actually dispatchable — the
+    /// internal-API arm switches and per-operation live-support gate still apply — only that the
+    /// orchestrator surface may be offered. Resolves to <c>false</c> whenever a production-shaped host
+    /// is configured, regardless of the flag, keeping production execution architecturally
+    /// unreachable (§6.3).
+    /// </summary>
+    public required bool AutoConsolidateEnabled { get; init; }
+
     /// <summary>Sandbox host root, when configured (no secret).</summary>
     public string? SandboxBaseUrl { get; init; }
 
@@ -73,10 +85,29 @@ public interface IAlvysReadinessService
 public sealed class AlvysReadinessService(
     IOptions<AlvysWriteOptions> writeOptions,
     IOptions<AlvysOptions> alvysOptions,
-    IAlvysSyncTracker syncTracker) : IAlvysReadinessService
+    IAlvysSyncTracker syncTracker,
+    IOptions<AlvysInternalApiOptions> internalOptions,
+    IOptions<ConsolidationAutoExecuteOptions> autoConsolidateOptions) : IAlvysReadinessService
 {
     private readonly AlvysWriteOptions _write = writeOptions.Value;
     private readonly AlvysOptions _alvys = alvysOptions.Value;
+    private readonly AlvysInternalApiOptions _internal = internalOptions.Value;
+    private readonly ConsolidationAutoExecuteOptions _autoConsolidate = autoConsolidateOptions.Value;
+
+    /// <summary>
+    /// Convenience overload for callers/tests that only exercise the Public-API sandbox readiness
+    /// surface. The internal-API and auto-consolidate options default to disabled, so
+    /// <see cref="AlvysReadinessStatus.AutoConsolidateEnabled"/> resolves to <c>false</c>.
+    /// </summary>
+    public AlvysReadinessService(
+        IOptions<AlvysWriteOptions> writeOptions,
+        IOptions<AlvysOptions> alvysOptions,
+        IAlvysSyncTracker syncTracker)
+        : this(writeOptions, alvysOptions, syncTracker,
+            Options.Create(new AlvysInternalApiOptions()),
+            Options.Create(new ConsolidationAutoExecuteOptions()))
+    {
+    }
 
     public AlvysReadinessStatus GetStatus()
     {
@@ -101,6 +132,7 @@ public sealed class AlvysReadinessService(
             Environment = _write.Environment,
             WritebackEnabled = _write.Mode != AlvysWritebackMode.Disabled,
             SandboxExecutionConfigured = sandboxConfigured,
+            AutoConsolidateEnabled = ComputeAutoConsolidateEnabled(),
             SandboxBaseUrl = string.IsNullOrWhiteSpace(_write.SandboxBaseUrl) ? null : _write.SandboxBaseUrl,
             LastReadSyncOutcome = sync.Outcome,
             LastReadSyncAt = sync.At,
@@ -149,6 +181,28 @@ public sealed class AlvysReadinessService(
             RequiredToEnable = op.LiveSupport == AlvysLiveSupport.Unsupported ? op.RequiredToEnable : null,
         };
     }
+
+    /// <summary>
+    /// The kill-switch value for the Plan Detail "Execute now" toggle (spec §3.5). The flag must be on
+    /// AND no production-shaped host may be configured on either the internal-API or sandbox base URL —
+    /// so a config combining the flag with a production host resolves to <c>false</c> regardless of the
+    /// flag, keeping production execution architecturally unreachable (§6.3).
+    /// </summary>
+    private bool ComputeAutoConsolidateEnabled()
+    {
+        if (!_autoConsolidate.Enabled)
+            return false;
+        if (_internal.HasProductionShapedBaseUrl)
+            return false;
+        if (SandboxBaseUrlIsProductionShaped())
+            return false;
+        return true;
+    }
+
+    /// <summary>True when a sandbox base URL is set and points at the production Alvys host.</summary>
+    private bool SandboxBaseUrlIsProductionShaped() =>
+        !string.IsNullOrWhiteSpace(_write.SandboxBaseUrl)
+        && _write.SandboxBaseUrl.Contains("integrations.alvys.com", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Reasons sandbox execution is not configured, independent of any single operation. Empty only

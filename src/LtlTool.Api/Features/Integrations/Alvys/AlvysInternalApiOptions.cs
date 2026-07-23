@@ -60,6 +60,15 @@ public sealed class AlvysInternalApiOptions
     /// <summary>True when an internal-API base URL is configured.</summary>
     public bool HasBaseUrl => !string.IsNullOrWhiteSpace(BaseUrl);
 
+    /// <summary>
+    /// True when the configured internal-API base URL points at the production Alvys host. Mirrors
+    /// the Public-API <see cref="Writeback.AlvysWriteOptions.HasSandboxBaseUrl"/> production-host
+    /// rejection so a production-shaped internal host can be refused before any write is offered
+    /// (auto-consolidate contract check — see <c>docs/AUTO_CONSOLIDATE_SPEC.md</c> §6.3).
+    /// </summary>
+    public bool HasProductionShapedBaseUrl =>
+        HasBaseUrl && BaseUrl.Contains("integrations.alvys.com", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Effective auth host — <see cref="AuthBaseUrl"/> when set, otherwise <see cref="BaseUrl"/>.</summary>
     public string EffectiveAuthBaseUrl =>
         string.IsNullOrWhiteSpace(AuthBaseUrl) ? BaseUrl : AuthBaseUrl;
