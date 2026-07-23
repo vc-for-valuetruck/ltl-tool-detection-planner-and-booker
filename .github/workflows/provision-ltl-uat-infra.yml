@@ -28,6 +28,15 @@ on:
         required: false
         default: S0
         type: string
+      yard_managed_identity_object_id:
+        description: >-
+          Optional. Object (principal) id of Yard's managed identity / service principal. When
+          supplied, the YardEvents.Ingest app role is granted to it so Yard's client-credentials
+          token carries the role. Leave blank to only define the role (assign it later once Yard's
+          identity is known).
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -149,6 +158,64 @@ jobs:
           fi
           echo "app_id=$APP_ID" >> "$GITHUB_OUTPUT"
 
+      # Define the service-to-service app role Yard's managed identity presents on its
+      # client-credentials token (roles claim). Idempotent: the role is only appended when a role
+      # with the same value is absent, and the full existing appRoles array is preserved on PATCH.
+      # Writing appRoles requires ownership / Application.ReadWrite on the app registration; the
+      # deploy SP may lack directory-write rights, so (like the admin-consent step below) this is
+      # best-effort and surfaces manual instructions rather than aborting the whole provision.
+      - name: Ensure YardEvents.Ingest app role on API app registration
+        id: yard_role
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_ID="${{ steps.api_app.outputs.app_id }}"
+          ROLE_VALUE="YardEvents.Ingest"
+          # Stable role id so repeat runs never create a duplicate role definition.
+          ROLE_ID="6f3a1c2e-9b74-4d58-8a11-7c2e5d0f4b93"
+
+          EXISTING=$(az ad app show --id "$APP_ID" --query "appRoles" -o json)
+          if echo "$EXISTING" | jq -e --arg v "$ROLE_VALUE" 'any(.[]; .value == $v)' >/dev/null; then
+            echo "::notice::App role '$ROLE_VALUE' already defined on $APP_ID — nothing to do."
+          else
+            NEW_ROLE=$(jq -n --arg id "$ROLE_ID" --arg v "$ROLE_VALUE" '{
+              id: $id,
+              allowedMemberTypes: ["Application"],
+              description: "Allows Yard (peer system) to POST freight events to the LTL ingestion endpoint.",
+              displayName: "Ingest Yard events",
+              isEnabled: true,
+              value: $v
+            }')
+            MERGED=$(echo "$EXISTING" | jq --argjson r "$NEW_ROLE" '. + [$r]')
+            az rest --method PATCH \
+              --uri "https://graph.microsoft.com/v1.0/applications(appId='$APP_ID')" \
+              --headers "Content-Type=application/json" \
+              --body "$(jq -n --argjson roles "$MERGED" '{appRoles: $roles}')"
+            echo "::notice::Defined app role '$ROLE_VALUE' (id=$ROLE_ID) on $APP_ID."
+          fi
+
+          # Optionally grant the role to Yard's managed identity so its token carries the roles claim.
+          YARD_OID="${{ github.event.inputs.yard_managed_identity_object_id }}"
+          if [ -n "$YARD_OID" ]; then
+            API_SP_OID=$(az ad sp show --id "$APP_ID" --query id -o tsv)
+            # appRoleAssignedTo on the resource SP: principalId = Yard MI, resourceId = API SP,
+            # appRoleId = the role id above. Idempotent: swallow the "already exists" conflict.
+            if az rest --method POST \
+              --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$API_SP_OID/appRoleAssignedTo" \
+              --headers "Content-Type=application/json" \
+              --body "$(jq -n --arg p "$YARD_OID" --arg r "$API_SP_OID" --arg a "$ROLE_ID" \
+                        '{principalId:$p, resourceId:$r, appRoleId:$a}')" 2>/tmp/roleassign.err; then
+              echo "::notice::Granted '$ROLE_VALUE' to Yard identity $YARD_OID."
+            elif grep -qi "Permission being assigned already exists" /tmp/roleassign.err; then
+              echo "::notice::Yard identity $YARD_OID already holds '$ROLE_VALUE' — nothing to do."
+            else
+              echo "::warning::Could not assign '$ROLE_VALUE' to $YARD_OID:"; cat /tmp/roleassign.err
+            fi
+          else
+            echo "::notice::No yard_managed_identity_object_id supplied — role defined but not assigned."
+          fi
+
       - name: Ensure Entra SPA app registration
         id: spa_app
         shell: bash
@@ -198,6 +265,15 @@ jobs:
             echo "### Entra app registrations"
             echo "- API app registration client ID: \`${{ steps.api_app.outputs.app_id }}\`"
             echo "- SPA app registration client ID: \`${{ steps.spa_app.outputs.app_id }}\`"
+            if [ "${{ steps.yard_role.outcome }}" != "success" ]; then
+              echo "- ⚠️ The \`YardEvents.Ingest\` app role could not be defined/assigned automatically"
+              echo "  (the pipeline's service principal likely lacks Entra app-registration write"
+              echo "  rights). Define it manually: Entra ID → App registrations → ${{ github.event.inputs.base_name }}-api"
+              echo "  → App roles → Create app role (Value \`YardEvents.Ingest\`, member type Applications),"
+              echo "  then grant it to Yard's managed identity."
+            else
+              echo "- \`YardEvents.Ingest\` app role ensured on the API app registration."
+            fi
             if [ "${{ steps.api_app.outputs.api_secret_generated }}" = "true" ]; then
               echo "- A new API client secret was generated (masked in logs) — see the"
               echo "  \`api-client-secret\` artifact from this run. **It will not be shown again;**"
