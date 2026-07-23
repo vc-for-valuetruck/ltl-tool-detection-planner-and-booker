@@ -19,7 +19,7 @@ public sealed class MeController : ControllerBase
     public IActionResult Get() => Ok(new
     {
         name = User.Identity?.Name,
-        email = User.FindFirstValue("preferred_username") ?? User.FindFirstValue(ClaimTypes.Email),
+        email = CallerIdentity.ResolveEmail(User),
         claims = User.Claims.Select(c => new { c.Type, c.Value }),
     });
 }
