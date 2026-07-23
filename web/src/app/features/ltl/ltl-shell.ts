@@ -94,6 +94,7 @@ export class LtlShell implements OnInit, OnDestroy {
       title: 'Back Office',
       items: [
         { label: 'Billing', route: '/ltl/billing', monogram: 'B' },
+        { label: 'Invoice Studio', route: '/ltl/invoice-studio', monogram: 'I' },
         { label: 'Exceptions', route: '/ltl/exceptions', monogram: 'E', badge: 'exceptions' },
         { label: 'Signals', route: '/ltl/signals', monogram: 'G', badge: 'signals' },
         { label: 'Notifications', route: '/ltl/notifications', monogram: 'N' },

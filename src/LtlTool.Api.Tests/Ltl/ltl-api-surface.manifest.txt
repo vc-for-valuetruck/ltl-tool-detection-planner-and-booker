@@ -40,3 +40,10 @@ GET  api/ltl/dock/opportunities
 GET  api/ltl/dispatch/recommendations
 POST api/ltl/dispatch/assemble
 GET  api/ltl/dispatch/assemblies
+GET  api/ltl/invoices
+POST api/ltl/invoices
+GET  api/ltl/invoices/{}
+PUT  api/ltl/invoices/{}
+POST api/ltl/invoices/{}/finalize
+GET  api/ltl/invoices/{}/pdf
+GET  api/ltl/invoices/{}/alvys-preview

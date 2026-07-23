@@ -42,6 +42,14 @@ import {
   BolReadResponse,
   BolSuggestionStatus,
 } from './bol.models';
+import {
+  AlvysOperationOutcome,
+  AssembleInvoiceRequest,
+  InvoiceStatus,
+  InvoiceSummary,
+  InvoiceView,
+  UpdateInvoiceRequest,
+} from './invoice-studio.models';
 
 /**
  * Client for the read-only LTL decision-support API. Bearer tokens are attached by the MSAL
@@ -340,6 +348,58 @@ export class LtlService {
 
   deleteSavedView(id: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/saved-views/${encodeURIComponent(id)}`);
+  }
+
+  // --- Invoice Studio -----------------------------------------------------------------------------
+
+  /** Recent invoices, newest-updated first. Optional parentLoadId / status filters. */
+  listInvoices(opts: { parentLoadId?: string; status?: InvoiceStatus; max?: number } = {}):
+    Observable<InvoiceSummary[]> {
+    let params = new HttpParams();
+    if (opts.parentLoadId) params = params.set('parentLoadId', opts.parentLoadId);
+    if (opts.status) params = params.set('status', opts.status);
+    if (opts.max) params = params.set('max', String(opts.max));
+    return this.http.get<InvoiceSummary[]>(`${this.base}/invoices`, { params });
+  }
+
+  /** Assemble a new draft invoice from a consolidation (parent + siblings). */
+  assembleInvoice(request: AssembleInvoiceRequest): Observable<InvoiceView> {
+    return this.http.post<InvoiceView>(`${this.base}/invoices`, request);
+  }
+
+  getInvoice(id: string): Observable<InvoiceView> {
+    return this.http.get<InvoiceView>(`${this.base}/invoices/${encodeURIComponent(id)}`);
+  }
+
+  /** Update a draft invoice's loads/charges/notes. 409 when already final. */
+  updateInvoice(id: string, request: UpdateInvoiceRequest): Observable<InvoiceView> {
+    return this.http.put<InvoiceView>(`${this.base}/invoices/${encodeURIComponent(id)}`, request);
+  }
+
+  /** Lock a draft invoice (Draft → Final). Idempotent. */
+  finalizeInvoice(id: string): Observable<InvoiceView> {
+    return this.http.post<InvoiceView>(
+      `${this.base}/invoices/${encodeURIComponent(id)}/finalize`, {},
+    );
+  }
+
+  /** Download the invoice PDF as a Blob (server-rendered). */
+  invoicePdf(id: string): Observable<Blob> {
+    return this.http.get(`${this.base}/invoices/${encodeURIComponent(id)}/pdf`, {
+      responseType: 'blob',
+    });
+  }
+
+  /**
+   * The exact contracted Alvys write payloads for this invoice, as gated previews. Every outcome
+   * reflects the configured writeback mode (Disabled → AuditOnly by default) so nothing is sent.
+   */
+  invoiceAlvysPreview(id: string, parentLoadEtag?: string): Observable<AlvysOperationOutcome[]> {
+    let params = new HttpParams();
+    if (parentLoadEtag) params = params.set('parentLoadEtag', parentLoadEtag);
+    return this.http.get<AlvysOperationOutcome[]>(
+      `${this.base}/invoices/${encodeURIComponent(id)}/alvys-preview`, { params },
+    );
   }
 }
 

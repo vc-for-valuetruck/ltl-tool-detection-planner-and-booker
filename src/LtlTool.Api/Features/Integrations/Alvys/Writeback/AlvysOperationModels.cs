@@ -117,6 +117,27 @@ public sealed class AlvysOperationRequest
     /// </summary>
     public string? PaymentType { get; set; }
 
+    // --- Customer-payment post inputs (Public API: POST /invoices/customer-payments) ----------
+
+    /// <summary>
+    /// Payment amount for a customer-payment post. Must be greater than zero; the currency is carried
+    /// separately in <see cref="PaymentCurrency"/> to mirror the Alvys <c>Amount{Amount,Currency}</c>
+    /// money shape.
+    /// </summary>
+    public decimal? PaymentAmount { get; set; }
+
+    /// <summary>ISO currency code for a customer-payment post (defaults to <c>USD</c> when omitted).</summary>
+    public string? PaymentCurrency { get; set; }
+
+    /// <summary>Payment date for a customer-payment post.</summary>
+    public DateTimeOffset? PaymentDate { get; set; }
+
+    /// <summary>
+    /// Alvys idempotency reference for a customer-payment post (their <c>ReferenceNumber</c>). Required
+    /// so a repeated post is a safe no-op upstream rather than a double payment.
+    /// </summary>
+    public string? ReferenceNumber { get; set; }
+
     // --- Internal-API (Phase-2 consolidation) inputs ------------------------------------------
 
     /// <summary>
