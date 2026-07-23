@@ -108,7 +108,12 @@ jobs:
           AZURE_AD_API_CLIENT_ID: ${{ secrets.AZURE_AD_API_CLIENT_ID }}
           AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
           AZURE_AD_WEB_CLIENT_ID: ${{ secrets.AZURE_AD_WEB_CLIENT_ID }}
-          ALLOWED_EMAIL_DOMAIN: ${{ vars.ALLOWED_EMAIL_DOMAIN || 'valuetruck.com' }}
+          # Default empty — the API admits any authenticated user in the Entra tenant. Set the
+          # `ALLOWED_EMAIL_DOMAIN` variable on the `uat` GitHub environment to restrict access
+          # to a specific email domain (e.g. `valuetruck.com`). The deploy script deletes any
+          # existing AccessPolicy__AllowedEmailDomains__* app settings when this is empty, so
+          # tightening/loosening the restriction reliably takes effect on redeploy.
+          ALLOWED_EMAIL_DOMAIN: ${{ vars.ALLOWED_EMAIL_DOMAIN || '' }}
           ALVYS_PROVIDER: ${{ vars.ALVYS_PROVIDER || 'Fallback' }}
           ALVYS_API_BASE_URL: ${{ vars.ALVYS_API_BASE_URL || 'https://integrations.alvys.com' }}
           ALVYS_API_VERSION: ${{ vars.ALVYS_API_VERSION || 'v1' }}
