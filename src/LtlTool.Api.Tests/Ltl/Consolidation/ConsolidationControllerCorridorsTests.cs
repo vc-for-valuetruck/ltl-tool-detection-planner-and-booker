@@ -96,6 +96,7 @@ public class ConsolidationControllerCorridorsTests
             laneTemplates: null!,
             options: Microsoft.Extensions.Options.Options.Create(options),
             corridorHealth: null!,
+            autoExecute: null!,
             logger: NullLogger<ConsolidationController>.Instance);
     }
 }

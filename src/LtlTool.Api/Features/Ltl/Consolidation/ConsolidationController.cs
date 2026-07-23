@@ -22,11 +22,13 @@ public sealed class ConsolidationController(
     ILaneTemplateStore laneTemplates,
     IOptions<ConsolidationOptions> options,
     CorridorHealthCache corridorHealth,
+    IConsolidationAutoExecuteService autoExecute,
     ILogger<ConsolidationController> logger) : ControllerBase
 {
     private readonly ConsolidationOptions _options = options.Value;
     private readonly CorridorHealthCache _corridorHealth = corridorHealth;
     private readonly ILaneTemplateStore _laneTemplates = laneTemplates;
+    private readonly IConsolidationAutoExecuteService _autoExecute = autoExecute;
     private readonly ILogger<ConsolidationController> _logger = logger;
 
     /// <summary>
@@ -359,6 +361,55 @@ public sealed class ConsolidationController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult DeleteLaneTemplate(string id) =>
         _laneTemplates.Delete(id) ? NoContent() : NotFound();
+
+    /// <summary>
+    /// Reports whether auto-execute is enabled (the §3.5 kill switch) and whether the acting
+    /// dispatcher currently has a usable Alvys session — backing the Plan Detail "Execute now" toggle
+    /// (spec §4). Never returns the session token itself; <c>ExpiresInSeconds</c> stays null because the
+    /// internal token provider exposes no expiry introspection in this phase.
+    /// </summary>
+    [HttpGet("auto-execute/session-status")]
+    [ProducesResponseType(typeof(ConsolidationAutoExecuteSessionStatus), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ConsolidationAutoExecuteSessionStatus>> GetAutoExecuteSessionStatus(
+        [FromQuery] string? actingUserId,
+        CancellationToken ct)
+    {
+        var status = await _autoExecute.GetSessionStatusAsync(actingUserId ?? "", ct);
+        return Ok(status);
+    }
+
+    /// <summary>
+    /// Auto-executes a consolidation plan's five §2 click-card operations on the dispatcher's behalf
+    /// (docs/AUTO_CONSOLIDATE_SPEC.md). The server rebuilds and re-validates the plan against live Alvys
+    /// and applies the gate; when the gate is closed the recorder is never called and every step is
+    /// reported as <see cref="ConsolidationAutoExecuteStepStatus.NotDispatched"/> with the blocking
+    /// reasons. In Phase 1a every internal operation is <see cref="AlvysLiveSupport.Unsupported"/>, so a
+    /// live write is architecturally unreachable regardless of the feature flag. 400 on a plan that
+    /// cannot be resolved at all (unknown corridor / missing parent).
+    /// </summary>
+    [HttpPost("auto-execute")]
+    [ProducesResponseType(typeof(ConsolidationAutoExecuteResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ConsolidationAutoExecuteResponse>> AutoExecute(
+        [FromBody] ConsolidationAutoExecuteRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            var response = await _autoExecute.ExecuteAsync(request, CurrentUser(), ct);
+
+            _logger.LogInformation(
+                "Consolidation metric: auto_execute_requested corridor={Corridor} dispatched={Dispatched} "
+                + "executed={Executed} blockers={BlockerCount}",
+                response.CorridorCode, response.Dispatched, response.Executed, response.Blockers.Count);
+
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
 
     private string CurrentUser() =>
         User.FindFirstValue("preferred_username")

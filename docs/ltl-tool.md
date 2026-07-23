@@ -74,6 +74,19 @@ change is made to let a write reach a production Alvys tenant:
 | `upload-load-document` | Public API `POST /loads/{loadNumber}/document` (docs.alvys.com, verified 2026-07-21; see [ALVYS_API_DECISIONS.md](./ALVYS_API_DECISIONS.md)) | _(pending)_ | | No |
 | `upload-trip-document` | Public API `POST /trips/{tripId}/document` (docs.alvys.com, verified 2026-07-21) | _(pending)_ | | No |
 | `create-carrier-invoice` | Public API `POST /invoices/carrier-invoice` (docs.alvys.com, verified 2026-07-21) | _(pending)_ | | No |
+| `set-trip-references` (parent trip — LTL + main_load_id, clicks #1/#4) | Internal API — **observed, not contracted** (Alvys web-UI endpoint; see [ALVYS_API_DECISIONS.md](./ALVYS_API_DECISIONS.md) decision #10, Reuben 2026-07-17). No Public-API write exists. | _(pending)_ | | No |
+| `add-extended-stop` (parent trip Waypoint, click #2) | Internal API — **observed, not contracted** (Alvys web-UI endpoint). No Public-API write exists. | _(pending)_ | | No |
+| `zero-child-dispatch-miles` (child trip dispatch miles → 0, click #3) | Internal API — **observed, not contracted** (Alvys web-UI endpoint). No Public-API write exists. | _(pending)_ | | No |
+| `set-trip-references` (child trip — LTL + main_load_id, click #5) | Internal API — **observed, not contracted** (Alvys web-UI endpoint). No Public-API write exists. | _(pending)_ | | No |
+
+**Auto-consolidate (docs/AUTO_CONSOLIDATE_SPEC.md) production execution is architecturally
+unreachable until the four rows above are filled.** In Phase 1a every one of these internal
+operations is registered as `AlvysLiveSupport.Unsupported`, and the auto-execute orchestrator
+refuses to dispatch any operation whose descriptor is not `Supported` — independently of the
+`Ltl:Writeback:AutoConsolidate:Enabled` feature flag and the per-operation internal-API arm
+switches. Flipping the flag on cannot reach a live write while these rows are unsigned and the
+operations remain `Unsupported`. Do not fill these rows or flip the ops to `Supported` without
+the per-operation business sign-off and the independent production gate (item 3).
 
 No filled-in row above means no operation is approved for production. The rows for the
 2026-07-21 document/invoice operations record that Alvys **contracted** the endpoints, but
