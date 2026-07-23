@@ -130,5 +130,9 @@ nor scope is configured the role/scope check is disabled (authenticated caller i
 
 1. Run EF migrations (`AddYardScheduleIngestion`) — creates `YardEvents` + `YardScheduleInputs`.
 2. Register Yard's managed identity with the `YardEvents.Ingest` app role on the LTL API app
-   registration (or configure `YardIngestion:RequiredScope` for a delegated caller).
+   registration (or configure `YardIngestion:RequiredScope` for a delegated caller). The
+   **Provision LTL Tool UAT infrastructure** workflow defines this app role idempotently and — when
+   its `yard_managed_identity_object_id` input is supplied — grants it to Yard's managed identity.
+   Both operations require Entra app-registration write rights; if the pipeline SP lacks them the
+   workflow surfaces manual instructions instead of failing.
 3. No other config needed; defaults accept `yard-control` v1 events.
