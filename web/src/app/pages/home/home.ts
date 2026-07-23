@@ -1,22 +1,24 @@
 import { Component, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { MsalService } from '@azure/msal-angular';
-import { RUNTIME_CONFIG, isAuthConfigured } from '../../runtime-config';
+import { RouterLink } from '@angular/router';
+import { RUNTIME_CONFIG } from '../../runtime-config';
 
+/**
+ * Post-login landing surface for the LTL Tool. Unauthenticated users never reach
+ * this page — the branded /login screen (see pages/login) sits in front via
+ * authGuard. Kept intentionally small: welcome copy + an API health probe +
+ * deep-link into the LTL console.
+ */
 @Component({
   selector: 'app-home',
   standalone: true,
+  imports: [RouterLink],
   template: `
     <section>
-      <p>This is the <strong>LTL Tool Detection, Planner, and Booker</strong> app.</p>
-
-      @if (authConfigured) {
-        <button type="button" (click)="login()">Sign in</button>
-      } @else {
-        <p class="hint">
-          Set <code>RUNTIME_TENANT_ID</code> and <code>RUNTIME_WEB_CLIENT_ID</code> to enable sign-in.
-        </p>
-      }
+      <p>Welcome to the <strong>LTL Tool Detection, Planner, and Booker</strong>.</p>
+      <p>
+        <a routerLink="/ltl">Open the LTL console →</a>
+      </p>
 
       <button type="button" (click)="checkHealth()">Check API health</button>
       @if (health(); as h) {
@@ -26,24 +28,17 @@ import { RUNTIME_CONFIG, isAuthConfigured } from '../../runtime-config';
   `,
   styles: [
     `
-      section { display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
-      .hint { color: #555; }
+      section { display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start; padding: 1.5rem; }
       .health { background: #f4f4f4; padding: 0.5rem 0.75rem; border-radius: 4px; }
+      a { color: var(--link, #2563eb); font-weight: 600; }
     `,
   ],
 })
 export class Home {
   private readonly http = inject(HttpClient);
-  private readonly msal = inject(MsalService);
   private readonly config = inject(RUNTIME_CONFIG);
 
-  protected readonly authConfigured = isAuthConfigured(this.config);
   protected readonly health = signal<string | null>(null);
-
-  protected login(): void {
-    const scopes = this.config.apiScope ? [this.config.apiScope] : [];
-    this.msal.loginRedirect({ scopes });
-  }
 
   protected checkHealth(): void {
     this.http.get(`${this.config.apiBaseUrl}/health`, { responseType: 'text' }).subscribe({

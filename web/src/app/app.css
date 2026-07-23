@@ -51,3 +51,8 @@
 .shell-main {
   min-height: calc(100vh - 60px);
 }
+
+/* When the header is suppressed (e.g. on /login) the main area owns the full viewport. */
+.shell-main-bare {
+  min-height: 100vh;
+}
