@@ -73,6 +73,38 @@ describe('DemoDirectorNarrator', () => {
     expect(pickWith([{ name: 'Guy', lang: 'en-US' }], 'system')).toBeNull();
   });
 
+  it('speaks an array of parts sequentially — caption, then posture — with no gap left silent', () => {
+    const narrator = new DemoDirectorNarrator();
+    if (!narrator.available) {
+      pending('speechSynthesis unavailable in this environment');
+      return;
+    }
+    const spoken: string[] = [];
+    let lastUtterance: { onend?: () => void } | null = null;
+    (narrator as unknown as { synth: unknown }).synth = {
+      getVoices: () => [],
+      cancel: () => {},
+      speak: (u: { text: string; onend?: () => void }) => {
+        spoken.push(u.text);
+        lastUtterance = u;
+      },
+    };
+
+    narrator.speak(['caption sentence', 'posture disclaimer']);
+    // Only the first part starts immediately; speaking stays true until the queue drains.
+    expect(spoken).toEqual(['caption sentence']);
+    expect(narrator.speaking).toBeTrue();
+
+    // Finishing the caption chains straight into the posture — nothing on screen is left unspoken.
+    lastUtterance!.onend!();
+    expect(spoken).toEqual(['caption sentence', 'posture disclaimer']);
+    expect(narrator.speaking).toBeTrue();
+
+    // Finishing the last part drops the speaking flag so auto-advance can proceed.
+    lastUtterance!.onend!();
+    expect(narrator.speaking).toBeFalse();
+  });
+
   it('is a no-op (not speaking) when the platform has no speech synthesis', () => {
     // Simulate an unavailable engine by pointing the wrapper at a context without the API.
     const narrator = new DemoDirectorNarrator();

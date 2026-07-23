@@ -17,9 +17,9 @@
 
 /**
  * The three narrator personas the operator can pick from the control bar:
- *  - `narrator` (default): the deepest, most measured male en-US voice available, at a calm
- *     documentary rate. This is the CFO-facing house voice.
- *  - `auFemale`: a warm Australian female voice.
+ *  - `auFemale` (default): a warm, natural Australian female voice — reads as roughly 29-35. This
+ *     is the CFO-facing house voice, at a natural ~1.0 rate.
+ *  - `narrator`: the deepest, most measured male en-US voice available, at a calm documentary rate.
  *  - `system`: whatever the platform picks by itself (no voice override).
  */
 export type DirectorVoicePreset = 'narrator' | 'auFemale' | 'system';
@@ -31,12 +31,12 @@ export interface DirectorVoiceOption {
 
 /** Ordered voice options for the control-bar picker (first is the default). */
 export const DIRECTOR_VOICE_OPTIONS: readonly DirectorVoiceOption[] = [
-  { id: 'narrator', label: 'Narrator (deep male)' },
   { id: 'auFemale', label: 'Australian female' },
+  { id: 'narrator', label: 'Narrator (deep male)' },
   { id: 'system', label: 'System default' },
 ];
 
-export const DIRECTOR_DEFAULT_VOICE: DirectorVoicePreset = 'narrator';
+export const DIRECTOR_DEFAULT_VOICE: DirectorVoicePreset = 'auFemale';
 
 export class DemoDirectorNarrator {
   private readonly synth: SpeechSynthesis | null =
@@ -44,6 +44,8 @@ export class DemoDirectorNarrator {
 
   private active: SpeechSynthesisUtterance | null = null;
   private isSpeakingFlag = false;
+  /** Remaining sentences to speak after {@link active} finishes (caption → posture, etc.). */
+  private queue: string[] = [];
 
   /** Which persona to synthesise with. Mutated by {@link setPreset} from the control bar. */
   private preset: DirectorVoicePreset = DIRECTOR_DEFAULT_VOICE;
@@ -64,16 +66,27 @@ export class DemoDirectorNarrator {
   }
 
   /**
-   * Speaks `text` in the selected persona. Cancels anything currently being spoken first so
-   * captions never overlap. No-op when unavailable or text is blank.
+   * Speaks `text` in the selected persona. A single string is spoken as one utterance; an array is
+   * spoken sequentially — each part starts only when the previous one ends — so a step's caption and
+   * its honest-state posture are both narrated, in order, with no overlap and nothing left silent.
+   * {@link speaking} stays true until the whole queue drains. Cancels anything in flight first.
+   * No-op when unavailable or every part is blank.
    */
-  speak(text: string): void {
+  speak(text: string | readonly string[]): void {
     if (!this.available) return;
-    const trimmed = text?.trim();
-    if (!trimmed) return;
+    const parts = (Array.isArray(text) ? [...text] : [text])
+      .map((t) => (t ?? '').trim())
+      .filter((t) => t.length > 0);
+    if (parts.length === 0) return;
     this.cancel();
+    this.queue = parts.slice(1);
+    this.speakOne(parts[0]);
+  }
+
+  /** Speaks a single sentence; chains to the next queued sentence (or clears the flag) on end. */
+  private speakOne(text: string): void {
     try {
-      const utterance = new SpeechSynthesisUtterance(trimmed);
+      const utterance = new SpeechSynthesisUtterance(text);
       const voice = this.pickVoice();
       if (voice) utterance.voice = voice;
       // A deep-male narrator reads a touch slower and lower for gravitas; the other personas keep a
@@ -83,12 +96,8 @@ export class DemoDirectorNarrator {
       utterance.rate = isNarrator ? 0.92 : 1.0;
       utterance.pitch = isNarrator ? 0.92 : 1.0;
       utterance.volume = 1.0;
-      utterance.onend = () => {
-        if (this.active === utterance) this.isSpeakingFlag = false;
-      };
-      utterance.onerror = () => {
-        if (this.active === utterance) this.isSpeakingFlag = false;
-      };
+      utterance.onend = () => this.onUtteranceDone(utterance);
+      utterance.onerror = () => this.onUtteranceDone(utterance);
       this.active = utterance;
       this.isSpeakingFlag = true;
       this.synth!.speak(utterance);
@@ -96,13 +105,28 @@ export class DemoDirectorNarrator {
       // A throwing synthesis engine must not break playback.
       this.active = null;
       this.isSpeakingFlag = false;
+      this.queue = [];
     }
   }
 
-  /** Immediately stops any in-flight narration. Safe to call repeatedly / when unavailable. */
+  /** Advances the queue: speak the next sentence, or drop the speaking flag when done. */
+  private onUtteranceDone(finished: SpeechSynthesisUtterance): void {
+    // Ignore a late end from a superseded utterance (a newer speak()/cancel() has moved on).
+    if (this.active !== finished) return;
+    const next = this.queue.shift();
+    if (next !== undefined) {
+      this.speakOne(next);
+    } else {
+      this.active = null;
+      this.isSpeakingFlag = false;
+    }
+  }
+
+  /** Immediately stops any in-flight narration and clears the queue. Safe to call repeatedly. */
   cancel(): void {
     this.active = null;
     this.isSpeakingFlag = false;
+    this.queue = [];
     if (!this.available) return;
     try {
       this.synth!.cancel();
@@ -179,14 +203,19 @@ export class DemoDirectorNarrator {
 
   /** Best-effort female-voice name heuristic — leads with the common en-AU female voices. */
   private static readonly FEMALE_VOICE_NAME =
-    /karen|catherine|hayley|female|samantha|tessa|fiona|serena|moira|veena|zira|susan|linda|heather|nicky|kate|olivia|joanna|amy|emma|libby|aria|jenny|michelle|clara|natasha/i;
+    /karen|catherine|hayley|kylie|female|samantha|tessa|fiona|serena|moira|veena|zira|susan|linda|heather|nicky|kate|olivia|joanna|amy|emma|libby|aria|jenny|michelle|clara|natasha/i;
 }
 
 /** localStorage key for the persisted narration on/off preference. */
 export const DIRECTOR_NARRATION_KEY = 'ltl.demo.director.narration';
 
-/** localStorage key for the persisted voice-persona preference. */
-export const DIRECTOR_VOICE_KEY = 'ltl.demo.director.voice';
+/**
+ * localStorage key for the persisted voice-persona preference. Bumped to `.v2` alongside the change
+ * of the default persona to the Australian female house voice: only ever written on an explicit pick,
+ * so an existing operator who chose a persona under the old key is migrated to the new default and
+ * keeps it unless they deliberately pick again after this change (which persists under the new key).
+ */
+export const DIRECTOR_VOICE_KEY = 'ltl.demo.director.voice.v2';
 
 /**
  * Hard cap (ms) on how long auto-advance will wait for a spoken caption to finish before proceeding

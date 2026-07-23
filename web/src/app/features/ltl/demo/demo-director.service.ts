@@ -10,7 +10,7 @@ import {
   DirectorStepStatus,
 } from './demo-director.models';
 import { LtlLoadSummary } from '../ltl.models';
-import { DemoLane } from './demo-director.models';
+import { DemoLane, DemoOriginHotspot } from './demo-director.models';
 import { DEMO_DIRECTOR_SCRIPT } from './demo-director.script';
 import {
   DIRECTOR_DEFAULT_VOICE,
@@ -78,7 +78,7 @@ export class DemoDirectorService {
 
   /** Voice narration of captions is enabled (persisted). Defaults ON when speech is available. */
   readonly narrationEnabled = signal<boolean>(this.loadNarrationPref());
-  /** Selected narrator persona (persisted). Defaults to the deep-male house voice. */
+  /** Selected narrator persona (persisted). Defaults to the Australian-female house voice. */
   readonly voicePreset = signal<DirectorVoicePreset>(this.loadVoicePref());
   /** Options for the control-bar voice picker. */
   readonly voiceOptions = DIRECTOR_VOICE_OPTIONS;
@@ -226,6 +226,8 @@ export class DemoDirectorService {
               totalOpen: res?.total ?? items.length,
               topLanes,
               customerName: anchor.customerName ?? null,
+              originHotspots: this.rankOriginHotspots(items),
+              anchorCandidates: this.pickAnchorCandidates(items, anchor),
             });
           },
           error: () => {
@@ -293,6 +295,46 @@ export class DemoDirectorService {
     const o = l.origin, d = l.destination;
     if (!o?.city || !o?.state || !d?.city || !d?.state) return null;
     return `${o.city}, ${o.state} → ${d.city}, ${d.state}`;
+  }
+
+  /** Groups the live loads by origin city+state and returns the busiest origins, most freight first. */
+  private rankOriginHotspots(items: LtlLoadSummary[]): DemoOriginHotspot[] {
+    const groups = new Map<string, { city: string; state: string; count: number }>();
+    for (const l of items) {
+      const city = l.origin?.city?.trim();
+      const state = l.origin?.state?.trim();
+      if (!city || !state) continue;
+      const key = `${city}|${state}`.toUpperCase();
+      const g = groups.get(key);
+      if (g) g.count++;
+      else groups.set(key, { city, state, count: 1 });
+    }
+    return [...groups.values()].sort((a, b) => b.count - a.count);
+  }
+
+  /**
+   * Builds the ordered list of real load numbers the Consolidate seedFind will try, best-first: loads
+   * whose origin sits in the pilot corridor's home state (TX / Laredo side) lead — those are the ones
+   * that actually return corridor siblings — followed by the rest in revenue order. Distinct, capped,
+   * anchor guaranteed first. Never invents a number.
+   */
+  private pickAnchorCandidates(items: LtlLoadSummary[], anchor: LtlLoadSummary): string[] {
+    const withNumber = items.filter((l) => l.loadNumber);
+    const rank = (l: LtlLoadSummary): number => {
+      if (l.id && anchor.id && l.id === anchor.id) return -1; // anchor always first
+      return l.origin?.state?.trim().toUpperCase() === 'TX' ? 0 : 1;
+    };
+    const ordered = [...withNumber].sort((a, b) => rank(a) - rank(b));
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const l of ordered) {
+      const n = l.loadNumber!;
+      if (seen.has(n)) continue;
+      seen.add(n);
+      out.push(n);
+      if (out.length >= 6) break;
+    }
+    return out;
   }
 
   private laneCount(anchor: LtlLoadSummary, topLanes: DemoLane[]): number | null {
@@ -505,7 +547,15 @@ export class DemoDirectorService {
       for (const f of fields) this.fill(f.selector, f.value);
       return;
     }
-    const selector = step.actionSelector ?? step.target;
+    if (kind === 'clickRetry') {
+      await this.performClickRetry(step, token);
+      return;
+    }
+    if (kind === 'seedFind') {
+      await this.performSeedFind(step, ctx, token);
+      return;
+    }
+    const selector = step.resolveActionSelector?.(ctx) ?? step.actionSelector ?? step.target;
     if (!selector) return;
     if (kind === 'fill') {
       const value = (ctx && step.resolveFillValue?.(ctx)) ?? step.fillValue ?? '';
@@ -529,6 +579,69 @@ export class DemoDirectorService {
     }
   }
 
+  /**
+   * Clicks candidate cards one at a time until a success selector appears — used so the Dock lands a
+   * parent load that actually yields combinable siblings rather than the first (possibly dead) card.
+   * Resets between tries when a reset selector is given, and bails the moment the run is superseded.
+   */
+  private async performClickRetry(step: DirectorStep, token: number): Promise<void> {
+    const cfg = step.retry;
+    if (!cfg) return;
+    const initial = this.visibleAll(cfg.candidateSelector).length;
+    if (initial === 0) return;
+    const attempts = Math.max(1, Math.min(cfg.maxAttempts ?? initial, initial));
+    for (let i = 0; i < attempts; i++) {
+      if (this.isStale(token)) return;
+      const cards = this.visibleAll(cfg.candidateSelector);
+      const card = cards[i];
+      if (!card) return;
+      card.click();
+      await this.delay(150);
+      const found = await this.waitForAny([cfg.successSelector], 8_000, token);
+      if (this.isStale(token)) return;
+      if (found) return;
+      // No usable result off this candidate — reset and try the next one (unless we're out of tries).
+      if (cfg.resetSelector && i < attempts - 1) {
+        (document.querySelector(cfg.resetSelector) as HTMLElement | null)?.click();
+        await this.delay(150);
+        await this.waitForAny([cfg.candidateSelector], 8_000, token);
+      }
+    }
+  }
+
+  /**
+   * Types each real anchor load number into the seed input and clicks Find until candidate rows
+   * render — used so the Consolidate board drives a live anchor instead of an empty pinned corridor.
+   * Tries a second anchor before giving up; honest empty state (no rows) is left for the next step.
+   */
+  private async performSeedFind(
+    step: DirectorStep,
+    ctx: DemoContext | null,
+    token: number,
+  ): Promise<void> {
+    const cfg = step.seedFind;
+    if (!cfg) return;
+    const anchors = (ctx?.anchorCandidates ?? []).filter((a) => a && a.trim().length > 0);
+    if (anchors.length === 0) return;
+    const attempts = Math.max(1, Math.min(cfg.maxAttempts ?? anchors.length, anchors.length));
+    for (let i = 0; i < attempts; i++) {
+      if (this.isStale(token)) return;
+      this.fill(cfg.seedSelector, anchors[i]);
+      await this.delay(80);
+      (document.querySelector(cfg.findSelector) as HTMLElement | null)?.click();
+      const found = await this.waitForAny([cfg.rowSelector], 8_000, token);
+      if (this.isStale(token)) return;
+      if (found) return;
+    }
+  }
+
+  /** All present-and-visible elements matching `selector`, in document order. */
+  private visibleAll(selector: string): HTMLElement[] {
+    if (typeof document === 'undefined') return [];
+    const els = Array.from(document.querySelectorAll<HTMLElement>(selector));
+    return els.filter((el) => el.offsetParent !== null || el.getClientRects().length > 0);
+  }
+
   /** Sets an input's value and fires input+change so Angular's ngModel/forms pick it up. */
   private fill(selector: string, value: string): void {
     const el = document.querySelector(selector) as HTMLInputElement | null;
@@ -545,13 +658,21 @@ export class DemoDirectorService {
     });
   }
 
-  /** Speaks the caption currently on screen when narration is enabled (safe no-op otherwise). */
+  /**
+   * Speaks the current step's narration when narration is enabled (safe no-op otherwise). Both the
+   * caption AND the honest-state posture are spoken, in that order and sequentially, so nothing on
+   * screen is left silent — the operator hears the "recorded internally only / writeback gated"
+   * disclaimer read aloud, not just shown.
+   */
   private narrate(): void {
     if (!this.narrationEnabled()) {
       this.narrator.cancel();
       return;
     }
-    this.narrator.speak(this.caption());
+    const parts = [this.caption(), this.posture()].filter(
+      (t): t is string => !!t && t.trim().length > 0,
+    );
+    this.narrator.speak(parts);
   }
 
   /** Reads the persisted narration preference; defaults ON (only meaningful when speech exists). */
@@ -573,7 +694,7 @@ export class DemoDirectorService {
     }
   }
 
-  /** Reads the persisted voice persona; defaults to the deep-male house voice. */
+  /** Reads the persisted voice persona; defaults to the Australian-female house voice. */
   private loadVoicePref(): DirectorVoicePreset {
     try {
       if (typeof localStorage === 'undefined') return DIRECTOR_DEFAULT_VOICE;

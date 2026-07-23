@@ -12,12 +12,55 @@
  * director does NOT modify feature code to drive it.
  */
 
-/** A single UI action the director performs on the live page. */
-export type DirectorActionKind = 'click' | 'fill' | 'fillMany' | 'check';
+/**
+ * A single UI action the director performs on the live page.
+ *  - `clickRetry`: click candidate cards one at a time until a success selector appears, resetting
+ *     between tries — used to land a Dock parent that actually yields combinable siblings.
+ *  - `seedFind`: type each anchor load number and hit Find until real rows render — used to drive the
+ *     Consolidate board onto a live anchor instead of an empty pinned corridor.
+ */
+export type DirectorActionKind =
+  | 'click'
+  | 'fill'
+  | 'fillMany'
+  | 'check'
+  | 'clickRetry'
+  | 'seedFind';
 
 export interface DirectorFill {
   readonly selector: string;
   readonly value: string;
+}
+
+/** Config for a {@link DirectorActionKind} `clickRetry`: try candidates until one succeeds. */
+export interface DirectorClickRetry {
+  /** Selector matching all clickable candidates (only visible, enabled ones are used). */
+  readonly candidateSelector: string;
+  /** Selector whose presence means the click landed us somewhere useful (stop retrying). */
+  readonly successSelector: string;
+  /** Optional selector clicked to reset before trying the next candidate (e.g. "Start over"). */
+  readonly resetSelector?: string;
+  /** Hard cap on candidates to try. Defaults to the number of visible candidates. */
+  readonly maxAttempts?: number;
+}
+
+/** Config for a {@link DirectorActionKind} `seedFind`: type an anchor + Find until rows render. */
+export interface DirectorSeedFind {
+  /** The load-number input to type each anchor into. */
+  readonly seedSelector: string;
+  /** The "Find candidates" button to click after typing. */
+  readonly findSelector: string;
+  /** Selector whose presence means the search returned real rows (stop trying anchors). */
+  readonly rowSelector: string;
+  /** Hard cap on anchors to try. Defaults to the number of live anchor candidates. */
+  readonly maxAttempts?: number;
+}
+
+/** One origin city where live freight is concentrated right now (busiest first). */
+export interface DemoOriginHotspot {
+  readonly city: string | null;
+  readonly state: string | null;
+  readonly count: number;
 }
 
 /** One lane in the live cast, with how many open loads are moving on it right now. */
@@ -60,6 +103,16 @@ export interface DemoContext {
   readonly topLanes: readonly DemoLane[];
   /** Customer name on the anchor load, when Alvys supplied one. Null otherwise — never invented. */
   readonly customerName: string | null;
+  /**
+   * Origin cities where the live freight is concentrated, busiest first. Lets the Dock act land the
+   * truck at the yard nearest the most real freight instead of an arbitrary card. Empty when unresolved.
+   */
+  readonly originHotspots: readonly DemoOriginHotspot[];
+  /**
+   * Real live load numbers to try as a Consolidate seed, best-first (TX/corridor origins lead). The
+   * seedFind action walks these until one returns candidates. Empty when unresolved.
+   */
+  readonly anchorCandidates: readonly string[];
 }
 
 export interface DirectorStep {
@@ -96,6 +149,16 @@ export interface DirectorStep {
   readonly action?: DirectorActionKind;
   /** Target of the action; defaults to {@link target} when omitted. */
   readonly actionSelector?: string;
+  /**
+   * Live-data override for a click's target selector. Given the run's {@link DemoContext} (and free to
+   * inspect the DOM), returns the exact selector to click — e.g. the yard card nearest the busiest
+   * freight — or null to fall back to {@link actionSelector} / {@link target}.
+   */
+  readonly resolveActionSelector?: (ctx: DemoContext | null) => string | null;
+  /** Config for a `clickRetry` action. */
+  readonly retry?: DirectorClickRetry;
+  /** Config for a `seedFind` action. */
+  readonly seedFind?: DirectorSeedFind;
   /** Value for a `fill` action. */
   readonly fillValue?: string;
   /**
