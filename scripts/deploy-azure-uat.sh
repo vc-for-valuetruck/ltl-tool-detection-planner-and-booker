@@ -27,7 +27,10 @@ IMAGE_TAG=${IMAGE_TAG:-$(date +%Y%m%d%H%M%S)}
 # 'admit all authenticated', so we skip the app setting entirely below when this is blank so
 # the setting isn't left as an empty string that some code paths might mistake for a value.
 ALLOWED_EMAIL_DOMAIN=${ALLOWED_EMAIL_DOMAIN:-}
-ALVYS_PROVIDER=${ALVYS_PROVIDER:-Fallback}
+# UAT is production-like and must default to LIVE Alvys (CLAUDE.md safety principle). Override to
+# Fallback only for a deliberate offline demo. A credential guard below refuses a Live deploy with
+# empty credentials so we never reconfigure the App Service onto a silently-empty Alvys client.
+ALVYS_PROVIDER=${ALVYS_PROVIDER:-Live}
 ALVYS_API_BASE_URL=${ALVYS_API_BASE_URL:-https://integrations.alvys.com}
 ALVYS_API_VERSION=${ALVYS_API_VERSION:-v1}
 ALVYS_CLIENT_ID=${ALVYS_CLIENT_ID:-}
@@ -54,6 +57,24 @@ for name in "${required[@]}"; do
     exit 1
   fi
 done
+
+# Credential guard: a Live deploy with empty client credentials would reconfigure the App Service
+# onto a Live client that can never authenticate (every Alvys read degrades to empty) — the exact
+# state behind the "Couldn't reach Alvys" UAT outage. Refuse it here rather than clobber a working
+# config. Fallback (offline demo) is allowed without credentials.
+if [ "$ALVYS_PROVIDER" = "Live" ]; then
+  alvys_missing=()
+  for name in ALVYS_CLIENT_ID ALVYS_CLIENT_SECRET ALVYS_TENANT_ID; do
+    if [ -z "${!name:-}" ]; then
+      alvys_missing+=("$name")
+    fi
+  done
+  if [ "${#alvys_missing[@]}" -gt 0 ]; then
+    echo "Refusing to deploy ALVYS_PROVIDER=Live with missing credentials: ${alvys_missing[*]}" >&2
+    echo "Set them (repo/uat secrets), or set ALVYS_PROVIDER=Fallback for a deliberate offline demo." >&2
+    exit 1
+  fi
+fi
 
 for cmd in az jq; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "$cmd is required." >&2; exit 1; }

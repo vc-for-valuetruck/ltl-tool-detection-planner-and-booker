@@ -41,6 +41,14 @@ jobs:
           AZURE_AD_API_CLIENT_ID: ${{ secrets.AZURE_AD_API_CLIENT_ID }}
           AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
           AZURE_AD_WEB_CLIENT_ID: ${{ secrets.AZURE_AD_WEB_CLIENT_ID }}
+          # Alvys client-credentials. Gated here (rather than left to defaults) so a deploy
+          # can never silently reconfigure UAT onto an empty/credential-less Alvys client —
+          # doing so overwrites a working Live config and produces the "Couldn't reach Alvys"
+          # UAT outage. Missing values skip the deploy (fail-safe: the App Service keeps its
+          # current settings) instead of clobbering them.
+          ALVYS_CLIENT_ID: ${{ secrets.ALVYS_CLIENT_ID }}
+          ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}
+          ALVYS_TENANT_ID: ${{ secrets.ALVYS_TENANT_ID }}
         run: |
           missing=()
           required=(
@@ -52,6 +60,9 @@ jobs:
             AZURE_AD_API_CLIENT_ID
             AZURE_AD_CLIENT_SECRET
             AZURE_AD_WEB_CLIENT_ID
+            ALVYS_CLIENT_ID
+            ALVYS_CLIENT_SECRET
+            ALVYS_TENANT_ID
           )
 
           for name in "${required[@]}"; do
@@ -114,7 +125,11 @@ jobs:
           # existing AccessPolicy__AllowedEmailDomains__* app settings when this is empty, so
           # tightening/loosening the restriction reliably takes effect on redeploy.
           ALLOWED_EMAIL_DOMAIN: ${{ vars.ALLOWED_EMAIL_DOMAIN || '' }}
-          ALVYS_PROVIDER: ${{ vars.ALVYS_PROVIDER || 'Fallback' }}
+          # UAT is a production-like environment and must run against LIVE Alvys (CLAUDE.md:
+          # "Fallback must never be the configured provider in production-like environments").
+          # Default to Live; override with the ALVYS_PROVIDER repo/env var only for a deliberate
+          # offline demo. The preflight above guarantees credentials are present.
+          ALVYS_PROVIDER: ${{ vars.ALVYS_PROVIDER || 'Live' }}
           ALVYS_API_BASE_URL: ${{ vars.ALVYS_API_BASE_URL || 'https://integrations.alvys.com' }}
           ALVYS_API_VERSION: ${{ vars.ALVYS_API_VERSION || 'v1' }}
           ALVYS_TENANT_ID: ${{ secrets.ALVYS_TENANT_ID }}
@@ -154,8 +169,24 @@ jobs:
             echo "Waiting for API health... ($i)"
             sleep 10
           done
-          curl -fsS "${API_URL}/api/health" >/dev/null
+          curl -fsS "${API_URL}/api/health" -o /tmp/health.json
           curl -fsS "${WEB_URL}" >/dev/null
+
+          # Guard the Alvys data path, not just liveness. /api/health returns "ok" even when the
+          # API is on the empty Fallback provider or on Live without credentials — both serve no
+          # live Alvys data and surface as "Couldn't reach Alvys" in the SPA. Assert the deployed
+          # config here (anonymous, no secrets) so a broken Alvys config fails the deploy loudly.
+          echo "Health payload:"; cat /tmp/health.json; echo
+          ALVYS_PROVIDER_LIVE=$(jq -r '.alvysProvider' /tmp/health.json)
+          ALVYS_CREDS=$(jq -r '.alvysCredentialsPresent' /tmp/health.json)
+          if [ "$ALVYS_PROVIDER_LIVE" != "Live" ]; then
+            echo "::error::Deployed Alvys provider is '$ALVYS_PROVIDER_LIVE', expected 'Live'. UAT must run against live Alvys."
+            exit 1
+          fi
+          if [ "$ALVYS_CREDS" != "true" ]; then
+            echo "::error::Deployed API reports Alvys credentials absent (alvysCredentialsPresent=$ALVYS_CREDS). Check ALVYS_CLIENT_ID / ALVYS_CLIENT_SECRET."
+            exit 1
+          fi
 
       - name: Deployment summary
         if: steps.preflight.outputs.deploy_ready == 'true'

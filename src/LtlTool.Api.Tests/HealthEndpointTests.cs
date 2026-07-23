@@ -46,6 +46,24 @@ public sealed class HealthEndpointTests(TemplateWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task Health_surfaces_alvys_provider_and_credential_state()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/health");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        // Provider defaults to Live (live Alvys is the source of truth); the test config supplies no
+        // Alvys credentials, so the guard field must honestly report them absent. This is the signal
+        // the deploy smoke test uses to catch a UAT deploy that would serve no live Alvys data.
+        Assert.Equal("Live", root.GetProperty("alvysProvider").GetString());
+        Assert.False(root.GetProperty("alvysCredentialsPresent").GetBoolean());
+    }
+
+    [Fact]
     public async Task Optimization_health_is_anonymous_and_returns_ok_with_flags_off_by_default()
     {
         var client = _factory.CreateClient();
