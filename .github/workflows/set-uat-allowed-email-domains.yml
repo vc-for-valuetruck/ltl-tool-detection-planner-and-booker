@@ -1,0 +1,179 @@
+name: Set UAT AllowedEmailDomains
+
+# workflow_dispatch companion to the "Deploy LTL Tool UAT" workflow. Configures the
+# AccessPolicy__AllowedEmailDomains__* app settings on ltl-uat-api WITHOUT running a full
+# redeploy — useful when you just need to tighten, loosen, or clear the email-domain
+# restriction on the running API.
+#
+# What it does:
+#   1. Runs scripts/set-allowed-email-domains.sh (the same helper the deploy path uses), which
+#      splits/trims/lowercases/de-dupes the comma-separated `domains` input, deletes any
+#      existing AccessPolicy__AllowedEmailDomains__* keys, and writes __0/__1/__2/... .NET's
+#      config array binder rehydrates those into AccessPolicyOptions.AllowedEmailDomains[].
+#   2. Restarts the API so the new setting takes effect.
+#   3. Confirms /api/health still returns 200.
+#
+# When `domains` is left blank, the workflow removes the restriction entirely — the API then
+# admits any authenticated user in the Entra tenant (per AllowedEmailDomainHandler.cs).
+#
+# Also updates the `ALLOWED_EMAIL_DOMAINS` GitHub environment variable on `uat` so the next
+# full deploy applies the same value (avoids drift between the running app service and what
+# the deploy workflow would set).
+
+on:
+  workflow_dispatch:
+    inputs:
+      domains:
+        description: >-
+          Comma-separated list of email domains to admit (e.g. "valuetruck.com,valuelogistics.com").
+          Leave blank to admit any authenticated user in the tenant. Whitespace, casing, and
+          duplicates are normalized.
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: Print the mutating az calls without executing them.
+        type: boolean
+        default: false
+      update_env_variable:
+        description: >-
+          Also update the ALLOWED_EMAIL_DOMAINS variable on the `uat` GitHub environment so the
+          next full deploy applies the same value. Requires the workflow runner's GITHUB_TOKEN
+          to have write access to environments (default `permissions` block below grants it).
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write # required for OIDC federation to Azure
+  actions: write  # required to update the environment variable via the REST API
+
+jobs:
+  apply:
+    name: Apply AllowedEmailDomains to ltl-uat-api
+    runs-on: ubuntu-latest
+    environment: uat
+    env:
+      RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
+      BASE_NAME: ${{ vars.LTL_UAT_BASE_NAME || 'ltl-uat' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight — required secrets present
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          missing=()
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            [ -z "${!name}" ] && missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::uat environment missing required secret(s): ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Azure login with ltl-uat-github-deploy
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Apply AllowedEmailDomains
+        id: apply
+        shell: bash
+        env:
+          DOMAINS: ${{ inputs.domains }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          export RG="$RG"
+          export API_APP="${BASE_NAME}-api"
+          bash scripts/set-allowed-email-domains.sh
+
+          # Capture the final applied domains list so downstream steps and the summary have it.
+          APPLIED=$(az webapp config appsettings list --name "$API_APP" --resource-group "$RG" \
+            --query "[?starts_with(name, 'AccessPolicy__AllowedEmailDomains__')].value" -o tsv 2>/dev/null | paste -sd ',' - || true)
+          echo "applied=${APPLIED}" >> "$GITHUB_OUTPUT"
+          echo "api_app=${API_APP}" >> "$GITHUB_OUTPUT"
+
+      - name: Restart the API so config picks up
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_APP="${BASE_NAME}-api"
+          az webapp restart --name "$API_APP" --resource-group "$RG" --only-show-errors -o none
+
+      - name: Verify /api/health
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FQDN=$(az webapp show -g "$RG" -n "${BASE_NAME}-api" --query defaultHostName -o tsv)
+          URL="https://${FQDN}/api/health"
+          echo "Probing ${URL} until healthy..."
+          for _ in $(seq 1 30); do
+            body=$(curl -fsS "$URL" 2>/dev/null || true)
+            if printf '%s' "$body" | grep -q '"status":"ok"'; then
+              echo "::notice::API healthy: $body"
+              break
+            fi
+            sleep 5
+          done
+          if ! printf '%s' "$body" | grep -q '"status":"ok"'; then
+            echo "::error::API did not return healthy /api/health within timeout"
+            exit 1
+          fi
+
+      - name: Update `uat` environment variable ALLOWED_EMAIL_DOMAINS
+        if: ${{ inputs.update_env_variable && !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VALUE: ${{ inputs.domains }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Try updating the existing variable; if it doesn't exist, create it. Both endpoints
+          # are idempotent from our perspective — we always end with the desired value.
+          if gh api "repos/${{ github.repository }}/environments/uat/variables/ALLOWED_EMAIL_DOMAINS" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/${{ github.repository }}/environments/uat/variables/ALLOWED_EMAIL_DOMAINS" \
+              -f name=ALLOWED_EMAIL_DOMAINS -f value="$NEW_VALUE" >/dev/null
+            echo "::notice::Updated existing uat env variable ALLOWED_EMAIL_DOMAINS."
+          else
+            gh api --method POST \
+              "repos/${{ github.repository }}/environments/uat/variables" \
+              -f name=ALLOWED_EMAIL_DOMAINS -f value="$NEW_VALUE" >/dev/null
+            echo "::notice::Created uat env variable ALLOWED_EMAIL_DOMAINS."
+          fi
+
+      - name: Summary
+        if: always()
+        shell: bash
+        env:
+          APPLIED: ${{ steps.apply.outputs.applied }}
+          API_APP: ${{ steps.apply.outputs.api_app }}
+        run: |
+          {
+            echo "## AllowedEmailDomains applied to \`$API_APP\`"
+            echo ""
+            if [ -z "$APPLIED" ]; then
+              echo "- Restriction: **none** — any authenticated user in the Entra tenant is admitted."
+            else
+              echo "- Restriction: only tokens whose \`preferred_username\`/\`email\`/\`upn\` is on one of:"
+              printf '$APPLIED' | tr ',' '\n' | while read -r d; do
+                [ -n "$d" ] && echo "  - \`$d\`"
+              done
+            fi
+            echo ""
+            if [ "${{ inputs.dry_run }}" = "true" ]; then
+              echo "- Dry-run: **yes** (no changes applied)."
+            fi
+            if [ "${{ inputs.update_env_variable }}" = "true" ] && [ "${{ inputs.dry_run }}" = "false" ]; then
+              echo "- \`uat\` env variable \`ALLOWED_EMAIL_DOMAINS\` updated to: \`${{ inputs.domains }}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -21,12 +21,18 @@ SQL_DB=${SQL_DB:-${BASE_NAME}-sqldb}
 SQL_ADMIN=${SQL_ADMIN:-ltlsqladmin}
 IMAGE_TAG=${IMAGE_TAG:-$(date +%Y%m%d%H%M%S)}
 
-# Empty by default — admits any authenticated user in the Entra tenant. To restrict to a
-# specific email domain (e.g. valuetruck.com), set the ALLOWED_EMAIL_DOMAIN GitHub environment
-# variable (or export it locally). AllowedEmailDomainHandler.cs treats an empty allow-list as
-# 'admit all authenticated', so we skip the app setting entirely below when this is blank so
-# the setting isn't left as an empty string that some code paths might mistake for a value.
-ALLOWED_EMAIL_DOMAIN=${ALLOWED_EMAIL_DOMAIN:-}
+# Empty by default — admits any authenticated user in the Entra tenant. To restrict access to
+# one or more specific email domains, set either:
+#
+#   ALLOWED_EMAIL_DOMAINS=valuetruck.com,valuelogistics.com   (preferred; comma-separated list)
+#   ALLOWED_EMAIL_DOMAIN=valuetruck.com                        (legacy single-value form)
+#
+# ALLOWED_EMAIL_DOMAINS wins when both are set. Whitespace is trimmed and empty entries are
+# dropped, so e.g. "valuetruck.com, valuelogistics.com " is equivalent to the first example.
+# AllowedEmailDomainHandler.cs treats an empty allow-list as 'admit all authenticated', so we
+# skip the app setting entirely below when the resolved list is empty (rather than leaving an
+# empty '' string that the handler would treat as a one-element list rejecting everyone).
+ALLOWED_EMAIL_DOMAINS=${ALLOWED_EMAIL_DOMAINS:-${ALLOWED_EMAIL_DOMAIN:-}}
 # UAT is production-like and must default to LIVE Alvys (CLAUDE.md safety principle). Override to
 # Fallback only for a deliberate offline demo. A credential guard below refuses a Live deploy with
 # empty credentials so we never reconfigure the App Service onto a silently-empty Alvys client.
@@ -167,28 +173,12 @@ az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --sett
   Ltl__Optimization__AgentCommands__Enabled="$LTL_AGENT_COMMANDS_ENABLED" \
   >/dev/null
 
-# Set the AllowedEmailDomains list separately so we can either configure it (restrict access to
-# one domain) or remove it (admit any authenticated user in the tenant) based on whether
-# ALLOWED_EMAIL_DOMAIN is set. Doing it as its own step keeps the main app-settings call above
-# clean and lets a redeploy actually clear a previously-set restriction — `az webapp config
-# appsettings set` with an empty value leaves the key present with value '' which the handler
-# treats as a one-element list containing '' (rejecting everyone).
-if [ -n "$ALLOWED_EMAIL_DOMAIN" ]; then
-  echo "Restricting $API_APP access to email domain: $ALLOWED_EMAIL_DOMAIN"
-  az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --settings \
-    AccessPolicy__AllowedEmailDomains__0="$ALLOWED_EMAIL_DOMAIN" \
-    >/dev/null
-else
-  echo "ALLOWED_EMAIL_DOMAIN is empty — removing any AccessPolicy__AllowedEmailDomains__* app settings so any authenticated user in the tenant is admitted."
-  # List existing AllowedEmailDomains indices and delete each. Suppress errors when none exist.
-  KEYS=$(az webapp config appsettings list --name "$API_APP" --resource-group "$RG" \
-    --query "[?starts_with(name, 'AccessPolicy__AllowedEmailDomains__')].name" -o tsv 2>/dev/null || true)
-  if [ -n "$KEYS" ]; then
-    # shellcheck disable=SC2086
-    az webapp config appsettings delete --name "$API_APP" --resource-group "$RG" \
-      --setting-names $KEYS >/dev/null
-  fi
-fi
+# Apply AccessPolicy__AllowedEmailDomains__* via the shared helper so the deploy path and the
+# standalone "Set UAT AllowedEmailDomains" workflow (.github/workflows/set-uat-allowed-email-domains.yml)
+# use one source of truth for splitting, de-duping, and delete-first semantics.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RG="$RG" API_APP="$API_APP" DOMAINS="$ALLOWED_EMAIL_DOMAINS" \
+  bash "$SCRIPT_DIR/set-allowed-email-domains.sh"
 
 echo "Configuring $WEB_APP application settings..."
 az webapp config appsettings set --name "$WEB_APP" --resource-group "$RG" --settings \
