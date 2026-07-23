@@ -1,6 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import { DispatchAssembly, DispatchRecommendationsResponse } from './dispatch-assist.models';
 import { DispatchAssistService } from './dispatch-assist.service';
@@ -72,6 +72,46 @@ describe('DispatchAssistService', () => {
     req.flush({ id: 'asm-1', notify: { state: 'NotEnabled' } } as unknown as DispatchAssembly);
     expect(result!.id).toBe('asm-1');
   });
+
+  it('retries a transient 5xx on recommendations then succeeds (no false "no data")', fakeAsync(() => {
+    let result: DispatchRecommendationsResponse | undefined;
+    let errored = false;
+    service.recommendations({ originState: 'TX' }).subscribe({
+      next: (v) => (result = v),
+      error: () => (errored = true),
+    });
+
+    // First attempt hiccups (gateway 503) — the client retries after a short backoff.
+    http.expectOne((r) => r.url === `${base}/recommendations`).flush('upstream busy', {
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+    tick(400);
+    // Retry succeeds; the subscriber sees data, never the error branch.
+    http
+      .expectOne((r) => r.url === `${base}/recommendations`)
+      .flush({ candidates: [], truncated: false } as unknown as DispatchRecommendationsResponse);
+
+    expect(errored).toBeFalse();
+    expect(result).toBeDefined();
+  }));
+
+  it('does NOT retry a 404 (unresolvable load) — surfaces the deterministic error at once', fakeAsync(() => {
+    let status: number | undefined;
+    service.recommendations({ loadId: 'nope' }).subscribe({
+      next: () => undefined,
+      error: (e) => (status = e.status),
+    });
+
+    http.expectOne((r) => r.url === `${base}/recommendations`).flush('not found', {
+      status: 404,
+      statusText: 'Not Found',
+    });
+    tick(1000);
+    // No second request is issued (afterEach http.verify() would fail if one were pending).
+    http.expectNone((r) => r.url === `${base}/recommendations`);
+    expect(status).toBe(404);
+  }));
 
   it('GET assemblies forwards the max and optional loadId', () => {
     service.assemblies('L-1', 25).subscribe();

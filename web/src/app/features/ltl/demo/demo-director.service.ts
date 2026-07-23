@@ -1,9 +1,11 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { LtlService } from '../ltl.service';
 import {
   DIRECTOR_DWELL_MS,
   DIRECTOR_SPEEDS,
   DIRECTOR_WAIT_MS,
+  DemoContext,
   DirectorStep,
   DirectorStepStatus,
 } from './demo-director.models';
@@ -34,9 +36,18 @@ import {
 @Injectable({ providedIn: 'root' })
 export class DemoDirectorService {
   private readonly router = inject(Router);
+  private readonly ltl = inject(LtlService);
 
   /** The immutable script. Exposed for the overlay's act outline + tests. */
   readonly steps: readonly DirectorStep[] = DEMO_DIRECTOR_SCRIPT;
+
+  /**
+   * A real load pulled from live Alvys at the start of a run, so data-driven acts (Dispatch lane,
+   * Consolidate seed) use a record that actually exists on this tenant instead of a hardcoded id /
+   * lane that can 404 or return empty. Null until resolved (or when the live read is unavailable),
+   * in which case those steps fall back to their static demo values.
+   */
+  private readonly demoContext = signal<DemoContext | null>(null);
 
   /** Overlay is mounted+visible. */
   readonly active = signal(false);
@@ -85,6 +96,7 @@ export class DemoDirectorService {
    */
   start(autostart: boolean): void {
     this.reset();
+    this.resolveDemoContext();
     this.active.set(true);
     this.playing.set(autostart);
     void this.enter(0);
@@ -146,9 +158,46 @@ export class DemoDirectorService {
 
   replay(): void {
     this.reset();
+    this.resolveDemoContext();
     this.active.set(true);
     this.playing.set(true);
     void this.enter(0);
+  }
+
+  /**
+   * Fetches one real load from live Alvys (through the app's authenticated {@link LtlService}, same
+   * bearer-token path as every page) so the data-driven acts can drive a lane/seed that exists on
+   * this tenant. Prefers a load with a complete origin+destination lane. Fire-and-forget: on any
+   * failure the context stays null and steps fall back to their static demo values — the walkthrough
+   * never blocks on it and nothing is fabricated.
+   */
+  private resolveDemoContext(): void {
+    this.demoContext.set(null);
+    try {
+      this.ltl.search({ pageSize: 10, ltlOnly: true }).subscribe({
+        next: (res) => {
+          const items = res?.items ?? [];
+          const load =
+            items.find((l) => l.origin?.state && l.destination?.state && l.loadNumber) ??
+            items.find((l) => l.loadNumber) ??
+            items[0];
+          if (!load) return;
+          this.demoContext.set({
+            loadNumber: load.loadNumber ?? null,
+            loadId: load.id ?? null,
+            originCity: load.origin?.city ?? null,
+            originState: load.origin?.state ?? null,
+            destinationCity: load.destination?.city ?? null,
+            destinationState: load.destination?.state ?? null,
+          });
+        },
+        error: () => {
+          // Leave the context null — data-driven steps fall back to their static demo values.
+        },
+      });
+    } catch {
+      // Injection/observable construction should never break the walkthrough.
+    }
   }
 
   exit(): void {
@@ -344,14 +393,17 @@ export class DemoDirectorService {
   private async performAction(step: DirectorStep, token: number): Promise<void> {
     if (typeof document === 'undefined') return;
     const kind = step.action;
+    const ctx = this.demoContext();
     if (kind === 'fillMany') {
-      for (const f of step.fields ?? []) this.fill(f.selector, f.value);
+      const fields = (ctx && step.resolveFields?.(ctx)) || step.fields || [];
+      for (const f of fields) this.fill(f.selector, f.value);
       return;
     }
     const selector = step.actionSelector ?? step.target;
     if (!selector) return;
     if (kind === 'fill') {
-      this.fill(selector, step.fillValue ?? '');
+      const value = (ctx && step.resolveFillValue?.(ctx)) ?? step.fillValue ?? '';
+      this.fill(selector, value);
       return;
     }
     if (kind === 'check') {

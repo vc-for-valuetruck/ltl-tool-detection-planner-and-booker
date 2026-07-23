@@ -1,4 +1,4 @@
-import { DirectorStep } from './demo-director.models';
+import { DirectorFill, DirectorStep } from './demo-director.models';
 
 /**
  * The scripted walkthrough, in order. Acts A–E of the Search → Match → Assign → Bill story.
@@ -17,6 +17,14 @@ const DEMO_LANE = {
   destinationCity: 'Dallas',
   destinationState: 'TX',
 } as const;
+
+/** Static fallback lane fields, used only when no live load is resolved at runtime. */
+const DEMO_LANE_FIELDS: readonly DirectorFill[] = [
+  { selector: '#da-ocity', value: DEMO_LANE.originCity },
+  { selector: '#da-ostate', value: DEMO_LANE.originState },
+  { selector: '#da-dcity', value: DEMO_LANE.destinationCity },
+  { selector: '#da-dstate', value: DEMO_LANE.destinationState },
+];
 
 /** Example parent seed for the Consolidate corridor (mirrors the existing demo-tour seed). */
 const DEMO_SEED = 'L-100234';
@@ -113,12 +121,14 @@ export const DEMO_DIRECTOR_SCRIPT: readonly DirectorStep[] = [
   {
     id: 'consolidate-seed',
     act: 'Consolidate',
-    caption: 'Seeding a parent load to find consolidation candidates on this corridor.',
+    caption: 'Seeding a real parent load from live Alvys to find consolidation candidates on this corridor.',
     target: '[data-testid="consolidate-seed-form"]',
     waitFor: ['[data-testid="consolidate-seed-input"]'],
     action: 'fill',
     actionSelector: '[data-testid="consolidate-seed-input"]',
     fillValue: DEMO_SEED,
+    // Prefer a live load number so the seed resolves against this tenant; fall back to the static seed.
+    resolveFillValue: (ctx) => ctx.loadNumber,
   },
   {
     id: 'consolidate-find',
@@ -186,16 +196,22 @@ export const DEMO_DIRECTOR_SCRIPT: readonly DirectorStep[] = [
   {
     id: 'dispatch-lane',
     act: 'Loads & Dispatch',
-    caption: 'Entering a live lane (Laredo, TX → Dallas, TX) to pull recommendations from the fleet.',
+    caption: 'Entering a live lane pulled from Alvys freight to pull recommendations from the fleet.',
     target: '[data-testid="dispatch-assist"]',
     waitFor: ['#da-ocity'],
     action: 'fillMany',
-    fields: [
-      { selector: '#da-ocity', value: DEMO_LANE.originCity },
-      { selector: '#da-ostate', value: DEMO_LANE.originState },
-      { selector: '#da-dcity', value: DEMO_LANE.destinationCity },
-      { selector: '#da-dstate', value: DEMO_LANE.destinationState },
-    ],
+    fields: DEMO_LANE_FIELDS,
+    // Prefer the lane of a real live load (guaranteed to exist on this tenant); fall back to the
+    // static demo lane. Only override when the live load carries a complete origin+destination.
+    resolveFields: (ctx) =>
+      ctx.originCity && ctx.originState && ctx.destinationCity && ctx.destinationState
+        ? [
+            { selector: '#da-ocity', value: ctx.originCity },
+            { selector: '#da-ostate', value: ctx.originState },
+            { selector: '#da-dcity', value: ctx.destinationCity },
+            { selector: '#da-dstate', value: ctx.destinationState },
+          ]
+        : null,
   },
   {
     id: 'dispatch-search',

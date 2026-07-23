@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { Observable, of, throwError } from 'rxjs';
+import { LtlService } from '../ltl.service';
 import { DemoDirectorService } from './demo-director.service';
 import { DEMO_DIRECTOR_SCRIPT } from './demo-director.script';
 import { DIRECTOR_NARRATION_KEY } from './demo-director.speech';
@@ -15,9 +17,20 @@ class RouterStub {
   }
 }
 
+/** Records the search queries the director issues and returns a configurable live-load result. */
+class LtlServiceStub {
+  queries: unknown[] = [];
+  response: Observable<unknown> = of({ items: [], page: 0, pageSize: 0, total: 0, truncated: false });
+  search(query: unknown): Observable<unknown> {
+    this.queries.push(query);
+    return this.response;
+  }
+}
+
 describe('DemoDirectorService', () => {
   let service: DemoDirectorService;
   let router: RouterStub;
+  let ltl: LtlServiceStub;
 
   beforeEach(() => {
     // Reset the persisted narration pref so the "defaults on" expectation is order-independent.
@@ -27,8 +40,13 @@ describe('DemoDirectorService', () => {
       /* storage may be unavailable in some CI sandboxes */
     }
     router = new RouterStub();
+    ltl = new LtlServiceStub();
     TestBed.configureTestingModule({
-      providers: [DemoDirectorService, { provide: Router, useValue: router }],
+      providers: [
+        DemoDirectorService,
+        { provide: Router, useValue: router },
+        { provide: LtlService, useValue: ltl },
+      ],
     });
     service = TestBed.inject(DemoDirectorService);
   });
@@ -137,10 +155,37 @@ describe('DemoDirectorService', () => {
     }
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      providers: [DemoDirectorService, { provide: Router, useValue: new RouterStub() }],
+      providers: [
+        DemoDirectorService,
+        { provide: Router, useValue: new RouterStub() },
+        { provide: LtlService, useValue: new LtlServiceStub() },
+      ],
     });
     const fresh = TestBed.inject(DemoDirectorService);
     expect(fresh.narrationEnabled()).toBeFalse();
     fresh.exit();
+  });
+
+  it('start() resolves a live load via the authenticated LtlService (LTL-only search)', () => {
+    service.start(false);
+    expect(ltl.queries.length).toBe(1);
+    // The resolver asks for a small LTL-only page — the same authenticated read path as every page.
+    expect(ltl.queries[0]).toEqual(jasmine.objectContaining({ ltlOnly: true }));
+  });
+
+  it('start() never throws when the live-load read fails — steps fall back to static demo values', () => {
+    ltl.response = throwError(() => new Error('transient alvys read failure'));
+    expect(() => service.start(false)).not.toThrow();
+    expect(service.active()).toBeTrue();
+    expect(service.index()).toBe(0);
+  });
+
+  it('replay() re-resolves the live load context', () => {
+    service.start(false);
+    for (let i = 0; i < service.total(); i++) service.next();
+    expect(service.finished()).toBeTrue();
+    ltl.queries = [];
+    service.replay();
+    expect(ltl.queries.length).toBe(1);
   });
 });

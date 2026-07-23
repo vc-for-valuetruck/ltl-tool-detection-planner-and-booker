@@ -1,3 +1,4 @@
+import { DemoContext } from './demo-director.models';
 import { DEMO_DIRECTOR_SCRIPT } from './demo-director.script';
 
 /**
@@ -52,5 +53,38 @@ describe('DEMO_DIRECTOR_SCRIPT', () => {
       const step = DEMO_DIRECTOR_SCRIPT.find((s) => s.id === id);
       expect(step?.optional).withContext(`${id} should be optional`).toBeTrue();
     }
+  });
+
+  const liveCtx = (over: Partial<DemoContext> = {}): DemoContext => ({
+    loadNumber: 'LIVE-9001',
+    loadId: 'id-9001',
+    originCity: 'El Paso',
+    originState: 'TX',
+    destinationCity: 'Phoenix',
+    destinationState: 'AZ',
+    ...over,
+  });
+
+  it('dispatch lane drives a real live load lane, falling back to the static demo lane', () => {
+    const step = DEMO_DIRECTOR_SCRIPT.find((s) => s.id === 'dispatch-lane')!;
+    // A complete live lane overrides the hardcoded Laredo→Dallas fields.
+    const live = step.resolveFields!(liveCtx());
+    expect(live).toEqual([
+      { selector: '#da-ocity', value: 'El Paso' },
+      { selector: '#da-ostate', value: 'TX' },
+      { selector: '#da-dcity', value: 'Phoenix' },
+      { selector: '#da-dstate', value: 'AZ' },
+    ]);
+    // An incomplete lane falls back (null) to the static demo fields the step still declares.
+    expect(step.resolveFields!(liveCtx({ destinationState: null }))).toBeNull();
+    expect(step.fields && step.fields.length).toBe(4);
+  });
+
+  it('consolidate seed prefers a real live load number, falling back to the static seed', () => {
+    const step = DEMO_DIRECTOR_SCRIPT.find((s) => s.id === 'consolidate-seed')!;
+    expect(step.resolveFillValue!(liveCtx())).toBe('LIVE-9001');
+    expect(step.resolveFillValue!(liveCtx({ loadNumber: null }))).toBeNull();
+    // The static fallback value is still declared for when no live load resolves.
+    expect((step.fillValue ?? '').length).toBeGreaterThan(0);
   });
 });

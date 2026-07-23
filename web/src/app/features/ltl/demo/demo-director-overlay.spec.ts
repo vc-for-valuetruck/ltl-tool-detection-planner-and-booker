@@ -1,7 +1,14 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { of } from 'rxjs';
+import { LtlService } from '../ltl.service';
 import { DemoDirectorOverlay } from './demo-director-overlay';
 import { DemoDirectorService } from './demo-director.service';
+
+/** Stubs the one read the director makes at start — an empty live-load result is enough here. */
+const ltlStub = {
+  search: () => of({ items: [], page: 0, pageSize: 0, total: 0, truncated: false }),
+};
 
 class RouterStub {
   url = '/ltl';
@@ -17,7 +24,11 @@ describe('DemoDirectorOverlay', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [DemoDirectorOverlay],
-      providers: [DemoDirectorService, { provide: Router, useValue: new RouterStub() }],
+      providers: [
+        DemoDirectorService,
+        { provide: Router, useValue: new RouterStub() },
+        { provide: LtlService, useValue: ltlStub },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(DemoDirectorOverlay);
     director = TestBed.inject(DemoDirectorService);
