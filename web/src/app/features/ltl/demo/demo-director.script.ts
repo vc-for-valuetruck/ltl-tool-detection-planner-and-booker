@@ -1,4 +1,4 @@
-import { DemoContext, DirectorFill, DirectorStep } from './demo-director.models';
+import { DemoContext, DemoOriginHotspot, DirectorFill, DirectorStep } from './demo-director.models';
 
 /**
  * The scripted walkthrough, in order — the revenue story of Search → Match → Assign → Bill told for
@@ -23,6 +23,42 @@ const FALLBACK_LANE_FIELDS: readonly DirectorFill[] = [
   { selector: '#da-dstate', value: 'TX' },
 ];
 
+/** Selector for the yard cards on the Dock warehouse step (excludes arrival/sibling cards). */
+const YARD_CARD_SELECTOR = 'app-dock .tap-grid button.tap-card:not(.arrival):not(.sibling)';
+
+/**
+ * Chooses which yard card the Dock should land the truck at: the yard nearest the busiest live
+ * freight. Reads the rendered yard cards and matches them against the run's origin hotspots (busiest
+ * first) by state, then city; falls back to the first yard when nothing matches. Never fabricates a
+ * pick — if no cards are rendered it returns null and the step degrades honestly.
+ */
+function chooseYard(ctx: DemoContext | null): string | null {
+  if (typeof document === 'undefined') return null;
+  const cards = Array.from(document.querySelectorAll<HTMLElement>(YARD_CARD_SELECTOR));
+  if (cards.length === 0) return null;
+  const nth = (i: number) => `${YARD_CARD_SELECTOR}:nth-of-type(${i + 1})`;
+  for (const spot of ctx?.originHotspots ?? []) {
+    const state = spot.state?.trim().toUpperCase();
+    const city = spot.city?.trim().toUpperCase();
+    const idx = cards.findIndex((c) => {
+      const text = (c.textContent ?? '').toUpperCase();
+      return (
+        (!!state && new RegExp(`·\\s*${state}\\b`).test(text)) || (!!city && text.includes(city))
+      );
+    });
+    if (idx >= 0) return nth(idx);
+  }
+  return nth(0);
+}
+
+/** Names the busiest origin hotspot for the Dock yard-pick narration ("8 loads out of Laredo"). */
+function hotspotPhrase(spot: DemoOriginHotspot | undefined): string | null {
+  if (!spot?.city) return null;
+  const where = spot.state ? `${spot.city}, ${spot.state}` : spot.city;
+  const loads = `${spot.count} ${spot.count === 1 ? 'load' : 'loads'}`;
+  return `${loads} moving out of ${where}`;
+}
+
 /** True when an Invoice Studio surface is mounted in this build. */
 function invoiceStudioPresent(): boolean {
   if (typeof document === 'undefined') return false;
@@ -45,50 +81,77 @@ export const DEMO_DIRECTOR_SCRIPT: readonly DirectorStep[] = [
       'Welcome. Over the next little while I’ll walk you through your freight the way your team lives it — find the work, pick the right truck, make the call, and get it billed. We start on the dock, where a worker has just landed a truck. Every number you see is your real freight, pulled live from your system of record.',
     route: '/ltl/dock',
     target: 'app-dock',
-    waitFor: ['[data-testid="dock-auto-toggle"]', 'app-dock'],
-    dwellMs: 9_000,
-  },
-  {
-    id: 'dock-auto-on',
-    act: 'Dock',
-    caption:
-      'Here’s the first place we protect margin. Instead of one shipment per truck, we let the app find a second shipment already heading the same way — so two invoices ride on one trailer and the empty miles you were paying for simply disappear. I’m turning on Auto now.',
-    target: '[data-testid="dock-auto-toggle"]',
-    waitFor: ['[data-testid="dock-auto-toggle"]'],
-    action: 'check',
-    actionSelector: '[data-testid="dock-auto-toggle"]',
+    waitFor: [YARD_CARD_SELECTOR, 'app-dock'],
     dwellMs: 9_000,
   },
   {
     id: 'dock-pick-yard',
     act: 'Dock',
     caption:
-      'The moment I pick a yard, the app reads the trucks actually sitting there and does the matching a person would otherwise do by hand — picking the shipment that controls the paperwork, then the best partner freight to pair with it. This is the part that used to take phone calls and spreadsheets.',
+      'I’m landing the truck at the yard closest to your busiest freight — I’ll pick it now. The moment I do, the app reads the trucks actually sitting there and starts the matching a person would otherwise do by phone and spreadsheet.',
     target: 'app-dock',
     action: 'click',
-    actionSelector: 'app-dock button.tap-card',
-    waitFor: [
-      '[data-testid="dock-onetap"]',
-      '[data-testid="dock-auto-eject"]',
-      '[data-testid="dock-security-hold"]',
-    ],
+    resolveActionSelector: (ctx) => chooseYard(ctx),
+    actionSelector: YARD_CARD_SELECTOR,
+    waitFor: [YARD_CARD_SELECTOR],
+    optional: true,
+    dwellMs: 9_000,
+    resolveCaption: (ctx) => {
+      const phrase = hotspotPhrase(ctx?.originHotspots?.[0]);
+      return phrase
+        ? `I’m landing the truck at the yard closest to your busiest freight — right now that’s ${phrase}, more than anywhere else on your board — so I’ll pick that yard. The moment I do, the app reads the trucks actually sitting there and starts the matching a person would otherwise do by phone and spreadsheet.`
+        : null;
+    },
+  },
+  {
+    id: 'dock-parent',
+    act: 'Dock',
+    caption:
+      'First the app picks the shipment that controls the paperwork — the BOL-controlling load — from the trucks really at this yard. I’m tapping one that has partner freight worth pairing, so you can see a genuine combine, not a staged one.',
+    target: 'app-dock',
+    action: 'clickRetry',
+    retry: {
+      candidateSelector: 'app-dock button.tap-card.arrival:not([disabled])',
+      successSelector: 'app-dock button.tap-card.sibling:not([disabled])',
+      resetSelector: 'app-dock .dock-head button.btn-ghost',
+      maxAttempts: 4,
+    },
+    waitFor: ['app-dock button.tap-card.arrival', 'app-dock .state-empty'],
     waitMs: 20_000,
     optional: true,
     dwellMs: 9_000,
+    resolveCaption: () =>
+      document.querySelector('app-dock button.tap-card.arrival')
+        ? null
+        : 'No trucks are inbound to this yard for the board day right now — and the app says so plainly rather than inventing one. On a working shift this is where the parent load is chosen. We’ll move on.',
   },
   {
-    id: 'dock-plan-preview',
+    id: 'dock-siblings',
     act: 'Dock',
     caption:
-      'And there it is — a combined plan with the money already worked out: the two shipments together, and the extra margin from carrying them on one truck. One tap turns it into an instruction the dispatcher can act on.',
-    target: '[data-testid="dock-onetap"]',
-    waitFor: ['[data-testid="dock-onetap"]'],
+      'Now the payoff: the app has already found the partner shipment heading the same way, ranked by how well it fits — same lane, same day, right capacity. I’m adding it, so two invoices now ride on one trailer and the empty miles you were paying for disappear.',
+    target: 'app-dock',
+    action: 'click',
+    actionSelector: 'app-dock button.tap-card.sibling:not([disabled])',
+    waitFor: ['app-dock button.tap-card.sibling:not([disabled])'],
+    optional: true,
+    dwellMs: 9_000,
+    resolveCaption: () =>
+      document.querySelector('app-dock button.tap-card.sibling:not([disabled])')
+        ? null
+        : 'No partner freight worth combining on this parent at this exact moment, and the app says so rather than padding the screen. On a busy day this is where the second invoice appears. We’ll move on.',
+  },
+  {
+    id: 'dock-review',
+    act: 'Dock',
+    caption:
+      'Before committing, the app shows the combined driver math — the loads together, the miles, and the revenue per mile — so the decision is made on numbers, not a hunch. I’m opening that review now.',
+    target: 'app-dock',
+    action: 'click',
+    actionSelector: 'app-dock .selected-actions .btn-ghost',
+    waitFor: ['app-dock .selected-actions .btn-ghost'],
     optional: true,
     dwellMs: 8_000,
-    resolveCaption: () =>
-      document.querySelector('[data-testid="dock-auto-eject"]')
-        ? 'Honesty matters more than a pretty demo: there’s no second shipment on this yard worth combining right this minute, so the app steps back rather than inventing one. On a busy day this is where the extra invoice appears. We’ll move on.'
-        : null,
   },
   {
     id: 'dock-combine',
@@ -97,10 +160,10 @@ export const DEMO_DIRECTOR_SCRIPT: readonly DirectorStep[] = [
       'When I combine, the app writes a complete record of the decision — who, what, when, and the dollars — but it does not touch your system of record. Nothing posts back until leadership signs off. That’s by design, so a demo can never move real freight.',
     posture:
       'Writeback stays OFF and gated: the combine is recorded internally only (AlvysWriteback = NotPerformed) and produces a click card the dispatcher executes by hand. Nothing is written to your system of record.',
-    target: '[data-testid="dock-onetap"]',
-    waitFor: ['[data-testid="dock-onetap-btn"]'],
+    target: 'app-dock',
     action: 'click',
-    actionSelector: '[data-testid="dock-onetap-btn"]',
+    actionSelector: 'app-dock .review-actions .btn-primary:not([disabled])',
+    waitFor: ['app-dock .review-actions .btn-primary'],
     optional: true,
     dwellMs: 8_000,
   },
@@ -110,7 +173,7 @@ export const DEMO_DIRECTOR_SCRIPT: readonly DirectorStep[] = [
     caption:
       'Recorded, with a full trail your auditors will love, and a ready-to-paste instruction for the dispatcher. That’s two shipments on one truck, decided in seconds — the first dollars we’ve protected today.',
     target: 'app-dock',
-    waitFor: ['[data-testid="dock-auto-chip"]', '[data-testid="dock-download-pdf"]', 'app-dock'],
+    waitFor: ['[data-testid="dock-download-pdf"]', 'app-dock .result', 'app-dock'],
     optional: true,
     dwellMs: 8_000,
   },
@@ -134,22 +197,52 @@ export const DEMO_DIRECTOR_SCRIPT: readonly DirectorStep[] = [
     },
   },
   {
+    id: 'consolidate-seed',
+    act: 'Consolidate',
+    caption:
+      'Rather than wait for a lane to fill, let me put this to work on a real load right now. I’m typing one of your live load numbers into the search and asking the app to pull every shipment that could ride with it.',
+    target: '[data-testid="consolidate-seed-form"]',
+    action: 'seedFind',
+    seedFind: {
+      seedSelector: '[data-testid="consolidate-seed-input"]',
+      findSelector: '[data-testid="consolidate-find-candidates"]',
+      rowSelector: '[data-testid="consolidate-candidate-row"]',
+      maxAttempts: 3,
+    },
+    waitFor: ['[data-testid="consolidate-seed-input"]'],
+    optional: true,
+    dwellMs: 8_000,
+    resolveCaption: (ctx) =>
+      ctx?.anchorCandidates && ctx.anchorCandidates.length > 0
+        ? `Rather than wait for a lane to fill, let me put this to work on one of your real loads right now — load ${ctx.anchorCandidates[0]}. I’m dropping it into the search and asking the app to pull every shipment that could ride with it.`
+        : null,
+  },
+  {
     id: 'consolidate-candidates',
     act: 'Consolidate',
     caption:
-      'These are the real shipments on that lane, ranked by how well they fit together — same lane, same day, right capacity. A dispatcher reads this in a glance instead of cross-checking a dozen loads by hand. This is minutes, not hours.',
+      'These are the real shipments that could ride with that load, ranked by how well they fit — same lane, same day, right capacity. A dispatcher reads this in a glance instead of cross-checking a dozen loads by hand. I’m adding the top match so you can see the money.',
     target: '.candidates-card',
-    waitFor: ['[data-testid="consolidate-candidate-row"]', '[data-testid="consolidate-empty-state"]'],
+    action: 'click',
+    actionSelector: '[data-testid="consolidate-candidate-checkbox"]',
+    waitFor: [
+      '[data-testid="consolidate-candidate-row"]',
+      '[data-testid="consolidate-empty-state"]',
+      '.banner-warn',
+    ],
     optional: true,
     dwellMs: 9_000,
     resolveCaption: () =>
-      document.querySelector('[data-testid="consolidate-empty-state"]')
-        ? 'No pairs worth combining on this lane at this exact moment — and the app says so plainly rather than padding the screen. On a normal business day this queue is where consolidation dollars are found.'
+      document.querySelector('[data-testid="consolidate-empty-state"], .banner-warn') ||
+      !document.querySelector('[data-testid="consolidate-candidate-checkbox"]')
+        ? 'No pairs worth combining on this load at this exact moment — and the app says so plainly rather than padding the screen. On a normal business day this queue is where consolidation dollars are found.'
         : null,
     resolveTarget: () =>
       document.querySelector('[data-testid="consolidate-empty-state"]')
         ? '[data-testid="consolidate-empty-state"]'
-        : null,
+        : document.querySelector('.banner-warn')
+          ? '.banner-warn'
+          : null,
   },
   {
     id: 'consolidate-uplift',

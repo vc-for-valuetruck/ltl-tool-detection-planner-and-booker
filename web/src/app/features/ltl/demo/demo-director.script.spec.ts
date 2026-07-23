@@ -67,6 +67,8 @@ describe('DEMO_DIRECTOR_SCRIPT', () => {
     totalOpen: 432,
     topLanes: [],
     customerName: null,
+    originHotspots: [],
+    anchorCandidates: [],
     ...over,
   });
 
@@ -106,5 +108,50 @@ describe('DEMO_DIRECTOR_SCRIPT', () => {
     expect(spoken).toContain('10');
     // With no live lanes the step keeps its static caption (returns null).
     expect(step.resolveCaption!(liveCtx({ topLanes: [] }))).toBeNull();
+  });
+
+  it('Dock actually drives a yard pick → parent → sibling → review → combine', () => {
+    const ids = DEMO_DIRECTOR_SCRIPT.filter((s) => s.act === 'Dock').map((s) => s.id);
+    // The tour must click a yard, a parent, and a sibling — the real interactions the operator
+    // reported were missing. (No more relying on an auto-toggle that never selected a facility.)
+    expect(ids).toEqual([
+      'dock-open',
+      'dock-pick-yard',
+      'dock-parent',
+      'dock-siblings',
+      'dock-review',
+      'dock-combine',
+      'dock-result',
+    ]);
+    const pick = DEMO_DIRECTOR_SCRIPT.find((s) => s.id === 'dock-pick-yard')!;
+    expect(pick.action).toBe('click');
+    expect(typeof pick.resolveActionSelector).toBe('function');
+    const parent = DEMO_DIRECTOR_SCRIPT.find((s) => s.id === 'dock-parent')!;
+    expect(parent.action).toBe('clickRetry');
+    expect(parent.retry?.candidateSelector).toContain('arrival');
+    expect(parent.retry?.successSelector).toContain('sibling');
+  });
+
+  it('names the busiest origin hotspot in the yard-pick narration', () => {
+    const step = DEMO_DIRECTOR_SCRIPT.find((s) => s.id === 'dock-pick-yard')!;
+    const spoken = step.resolveCaption!(
+      liveCtx({ originHotspots: [{ city: 'Laredo', state: 'TX', count: 8 }] }),
+    );
+    expect(spoken).toContain('Laredo, TX');
+    expect(spoken).toContain('8 loads');
+    // No hotspot → keep the static caption.
+    expect(step.resolveCaption!(liveCtx({ originHotspots: [] }))).toBeNull();
+  });
+
+  it('Consolidate seeds a real anchor load instead of skipping on an empty corridor', () => {
+    const seed = DEMO_DIRECTOR_SCRIPT.find((s) => s.id === 'consolidate-seed')!;
+    expect(seed.action).toBe('seedFind');
+    expect(seed.seedFind?.seedSelector).toBe('[data-testid="consolidate-seed-input"]');
+    expect(seed.seedFind?.findSelector).toBe('[data-testid="consolidate-find-candidates"]');
+    expect(seed.seedFind?.rowSelector).toBe('[data-testid="consolidate-candidate-row"]');
+    // Narration names the real load the seedFind will try first.
+    const spoken = seed.resolveCaption!(liveCtx({ anchorCandidates: ['L-100234', 'L-100987'] }));
+    expect(spoken).toContain('L-100234');
+    expect(seed.resolveCaption!(liveCtx({ anchorCandidates: [] }))).toBeNull();
   });
 });
