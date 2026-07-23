@@ -1,0 +1,118 @@
+name: Set Yard webhook receiver config (UAT)
+
+# workflow_dispatch companion to the Yard repo's "Wire up UAT signed webhook
+# boundary" workflow. The Yard deploy service principal cannot write to
+# ltl-uat-rg, so the LTL side of the shared HMAC webhook contract is configured
+# here using this repo's own uat OIDC identity (ltl-uat-github-deploy), which
+# already holds Contributor on ltl-uat-rg.
+#
+# It sets, on App Service ltl-uat-api:
+#   Yard__Webhooks__Enabled = true
+#   Yard__Webhooks__Secret  = <the YARD_WEBHOOK_SHARED_SECRET uat environment secret>
+#
+# The exact same secret value is stored in the Yard repo so its wire-up workflow
+# registers the subscriber with a matching secret (both sides stay in sync). The
+# secret is masked and never printed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print the mutating call without executing it
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # required for OIDC federation to Azure
+
+jobs:
+  set-receiver:
+    name: Configure ltl-uat-api receiver flag + shared secret
+    runs-on: ubuntu-latest
+    environment: uat
+    env:
+      RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
+      BASE_NAME: ${{ vars.LTL_UAT_BASE_NAME || 'ltl-uat' }}
+    steps:
+      - name: Preflight (verify config present)
+        id: check
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          SHARED_SECRET: ${{ secrets.YARD_WEBHOOK_SHARED_SECRET }}
+        run: |
+          missing=()
+          for name in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID SHARED_SECRET; do
+            [ -z "${!name}" ] && missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::uat environment missing: ${missing[*]}"
+            exit 1
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Azure login with ltl-uat-github-deploy
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set receiver flag + shared secret
+        id: apply
+        shell: bash
+        env:
+          SHARED_SECRET: ${{ secrets.YARD_WEBHOOK_SHARED_SECRET }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$SHARED_SECRET"
+          API_APP="${BASE_NAME}-api"
+          [ "${#SHARED_SECRET}" -ge 16 ] || { echo "::error::shared secret must be >= 16 chars"; exit 1; }
+
+          FQDN="$(az webapp show -g "$RG" -n "$API_APP" --query defaultHostName -o tsv)"
+          RECEIVER_URL="https://${FQDN}/api/yard/webhooks/receiver"
+          echo "receiver_url=$RECEIVER_URL" >> "$GITHUB_OUTPUT"
+          echo "::notice::receiver URL: $RECEIVER_URL"
+
+          if [ "$DRY_RUN" = "1" ]; then
+            echo "[dry-run] az webapp config appsettings set -g $RG -n $API_APP --settings Yard__Webhooks__Enabled=true Yard__Webhooks__Secret=***"
+          else
+            az webapp config appsettings set -g "$RG" -n "$API_APP" \
+              --only-show-errors -o none --settings \
+              Yard__Webhooks__Enabled=true "Yard__Webhooks__Secret=${SHARED_SECRET}"
+            echo "::notice::ltl-uat-api: Yard__Webhooks__Enabled=true + secret set (app restarts to apply)"
+          fi
+
+      - name: Verify receiver no longer 404s
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env:
+          RECEIVER_URL: ${{ steps.apply.outputs.receiver_url }}
+        run: |
+          set -euo pipefail
+          echo "Waiting for the app to pick up the new setting, then probing an UNSIGNED POST."
+          code=000
+          for _ in $(seq 1 24); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$RECEIVER_URL" \
+              -H 'Content-Type: application/json' --data '{}' --max-time 20 || echo 000)"
+            # 404 => route still absent (flag off / not restarted yet). Anything else
+            # (400/401/403) means the receiver endpoint is mapped and the flag is on.
+            [ "$code" != "404" ] && [ "$code" != "000" ] && break
+            sleep 10
+          done
+          echo "::notice::unsigned POST to receiver -> HTTP $code"
+          {
+            echo "## LTL UAT webhook receiver configured"
+            echo ""
+            echo "- Receiver URL: \`${RECEIVER_URL}\`"
+            echo "- \`Yard__Webhooks__Enabled=true\`, \`Yard__Webhooks__Secret\` set from the uat env secret."
+            echo "- Unsigned POST probe: HTTP **$code** (expected 400/401/403; **404 means not yet applied**)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" = "404" ]; then
+            echo "::error::receiver still returns 404 — flag not applied or app not restarted."
+            exit 1
+          fi
