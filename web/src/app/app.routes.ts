@@ -116,12 +116,16 @@ export const routes: Routes = [
       },
       // Demo Director launch surface. Opening this URL (optionally ?autostart=1) kicks off the
       // in-app autonomous walkthrough; the DemoDirectorService then navigates the real workspace
-      // and the app-root overlay drives the screen.
+      // and the overlay it mounts on the app-owned OverlayOutletService drives the screen.
+      //
+      // This lazy `loadChildren` is the ONE sanctioned seam between application code and the
+      // isolated Demo Director feature — a dynamic import that keeps the demo bundle out of the
+      // initial app chunk. No demo symbol is statically imported anywhere in app code (enforced by
+      // web/scripts/check-demo-boundaries.mjs).
       {
         path: 'demo/director',
-        loadComponent: () =>
-          import('./features/ltl/demo/demo-director-launcher').then((m) => m.DemoDirectorLauncher),
-        data: { crumb: 'Demo Director' },
+        loadChildren: () =>
+          import('./features/ltl/demo/demo.routes').then((m) => m.DEMO_DIRECTOR_ROUTES),
       },
     ],
   },

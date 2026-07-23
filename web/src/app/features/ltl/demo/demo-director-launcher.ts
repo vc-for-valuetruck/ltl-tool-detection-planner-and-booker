@@ -1,7 +1,9 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, computed, inject } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
+import { OverlayOutletService } from '../../../core/overlay/overlay-outlet.service';
 import { DemoDirectorService } from './demo-director.service';
+import { DemoDirectorOverlay } from './demo-director-overlay';
 
 /**
  * Landing surface for `/ltl/demo/director`. Joshua opens one URL on UAT; `?autostart=1` starts the
@@ -21,6 +23,7 @@ import { DemoDirectorService } from './demo-director.service';
 export class DemoDirectorLauncher implements OnInit {
   protected readonly director = inject(DemoDirectorService);
   private readonly route = inject(ActivatedRoute);
+  private readonly overlayOutlet = inject(OverlayOutletService);
 
   /** Distinct acts in script order, for the outline on the launch card. */
   protected readonly acts = computed(() => {
@@ -36,6 +39,12 @@ export class DemoDirectorLauncher implements OnInit {
   });
 
   ngOnInit(): void {
+    // Mount the spotlight overlay on the app-owned outlet. It renders once at the app root and
+    // persists across every route the director then drives (this launcher component unmounts on
+    // the first navigation — the overlay does not). This is how the isolated demo feature projects
+    // its UI onto the shell without app code ever importing the overlay.
+    this.overlayOutlet.mount(DemoDirectorOverlay);
+
     const params = this.route.snapshot.queryParamMap;
     const speed = Number(params.get('speed'));
     if (!Number.isNaN(speed) && speed > 0) this.director.setSpeed(speed);

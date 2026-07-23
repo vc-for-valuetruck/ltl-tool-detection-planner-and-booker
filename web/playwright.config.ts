@@ -34,8 +34,23 @@ export default defineConfig({
     navigationTimeout: 20_000,
   },
   projects: [
+    // Back-compat "run everything" project for local headed watching (`npm run test:e2e`).
     {
       name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // App E2E: every spec EXCEPT the isolated Demo Director walkthrough. Runs in its own CI job so
+    // the app suite is green independent of the demo suite (see .github/workflows/ci.yml).
+    {
+      name: 'app',
+      testIgnore: ['**/demo/**'],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // Demo Director E2E: only the walkthrough specs under e2e/demo. Runs in its own CI job so the
+    // demo suite is green independent of the app suite.
+    {
+      name: 'demo-director',
+      testMatch: ['**/demo/**/*.spec.ts'],
       use: { ...devices['Desktop Chrome'] },
     },
   ],

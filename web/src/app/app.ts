@@ -1,14 +1,15 @@
+import { NgComponentOutlet } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { MsalService } from '@azure/msal-angular';
 import { filter } from 'rxjs';
 import { RUNTIME_CONFIG, isAuthConfigured } from './runtime-config';
-import { DemoDirectorOverlay } from './features/ltl/demo/demo-director-overlay';
+import { OverlayOutletService } from './core/overlay/overlay-outlet.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, DemoDirectorOverlay],
+  imports: [RouterOutlet, NgComponentOutlet],
   templateUrl: './app.html',
   styleUrls: ['./app.css'],
 })
@@ -16,6 +17,13 @@ export class App {
   private readonly config = inject(RUNTIME_CONFIG);
   private readonly router = inject(Router);
   private readonly msal = inject(MsalService);
+
+  /**
+   * App-owned outlet for a persistent, route-spanning overlay. Isolated features (the lazy-loaded
+   * Demo Director) mount their overlay here; the app root never imports the feature itself. Rendered
+   * via `NgComponentOutlet` in the template — null until a feature mounts something.
+   */
+  protected readonly overlayOutlet = inject(OverlayOutletService);
 
   protected readonly authConfigured = isAuthConfigured(this.config);
   /** Demo-mode identity shown top-right when Entra auth isn't configured for this environment. */
