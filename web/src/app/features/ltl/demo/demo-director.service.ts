@@ -8,6 +8,11 @@ import {
   DirectorStepStatus,
 } from './demo-director.models';
 import { DEMO_DIRECTOR_SCRIPT } from './demo-director.script';
+import {
+  DIRECTOR_NARRATION_KEY,
+  DIRECTOR_SPEECH_CAP_MS,
+  DemoDirectorNarrator,
+} from './demo-director.speech';
 
 /**
  * Drives the in-app, URL-triggered autonomous walkthrough (`/ltl/demo/director`).
@@ -54,6 +59,13 @@ export class DemoDirectorService {
   /** True once the final step has been presented. */
   readonly finished = signal(false);
 
+  /** Voice narration of captions is enabled (persisted). Defaults ON when speech is available. */
+  readonly narrationEnabled = signal<boolean>(this.loadNarrationPref());
+  /** Whether this platform can synthesise speech at all (drives whether the toggle is shown). */
+  get narrationAvailable(): boolean {
+    return this.narrator.available;
+  }
+
   readonly total = computed(() => this.steps.length);
   readonly current = computed(() => this.steps[this.index()] ?? null);
   /** 1-based "3 / 27" counter for the caption bar. */
@@ -63,6 +75,9 @@ export class DemoDirectorService {
   /** Monotonic guard so a late navigation/wait from a superseded step can't mutate newer state. */
   private runToken = 0;
   private advanceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Web Speech API wrapper for caption narration (safe no-op when unavailable). */
+  private readonly narrator = new DemoDirectorNarrator();
 
   /**
    * Begins the walkthrough. `autostart` controls whether it plays immediately or waits paused on
@@ -97,6 +112,20 @@ export class DemoDirectorService {
   pause(): void {
     this.playing.set(false);
     this.clearAdvance();
+    this.narrator.cancel();
+  }
+
+  /** Toggles caption narration, persists the choice, and stops any in-flight speech when turning off. */
+  toggleNarration(): void {
+    const next = !this.narrationEnabled();
+    this.narrationEnabled.set(next);
+    this.saveNarrationPref(next);
+    if (next) {
+      // Turning it on mid-step: speak the caption already on screen.
+      if (this.active() && this.status() === 'running') this.narrate();
+    } else {
+      this.narrator.cancel();
+    }
   }
 
   next(): void {
@@ -124,6 +153,7 @@ export class DemoDirectorService {
 
   exit(): void {
     this.clearAdvance();
+    this.narrator.cancel();
     this.runToken++;
     this.active.set(false);
     this.playing.set(false);
@@ -133,6 +163,7 @@ export class DemoDirectorService {
 
   private reset(): void {
     this.clearAdvance();
+    this.narrator.cancel();
     this.runToken++;
     this.index.set(0);
     this.finished.set(false);
@@ -195,6 +226,9 @@ export class DemoDirectorService {
     this.spotlight.set(resolvedTarget ?? step.target ?? null);
     this.status.set('running');
 
+    // Begin narrating the (possibly re-resolved) caption now that it's on screen.
+    this.narrate();
+
     if (this.playing()) this.armAdvance();
   }
 
@@ -213,10 +247,16 @@ export class DemoDirectorService {
     this.spotlight.set(null);
     this.status.set('skipped');
     this.note.set('Skipped — live data for this step is not available at the moment.');
+    this.narrate();
     if (this.playing()) this.armAdvance();
   }
 
-  /** Schedules the auto-advance to the next step, scaling dwell by the current speed. */
+  /**
+   * Schedules the auto-advance to the next step. The step's (speed-scaled) dwell is treated as a
+   * *minimum* on-screen time; when a caption is being narrated we also wait for the utterance to
+   * finish so a timed step never advances mid-sentence. A hard {@link DIRECTOR_SPEECH_CAP_MS} cap
+   * guarantees a hung speech engine can never stall the run.
+   */
   private armAdvance(): void {
     this.clearAdvance();
     const step = this.current();
@@ -224,10 +264,22 @@ export class DemoDirectorService {
     const dwell = Math.max(600, Math.round(base / this.speed()));
     const token = this.runToken;
     if (typeof setTimeout !== 'function') return;
-    this.advanceTimer = setTimeout(() => {
+
+    const startedAt = Date.now();
+    const poll = () => {
       if (this.isStale(token) || !this.playing()) return;
-      this.next();
-    }, dwell);
+      const elapsed = Date.now() - startedAt;
+      const dwellDone = elapsed >= dwell;
+      const speechDone = !this.narrator.speaking;
+      if ((dwellDone && speechDone) || elapsed >= DIRECTOR_SPEECH_CAP_MS) {
+        this.next();
+        return;
+      }
+      // Re-check on the shorter of "remaining dwell" or a light speech-poll cadence.
+      const wait = dwellDone ? 200 : Math.min(200, Math.max(50, dwell - elapsed));
+      this.advanceTimer = setTimeout(poll, wait);
+    };
+    this.advanceTimer = setTimeout(poll, Math.min(200, dwell));
   }
 
   private clearAdvance(): void {
@@ -333,5 +385,33 @@ export class DemoDirectorService {
       if (typeof setTimeout !== 'function') resolve();
       else setTimeout(resolve, ms);
     });
+  }
+
+  /** Speaks the caption currently on screen when narration is enabled (safe no-op otherwise). */
+  private narrate(): void {
+    if (!this.narrationEnabled()) {
+      this.narrator.cancel();
+      return;
+    }
+    this.narrator.speak(this.caption());
+  }
+
+  /** Reads the persisted narration preference; defaults ON (only meaningful when speech exists). */
+  private loadNarrationPref(): boolean {
+    try {
+      if (typeof localStorage === 'undefined') return true;
+      const raw = localStorage.getItem(DIRECTOR_NARRATION_KEY);
+      return raw === null ? true : raw === 'true';
+    } catch {
+      return true;
+    }
+  }
+
+  private saveNarrationPref(value: boolean): void {
+    try {
+      localStorage?.setItem(DIRECTOR_NARRATION_KEY, String(value));
+    } catch {
+      // Private-mode / disabled storage — preference just won't persist across reloads.
+    }
   }
 }

@@ -23,6 +23,48 @@
   pointer-events: none;
 }
 
+/* Animated pointer that glides to the spotlighted target. Positioned at 0,0 and moved via a
+   translate transform so the transition runs on the compositor (smooth, cheap). The SVG's tip
+   sits at the transform origin so it points *at* the target centre. */
+.director-pointer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9001;
+  pointer-events: none;
+  will-change: transform;
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  filter: drop-shadow(0 2px 5px rgba(2, 6, 23, 0.55));
+}
+.director-pointer svg {
+  display: block;
+}
+
+/* Click cue: a soft pulsing ring behind the pointer. */
+.director-pointer-pulse::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(56, 189, 248, 0.85);
+  transform: translate(-50%, -50%);
+  animation: director-pointer-pulse 1.1s ease-out infinite;
+}
+
+@keyframes director-pointer-pulse {
+  0% {
+    opacity: 0.9;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(2.4);
+  }
+}
+
 .director-scrim {
   position: fixed;
   inset: 0;
@@ -184,6 +226,28 @@
   border-radius: 6px;
   padding: 5px 6px;
   font-size: 12px;
+}
+
+.director-btn-narrate {
+  font-size: 12px;
+  padding: 7px 12px;
+}
+.director-btn-narrate-on {
+  border-color: #0ea5e9;
+  color: #7dd3fc;
+}
+
+/* Reduced-motion: jump the pointer to the target instead of gliding, and drop the pulse. */
+@media (prefers-reduced-motion: reduce) {
+  .director-pointer {
+    transition: none;
+  }
+  .director-pointer-pulse::after {
+    animation: none;
+  }
+  .director-spot {
+    transition: none;
+  }
 }
 
 @media (max-width: 620px) {

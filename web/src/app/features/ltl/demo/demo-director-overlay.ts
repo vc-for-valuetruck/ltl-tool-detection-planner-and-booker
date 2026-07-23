@@ -48,6 +48,22 @@ export class DemoDirectorOverlay implements OnInit {
   protected readonly showCaption = computed(() => this.director.active());
   protected readonly actLabel = computed(() => this.director.current()?.act ?? '');
 
+  /**
+   * Animated pointer target: the centre of the currently spotlighted rect, or null when there's
+   * no target (pointer hides). Driven by the same measured {@link rect} the spotlight uses, so it
+   * tracks scroll/layout reflows for free.
+   */
+  protected readonly pointer = computed(() => {
+    const r = this.rect();
+    if (!r) return null;
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+
+  /** Pulse the pointer while the current step is a click interaction (visual "tap" cue). */
+  protected readonly pointerPulse = computed(
+    () => this.director.current()?.action === 'click' && this.director.status() === 'running',
+  );
+
   constructor() {
     // Re-measure immediately whenever the target selector changes (don't wait for the next tick).
     effect(() => {

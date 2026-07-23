@@ -15,6 +15,28 @@
       <div class="director-scrim director-scrim-soft"></div>
     }
 
+    <!-- Animated pointer: glides to the spotlighted target before each interaction, pulses on
+         click steps, and hides when there's no target. Honours prefers-reduced-motion (CSS). -->
+    @if (pointer(); as p) {
+      <div
+        class="director-pointer"
+        [class.director-pointer-pulse]="pointerPulse()"
+        data-testid="director-pointer"
+        aria-hidden="true"
+        [style.transform]="'translate(' + p.x + 'px, ' + p.y + 'px)'"
+      >
+        <svg viewBox="0 0 24 24" width="30" height="30" focusable="false">
+          <path
+            d="M4 2 L4 21 L9.2 16 L12.4 22.6 L15.4 21.2 L12.2 14.7 L19 14.5 Z"
+            fill="#f8fafc"
+            stroke="#0ea5e9"
+            stroke-width="1.4"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </div>
+    }
+
     <!-- Caption / control bar. Pinned bottom, above the scrim, always interactive. -->
     <div class="director-bar" data-testid="director-bar">
       <div class="director-meta">
@@ -64,6 +86,18 @@
             }
           </select>
         </label>
+
+        @if (director.narrationAvailable) {
+          <button type="button"
+            class="director-btn director-btn-narrate"
+            [class.director-btn-narrate-on]="director.narrationEnabled()"
+            data-testid="director-narration-toggle"
+            [attr.aria-pressed]="director.narrationEnabled()"
+            [title]="director.narrationEnabled() ? 'Voice narration on — click to mute' : 'Voice narration off — click to unmute'"
+            (click)="director.toggleNarration()">
+            {{ director.narrationEnabled() ? 'Voice: On' : 'Voice: Off' }}
+          </button>
+        }
 
         <button type="button" class="director-btn director-btn-exit" data-testid="director-exit"
           (click)="director.exit()">Exit</button>
