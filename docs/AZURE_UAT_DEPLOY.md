@@ -259,7 +259,8 @@ Optional GitHub environment **variables** (all have safe defaults — set only t
 ```text
 AZURE_RESOURCE_GROUP=ltl-uat-rg
 LTL_UAT_BASE_NAME=ltl-uat
-ALLOWED_EMAIL_DOMAIN=            # empty by default — admits any authenticated user in the tenant. Set to e.g. `valuetruck.com` to restrict.
+ALLOWED_EMAIL_DOMAINS=           # empty by default — admits any authenticated user in the tenant. Set to e.g. `valuetruck.com` or `valuetruck.com,valuelogistics.com` to restrict.
+ALLOWED_EMAIL_DOMAIN=            # legacy single-value fallback (only used when ALLOWED_EMAIL_DOMAINS is unset).
 ALVYS_PROVIDER=Fallback
 ALVYS_API_BASE_URL=https://integrations.alvys.com
 ALVYS_API_VERSION=v1

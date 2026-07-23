@@ -21,12 +21,18 @@ SQL_DB=${SQL_DB:-${BASE_NAME}-sqldb}
 SQL_ADMIN=${SQL_ADMIN:-ltlsqladmin}
 IMAGE_TAG=${IMAGE_TAG:-$(date +%Y%m%d%H%M%S)}
 
-# Empty by default — admits any authenticated user in the Entra tenant. To restrict to a
-# specific email domain (e.g. valuetruck.com), set the ALLOWED_EMAIL_DOMAIN GitHub environment
-# variable (or export it locally). AllowedEmailDomainHandler.cs treats an empty allow-list as
-# 'admit all authenticated', so we skip the app setting entirely below when this is blank so
-# the setting isn't left as an empty string that some code paths might mistake for a value.
-ALLOWED_EMAIL_DOMAIN=${ALLOWED_EMAIL_DOMAIN:-}
+# Empty by default — admits any authenticated user in the Entra tenant. To restrict access to
+# one or more specific email domains, set either:
+#
+#   ALLOWED_EMAIL_DOMAINS=valuetruck.com,valuelogistics.com   (preferred; comma-separated list)
+#   ALLOWED_EMAIL_DOMAIN=valuetruck.com                        (legacy single-value form)
+#
+# ALLOWED_EMAIL_DOMAINS wins when both are set. Whitespace is trimmed and empty entries are
+# dropped, so e.g. "valuetruck.com, valuelogistics.com " is equivalent to the first example.
+# AllowedEmailDomainHandler.cs treats an empty allow-list as 'admit all authenticated', so we
+# skip the app setting entirely below when the resolved list is empty (rather than leaving an
+# empty '' string that the handler would treat as a one-element list rejecting everyone).
+ALLOWED_EMAIL_DOMAINS=${ALLOWED_EMAIL_DOMAINS:-${ALLOWED_EMAIL_DOMAIN:-}}
 # UAT is production-like and must default to LIVE Alvys (CLAUDE.md safety principle). Override to
 # Fallback only for a deliberate offline demo. A credential guard below refuses a Live deploy with
 # empty credentials so we never reconfigure the App Service onto a silently-empty Alvys client.
@@ -167,27 +173,51 @@ az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --sett
   Ltl__Optimization__AgentCommands__Enabled="$LTL_AGENT_COMMANDS_ENABLED" \
   >/dev/null
 
-# Set the AllowedEmailDomains list separately so we can either configure it (restrict access to
-# one domain) or remove it (admit any authenticated user in the tenant) based on whether
-# ALLOWED_EMAIL_DOMAIN is set. Doing it as its own step keeps the main app-settings call above
-# clean and lets a redeploy actually clear a previously-set restriction — `az webapp config
-# appsettings set` with an empty value leaves the key present with value '' which the handler
-# treats as a one-element list containing '' (rejecting everyone).
-if [ -n "$ALLOWED_EMAIL_DOMAIN" ]; then
-  echo "Restricting $API_APP access to email domain: $ALLOWED_EMAIL_DOMAIN"
-  az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --settings \
-    AccessPolicy__AllowedEmailDomains__0="$ALLOWED_EMAIL_DOMAIN" \
-    >/dev/null
-else
-  echo "ALLOWED_EMAIL_DOMAIN is empty — removing any AccessPolicy__AllowedEmailDomains__* app settings so any authenticated user in the tenant is admitted."
-  # List existing AllowedEmailDomains indices and delete each. Suppress errors when none exist.
-  KEYS=$(az webapp config appsettings list --name "$API_APP" --resource-group "$RG" \
-    --query "[?starts_with(name, 'AccessPolicy__AllowedEmailDomains__')].name" -o tsv 2>/dev/null || true)
-  if [ -n "$KEYS" ]; then
+# Configure the AllowedEmailDomains list separately from the bulk app-settings call so we can
+# reliably tighten, loosen, or clear the restriction across redeploys. This block:
+#   1) Deletes any existing AccessPolicy__AllowedEmailDomains__* keys first — required so
+#      shrinking the list (e.g. from 3 domains to 1) doesn't leave stale __1/__2/__3 entries
+#      hanging around and quietly admitting people we removed.
+#   2) If the resolved ALLOWED_EMAIL_DOMAINS list is non-empty, splits it on commas, trims
+#      whitespace, lowercases, drops blanks/dupes, and re-writes as AccessPolicy__AllowedEmailDomains__0,
+#      __1, __2, … which the .NET config array binder rehydrates into AccessPolicyOptions.AllowedEmailDomains[].
+# `az webapp config appsettings set` with an empty value would leave the key present with value
+# '' — which the handler would treat as a one-element list containing '' (rejecting everyone),
+# hence the delete-first, set-only-when-non-empty pattern.
+
+EXISTING_KEYS=$(az webapp config appsettings list --name "$API_APP" --resource-group "$RG" \
+  --query "[?starts_with(name, 'AccessPolicy__AllowedEmailDomains__')].name" -o tsv 2>/dev/null || true)
+if [ -n "$EXISTING_KEYS" ]; then
+  # shellcheck disable=SC2086
+  az webapp config appsettings delete --name "$API_APP" --resource-group "$RG" \
+    --setting-names $EXISTING_KEYS >/dev/null
+fi
+
+if [ -n "$ALLOWED_EMAIL_DOMAINS" ]; then
+  # Split on commas, trim, lowercase, drop blanks, de-dupe (preserve first-seen order).
+  NORMALIZED_DOMAINS=$(printf '%s' "$ALLOWED_EMAIL_DOMAINS" | tr ',' '\n' \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+    | tr '[:upper:]' '[:lower:]' \
+    | awk 'NF && !seen[$0]++')
+
+  if [ -n "$NORMALIZED_DOMAINS" ]; then
+    echo "Restricting $API_APP access to email domain(s):"
+    printf '  • %s\n' $NORMALIZED_DOMAINS
+    SETTINGS_ARGS=""
+    INDEX=0
+    while IFS= read -r DOMAIN; do
+      SETTINGS_ARGS="$SETTINGS_ARGS AccessPolicy__AllowedEmailDomains__${INDEX}=${DOMAIN}"
+      INDEX=$((INDEX + 1))
+    done <<EOF
+$NORMALIZED_DOMAINS
+EOF
     # shellcheck disable=SC2086
-    az webapp config appsettings delete --name "$API_APP" --resource-group "$RG" \
-      --setting-names $KEYS >/dev/null
+    az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --settings $SETTINGS_ARGS >/dev/null
+  else
+    echo "ALLOWED_EMAIL_DOMAINS resolved to an empty list after normalization — admitting any authenticated user in the tenant."
   fi
+else
+  echo "ALLOWED_EMAIL_DOMAINS is empty — admitting any authenticated user in the tenant."
 fi
 
 echo "Configuring $WEB_APP application settings..."

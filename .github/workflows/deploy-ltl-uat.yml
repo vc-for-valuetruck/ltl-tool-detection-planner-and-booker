@@ -119,11 +119,15 @@ jobs:
           AZURE_AD_API_CLIENT_ID: ${{ secrets.AZURE_AD_API_CLIENT_ID }}
           AZURE_AD_CLIENT_SECRET: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
           AZURE_AD_WEB_CLIENT_ID: ${{ secrets.AZURE_AD_WEB_CLIENT_ID }}
-          # Default empty — the API admits any authenticated user in the Entra tenant. Set the
-          # `ALLOWED_EMAIL_DOMAIN` variable on the `uat` GitHub environment to restrict access
-          # to a specific email domain (e.g. `valuetruck.com`). The deploy script deletes any
-          # existing AccessPolicy__AllowedEmailDomains__* app settings when this is empty, so
-          # tightening/loosening the restriction reliably takes effect on redeploy.
+          # Default empty — the API admits any authenticated user in the Entra tenant. Set
+          # either variable on the `uat` GitHub environment to restrict access:
+          #   ALLOWED_EMAIL_DOMAINS = valuetruck.com,valuelogistics.com   (preferred; comma-separated)
+          #   ALLOWED_EMAIL_DOMAIN  = valuetruck.com                       (legacy single-value form)
+          # ALLOWED_EMAIL_DOMAINS wins when both are set. The deploy script splits, trims, lower-cases,
+          # and de-dupes the list, then re-writes AccessPolicy__AllowedEmailDomains__0/__1/… on the
+          # API app service; stale higher indices from a previously-larger list are deleted first, so
+          # tightening or loosening the restriction reliably takes effect on redeploy.
+          ALLOWED_EMAIL_DOMAINS: ${{ vars.ALLOWED_EMAIL_DOMAINS || '' }}
           ALLOWED_EMAIL_DOMAIN: ${{ vars.ALLOWED_EMAIL_DOMAIN || '' }}
           # UAT is a production-like environment and must run against LIVE Alvys (CLAUDE.md:
           # "Fallback must never be the configured provider in production-like environments").
