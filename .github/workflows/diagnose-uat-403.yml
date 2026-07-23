@@ -1,0 +1,196 @@
+name: Diagnose UAT 403
+
+# Read-only evidence collector for the UAT "signed-in user gets 403 on /api/ltl/*" incident.
+# Copies the Azure OIDC login pattern from uat-receiver-config.yml. Writes NO secret values to
+# the log (only names + lengths). Makes NO changes to any app. Everything here is a read or an
+# anonymous/app-token probe.
+#
+# Evidence gathered:
+#   (a) The API's startup "AccessPolicy admitting ..." log line -> effective allow-list.
+#   (b) A recent 403 on /api/ltl/search from the app log stream (if present).
+#   (c) AccessPolicy__* + auth-relevant app settings on BOTH ltl-uat-api and ltl-uat-web
+#       (names + value LENGTHS only; never the values).
+#   (d) How ltl-uat-web serves /api/* (its API_UPSTREAM app setting + the committed nginx proxy).
+#   (e) DECISIVE: decode the `ver` claim of a real token minted for the API audience, and call
+#       /api/me/whoami with it (direct + through the web proxy) to see the exact claim shape and
+#       the policy decision. This distinguishes an API-layer 403 (domain handler / claim shape)
+#       from a proxy-layer problem (bearer stripped, wrong backend) without needing a user token.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: diagnose-uat-403
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Collect server-side 403 evidence (read-only)
+    runs-on: ubuntu-latest
+    environment: uat
+    env:
+      RG: ${{ vars.AZURE_RESOURCE_GROUP || 'ltl-uat-rg' }}
+      BASE_NAME: ${{ vars.LTL_UAT_BASE_NAME || 'ltl-uat' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (LTL UAT OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve hostnames
+        id: hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_APP="${BASE_NAME}-api"
+          WEB_APP="${BASE_NAME}-web"
+          API_FQDN=$(az webapp show -g "$RG" -n "$API_APP" --query defaultHostName -o tsv)
+          WEB_FQDN=$(az webapp show -g "$RG" -n "$WEB_APP" --query defaultHostName -o tsv)
+          echo "api_app=$API_APP" >> "$GITHUB_OUTPUT"
+          echo "web_app=$WEB_APP" >> "$GITHUB_OUTPUT"
+          echo "api_fqdn=$API_FQDN" >> "$GITHUB_OUTPUT"
+          echo "web_fqdn=$WEB_FQDN" >> "$GITHUB_OUTPUT"
+          echo "::notice::API=$API_FQDN WEB=$WEB_FQDN"
+
+      - name: (c) App settings — names + lengths only (NO values), both apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          dump_settings() {
+            local app="$1"
+            echo "===== $app : auth/access-relevant app settings (name -> length) ====="
+            az webapp config appsettings list -g "$RG" -n "$app" -o json \
+              | jq -r '.[]
+                  | select(.name
+                      | test("AccessPolicy|AzureAd|API_UPSTREAM|RUNTIME_|Cors|ASPNETCORE_ENVIRONMENT|WEBSITES_PORT"))
+                  | "\(.name)\tlen=\(.value | tostring | length)"' \
+              | sort
+            echo
+            echo "----- $app : ALL AccessPolicy__AllowedEmailDomains__* VALUES (domains are not secrets) -----"
+            az webapp config appsettings list -g "$RG" -n "$app" -o json \
+              | jq -r '.[] | select(.name | startswith("AccessPolicy__AllowedEmailDomains"))
+                  | "\(.name) = \(.value)"' | sort || true
+            echo
+          }
+          dump_settings "${{ steps.hosts.outputs.api_app }}"
+          dump_settings "${{ steps.hosts.outputs.web_app }}"
+
+      - name: (d) Web /api serving — API_UPSTREAM + committed nginx proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== ltl-uat-web API_UPSTREAM (this is where /api/* is proxied) ====="
+          az webapp config appsettings list -g "$RG" -n "${{ steps.hosts.outputs.web_app }}" -o json \
+            | jq -r '.[] | select(.name=="API_UPSTREAM" or .name=="RUNTIME_API_BASE_URL") | "\(.name) = \(.value)"' || true
+          echo
+          echo "===== committed web/nginx.conf.template (proxy rules) ====="
+          sed -n '1,60p' web/nginx.conf.template
+
+      - name: (a)(b) API log stream — startup AccessPolicy line + any 403 on /api/ltl
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_APP="${{ steps.hosts.outputs.api_app }}"
+          echo "Restarting $API_APP is NOT performed (read-only). Tailing current log stream for ~75s..."
+          # az webapp log tail streams the running container's stdout. Bound it with timeout so the
+          # job can't hang. The .NET app logs the AccessPolicy startup line on boot; if the app has
+          # been up a while we may not catch it live, so we ALSO download the file logs below.
+          timeout 75 az webapp log tail -g "$RG" -n "$API_APP" 2>/dev/null | tee /tmp/logtail.txt || true
+          echo
+          echo "===== grep: AccessPolicy / 403 / ltl from live tail ====="
+          grep -iE "AccessPolicy|admitting|allow-list|403|Forbidden|/api/ltl" /tmp/logtail.txt || echo "(nothing matched in live tail window)"
+
+      - name: (a) API file logs — download and grep AccessPolicy + 403
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_APP="${{ steps.hosts.outputs.api_app }}"
+          echo "Downloading recent file logs from $API_APP ..."
+          az webapp log download -g "$RG" -n "$API_APP" --log-file /tmp/apilogs.zip 2>/dev/null || {
+            echo "::warning::log download failed (filesystem logging may be off). Relying on live tail above."
+            exit 0
+          }
+          mkdir -p /tmp/apilogs && (cd /tmp/apilogs && unzip -o /tmp/apilogs.zip >/dev/null 2>&1 || true)
+          echo "===== grep AccessPolicy / admitting / allow-list across downloaded logs ====="
+          grep -rihE "AccessPolicy|admitting|allow-list|email-domain" /tmp/apilogs | tail -40 || echo "(no AccessPolicy lines found)"
+          echo
+          echo "===== grep 403 / Forbidden / /api/ltl across downloaded logs ====="
+          grep -rihE "403|Forbidden|/api/ltl/search" /tmp/apilogs | tail -60 || echo "(no 403 lines found)"
+
+      - name: (e) DECISIVE — mint an API-audience token, decode ver, call whoami (direct + proxy)
+        shell: bash
+        env:
+          API_CLIENT_ID: ${{ secrets.AZURE_AD_API_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          API_FQDN="${{ steps.hosts.outputs.api_fqdn }}"
+          WEB_FQDN="${{ steps.hosts.outputs.web_fqdn }}"
+          if [ -z "${API_CLIENT_ID:-}" ]; then
+            echo "::warning::AZURE_AD_API_CLIENT_ID not set on uat env; cannot mint API-audience token. Skipping (e)."
+            exit 0
+          fi
+          echo "::add-mask::$API_CLIENT_ID"
+
+          echo "Requesting an access token for resource api://<api-client-id> via the OIDC service principal..."
+          TOKEN=$(az account get-access-token --resource "api://${API_CLIENT_ID}" --query accessToken -o tsv 2>/dev/null || true)
+          if [ -z "$TOKEN" ]; then
+            echo "::warning::Could not mint a token for api://<api-client-id>. Skipping token-shape evidence."
+            exit 0
+          fi
+          echo "::add-mask::$TOKEN"
+
+          # Decode ONLY non-sensitive header/payload metadata. We print the token VERSION and the
+          # list of claim TYPE NAMES present (keys), never a user identity — this app token has no
+          # user identity anyway. `ver`/`aud`/`iss` reveal whether the API issues v1.0 or v2.0
+          # tokens, which decides whether real user tokens carry `preferred_username`.
+          b64pad() { local s="$1"; local m=$(( ${#s} % 4 )); if [ $m -eq 2 ]; then s="${s}=="; elif [ $m -eq 3 ]; then s="${s}="; fi; echo "$s"; }
+          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2)
+          DECODED=$(b64pad "$PAYLOAD" | tr '_-' '/+' | base64 -d 2>/dev/null || echo '{}')
+          echo "===== token metadata (safe fields only) ====="
+          echo "$DECODED" | jq '{ver, iss, aud, appid, azp, "claim_type_names": (keys)}' || echo "$DECODED"
+          echo
+          echo ">>> KEY: ver=1.0 means the API issues v1.0 tokens; v1.0 user tokens have NO 'preferred_username' claim."
+          echo
+
+          probe_whoami() {
+            local label="$1" base="$2"
+            echo "===== /api/me/whoami via $label ($base) ====="
+            code=$(curl -s -o /tmp/whoami.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$base/api/me/whoami" || echo 000)
+            echo "HTTP $code"
+            jq '{isAuthenticated, authScheme, identityName, preferredUsername, emailClaim, upn, effectiveEmail, policyChecks, claim_types: [.claims[].Type]}' /tmp/whoami.json 2>/dev/null || cat /tmp/whoami.json
+            echo
+            echo "----- /api/ltl/search via $label -----"
+            scode=$(curl -s -o /tmp/search.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$base/api/ltl/search?pageSize=1" || echo 000)
+            echo "HTTP $scode"; head -c 400 /tmp/search.json 2>/dev/null; echo; echo
+          }
+          probe_whoami "API DIRECT"  "https://${API_FQDN}"
+          probe_whoami "WEB PROXY"   "https://${WEB_FQDN}"
+
+          echo "===== interpretation guide ====="
+          echo " * whoami HTTP 200 both direct and via proxy => proxy forwards the bearer fine; 403 is an API-layer decision."
+          echo " * whoami direct 200 but proxy 401/403 => proxy strips/loses the Authorization header."
+          echo " * whoami shows preferredUsername/upn/emailClaim all null + extractedDomain null + wouldAllow false"
+          echo "   => the handler cannot read a domain from this token shape (claim-shape root cause)."
+
+      - name: Anonymous baseline probes (no bearer)
+        shell: bash
+        run: |
+          set -euo pipefail
+          API_FQDN="${{ steps.hosts.outputs.api_fqdn }}"
+          WEB_FQDN="${{ steps.hosts.outputs.web_fqdn }}"
+          for pair in "API_DIRECT https://${API_FQDN}" "WEB_PROXY https://${WEB_FQDN}"; do
+            set -- $pair; label="$1"; base="$2"
+            echo "== $label =="
+            for path in /api/health /api/me/whoami /api/ltl/search; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' "$base$path" || echo 000)
+              echo "  $path -> HTTP $code"
+            done
+          done
