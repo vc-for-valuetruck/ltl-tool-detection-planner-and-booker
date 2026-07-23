@@ -54,6 +54,10 @@ jobs:
           if [ -z "$ALVYS_CLIENT_ID" ] || [ -z "$ALVYS_CLIENT_SECRET" ]; then
             echo "GitHub secrets incomplete; reading Alvys credentials from ltl-uat-api app settings..."
             SETTINGS=$(az webapp config appsettings list -g ltl-uat-rg -n ltl-uat-api -o json --only-show-errors)
+            echo "Alvys-related app setting NAMES on ltl-uat-api (values not shown):"
+            printf '%s' "$SETTINGS" | jq -r '.[].name | select(test("alvys"; "i"))' || true
+            echo "All app setting names:"
+            printf '%s' "$SETTINGS" | jq -r '.[].name' | sort || true
             if [ -z "$ALVYS_CLIENT_ID" ]; then
               ALVYS_CLIENT_ID=$(printf '%s' "$SETTINGS" | jq -r '[.[] | select(.name | test("alvys.*client.?id$"; "i"))][0].value // empty')
             fi
