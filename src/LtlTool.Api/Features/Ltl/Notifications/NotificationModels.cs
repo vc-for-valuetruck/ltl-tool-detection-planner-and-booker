@@ -38,6 +38,12 @@ public enum NotificationStage
 
     /// <summary>T8 — exception raised (late pickup/delivery, idle at stop, missing data). Reserved.</summary>
     ExceptionRaised,
+
+    /// <summary>A background agent detected a high-value consolidation opportunity crossing the uplift alert threshold.</summary>
+    OpportunityDetected,
+
+    /// <summary>A background agent produced the daily AR / billing-attention digest (in-app only, never an external send).</summary>
+    ArDigest,
 }
 
 /// <summary>The transport a recipient is reached on.</summary>
