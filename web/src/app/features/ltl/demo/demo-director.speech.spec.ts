@@ -1,8 +1,13 @@
-import { DIRECTOR_NARRATION_KEY, DIRECTOR_SPEECH_CAP_MS, DemoDirectorNarrator } from './demo-director.speech';
+import {
+  DIRECTOR_NARRATION_KEY,
+  DIRECTOR_SPEECH_CAP_MS,
+  DemoDirectorNarrator,
+  DirectorVoicePreset,
+} from './demo-director.speech';
 
 describe('DemoDirectorNarrator', () => {
-  it('exposes a 15s speech cap constant and a stable storage key', () => {
-    expect(DIRECTOR_SPEECH_CAP_MS).toBe(15_000);
+  it('exposes a generous speech cap constant and a stable storage key', () => {
+    expect(DIRECTOR_SPEECH_CAP_MS).toBe(45_000);
     expect(DIRECTOR_NARRATION_KEY).toBe('ltl.demo.director.narration');
   });
 
@@ -18,8 +23,12 @@ describe('DemoDirectorNarrator', () => {
 
   // Exercises the private voice-selection logic directly (via the fake synth's getVoices) so the
   // assertion does not depend on a real browser accepting a synthetic SpeechSynthesisVoice object.
-  const pickWith = (voices: Array<{ name: string; lang: string }>) => {
+  const pickWith = (
+    voices: Array<{ name: string; lang: string }>,
+    preset: DirectorVoicePreset = 'auFemale',
+  ) => {
     const narrator = new DemoDirectorNarrator();
+    narrator.setPreset(preset);
     (narrator as unknown as { synth: unknown }).synth = { getVoices: () => voices };
     return (
       narrator as unknown as { pickVoice(): SpeechSynthesisVoice | null }
@@ -45,6 +54,23 @@ describe('DemoDirectorNarrator', () => {
     ).toBe('Catherine');
     expect(pickWith([{ name: 'Mark', lang: 'en-US' }])?.name).toBe('Mark');
     expect(pickWith([{ name: 'SomeVoice', lang: 'fr-FR' }])).toBeNull();
+  });
+
+  it('narrator preset prefers a deep-male natural en-US voice over a female en-US voice', () => {
+    const picked = pickWith(
+      [
+        { name: 'Microsoft Aria Online (Natural) - English (United States)', lang: 'en-US' },
+        { name: 'Microsoft Guy Online (Natural) - English (United States)', lang: 'en-US' },
+        { name: 'Samantha', lang: 'en-US' },
+      ],
+      'narrator',
+    );
+    expect(picked?.name).toContain('Guy');
+    expect(picked?.lang).toBe('en-US');
+  });
+
+  it('system preset applies no voice override', () => {
+    expect(pickWith([{ name: 'Guy', lang: 'en-US' }], 'system')).toBeNull();
   });
 
   it('is a no-op (not speaking) when the platform has no speech synthesis', () => {

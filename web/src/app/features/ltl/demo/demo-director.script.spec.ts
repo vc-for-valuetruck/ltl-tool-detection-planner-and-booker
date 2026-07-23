@@ -62,6 +62,11 @@ describe('DEMO_DIRECTOR_SCRIPT', () => {
     originState: 'TX',
     destinationCity: 'Phoenix',
     destinationState: 'AZ',
+    laneLabel: 'El Paso, TX → Phoenix, AZ',
+    laneOpenCount: 7,
+    totalOpen: 432,
+    topLanes: [],
+    customerName: null,
     ...over,
   });
 
@@ -80,11 +85,26 @@ describe('DEMO_DIRECTOR_SCRIPT', () => {
     expect(step.fields && step.fields.length).toBe(4);
   });
 
-  it('consolidate seed prefers a real live load number, falling back to the static seed', () => {
-    const step = DEMO_DIRECTOR_SCRIPT.find((s) => s.id === 'consolidate-seed')!;
-    expect(step.resolveFillValue!(liveCtx())).toBe('LIVE-9001');
-    expect(step.resolveFillValue!(liveCtx({ loadNumber: null }))).toBeNull();
-    // The static fallback value is still declared for when no live load resolves.
-    expect((step.fillValue ?? '').length).toBeGreaterThan(0);
+  it('injects the live busiest-lane roll-up into the Consolidate narration', () => {
+    const step = DEMO_DIRECTOR_SCRIPT.find((s) => s.id === 'consolidate-open')!;
+    const spoken = step.resolveCaption!(
+      liveCtx({
+        totalOpen: 432,
+        topLanes: [
+          {
+            label: 'Tijuana, BCN → Johnstown, OH',
+            originCity: 'Tijuana',
+            originState: 'BCN',
+            destinationCity: 'Johnstown',
+            destinationState: 'OH',
+            openLoadCount: 10,
+          },
+        ],
+      }),
+    );
+    expect(spoken).toContain('Tijuana, BCN → Johnstown, OH');
+    expect(spoken).toContain('10');
+    // With no live lanes the step keeps its static caption (returns null).
+    expect(step.resolveCaption!(liveCtx({ topLanes: [] }))).toBeNull();
   });
 });

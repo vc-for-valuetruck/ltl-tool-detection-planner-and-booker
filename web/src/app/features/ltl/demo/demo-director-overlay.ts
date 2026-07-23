@@ -131,4 +131,10 @@ export class DemoDirectorOverlay implements OnInit {
     const n = Number(value);
     if (!Number.isNaN(n)) this.director.setSpeed(n);
   }
+
+  protected onVoiceChange(value: string): void {
+    if (value === 'narrator' || value === 'auFemale' || value === 'system') {
+      this.director.setVoicePreset(value);
+    }
+  }
 }

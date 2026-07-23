@@ -97,6 +97,16 @@
             (click)="director.toggleNarration()">
             {{ director.narrationEnabled() ? 'Voice: On' : 'Voice: Off' }}
           </button>
+
+          <label class="director-speed director-voice">
+            Narrator
+            <select data-testid="director-voice" [value]="director.voicePreset()"
+              (change)="onVoiceChange($any($event.target).value)">
+              @for (v of director.voiceOptions; track v.id) {
+                <option [value]="v.id">{{ v.label }}</option>
+              }
+            </select>
+          </label>
         }
 
         <button type="button" class="director-btn director-btn-exit" data-testid="director-exit"

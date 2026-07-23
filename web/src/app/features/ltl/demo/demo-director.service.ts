@@ -9,11 +9,17 @@ import {
   DirectorStep,
   DirectorStepStatus,
 } from './demo-director.models';
+import { LtlLoadSummary } from '../ltl.models';
+import { DemoLane } from './demo-director.models';
 import { DEMO_DIRECTOR_SCRIPT } from './demo-director.script';
 import {
+  DIRECTOR_DEFAULT_VOICE,
   DIRECTOR_NARRATION_KEY,
   DIRECTOR_SPEECH_CAP_MS,
+  DIRECTOR_VOICE_KEY,
+  DIRECTOR_VOICE_OPTIONS,
   DemoDirectorNarrator,
+  DirectorVoicePreset,
 } from './demo-director.speech';
 
 /**
@@ -72,6 +78,10 @@ export class DemoDirectorService {
 
   /** Voice narration of captions is enabled (persisted). Defaults ON when speech is available. */
   readonly narrationEnabled = signal<boolean>(this.loadNarrationPref());
+  /** Selected narrator persona (persisted). Defaults to the deep-male house voice. */
+  readonly voicePreset = signal<DirectorVoicePreset>(this.loadVoicePref());
+  /** Options for the control-bar voice picker. */
+  readonly voiceOptions = DIRECTOR_VOICE_OPTIONS;
   /** Whether this platform can synthesise speech at all (drives whether the toggle is shown). */
   get narrationAvailable(): boolean {
     return this.narrator.available;
@@ -90,13 +100,18 @@ export class DemoDirectorService {
   /** Web Speech API wrapper for caption narration (safe no-op when unavailable). */
   private readonly narrator = new DemoDirectorNarrator();
 
+  constructor() {
+    // Apply the persisted voice persona to the narrator before the first utterance.
+    this.narrator.setPreset(this.voicePreset());
+  }
+
   /**
    * Begins the walkthrough. `autostart` controls whether it plays immediately or waits paused on
    * step 1 for the operator to press play. Idempotent-ish: re-invoking restarts from step 0.
    */
   start(autostart: boolean): void {
     this.reset();
-    this.resolveDemoContext();
+    this.resolveCast();
     this.active.set(true);
     this.playing.set(autostart);
     void this.enter(0);
@@ -125,6 +140,15 @@ export class DemoDirectorService {
     this.playing.set(false);
     this.clearAdvance();
     this.narrator.cancel();
+  }
+
+  /** Switches the narrator persona, persists it, and re-speaks the current caption in the new voice. */
+  setVoicePreset(preset: DirectorVoicePreset): void {
+    this.voicePreset.set(preset);
+    this.narrator.setPreset(preset);
+    this.saveVoicePref(preset);
+    // Re-narrate the caption already on screen so the operator hears the new voice immediately.
+    if (this.narrationEnabled() && this.active() && this.status() === 'running') this.narrate();
   }
 
   /** Toggles caption narration, persists the choice, and stops any in-flight speech when turning off. */
@@ -158,46 +182,126 @@ export class DemoDirectorService {
 
   replay(): void {
     this.reset();
-    this.resolveDemoContext();
+    this.resolveCast();
     this.active.set(true);
     this.playing.set(true);
     void this.enter(0);
   }
 
   /**
-   * Fetches one real load from live Alvys (through the app's authenticated {@link LtlService}, same
-   * bearer-token path as every page) so the data-driven acts can drive a lane/seed that exists on
-   * this tenant. Prefers a load with a complete origin+destination lane. Fire-and-forget: on any
-   * failure the context stays null and steps fall back to their static demo values — the walkthrough
-   * never blocks on it and nothing is fabricated.
+   * Assembles the run's live "cast" at start: sweeps the app's own authenticated open-loads feed
+   * (through {@link LtlService} — the same bearer-token path as every page), groups the loads by
+   * lane, picks the busiest lanes, and chooses a real anchor load on the busiest lane. The
+   * data-driven acts (Consolidate seed, Dispatch Assist lane) then drive a record that actually
+   * exists on this tenant, and the money-first narration reports live figures ("432 loads moving
+   * right now; your busiest lane has 10 waiting to be combined").
+   *
+   * Fire-and-forget and never fabricates: on any failure or empty result the cast stays null and
+   * the affected steps fall back to their static demo values or skip-with-caption. The walkthrough
+   * never blocks on it. Numbers are derived here at runtime — never baked into the script.
    */
-  private resolveDemoContext(): void {
+  private resolveCast(): void {
     this.demoContext.set(null);
     try {
-      this.ltl.search({ pageSize: 10, ltlOnly: true }).subscribe({
-        next: (res) => {
-          const items = res?.items ?? [];
-          const load =
-            items.find((l) => l.origin?.state && l.destination?.state && l.loadNumber) ??
-            items.find((l) => l.loadNumber) ??
-            items[0];
-          if (!load) return;
-          this.demoContext.set({
-            loadNumber: load.loadNumber ?? null,
-            loadId: load.id ?? null,
-            originCity: load.origin?.city ?? null,
-            originState: load.origin?.state ?? null,
-            destinationCity: load.destination?.city ?? null,
-            destinationState: load.destination?.state ?? null,
-          });
-        },
-        error: () => {
-          // Leave the context null — data-driven steps fall back to their static demo values.
-        },
-      });
+      // A bounded LTL-only sweep, revenue-first so the anchor leads with a meaningful load.
+      this.ltl
+        .search({ pageSize: 100, ltlOnly: true, sort: 'Revenue', sortDescending: true })
+        .subscribe({
+          next: (res) => {
+            const items = res?.items ?? [];
+            if (items.length === 0) return;
+            const topLanes = this.rankLanes(items);
+            const anchor = this.pickAnchor(items, topLanes);
+            if (!anchor) return;
+            const busiest = topLanes[0] ?? null;
+            this.demoContext.set({
+              loadNumber: anchor.loadNumber ?? null,
+              loadId: anchor.id ?? null,
+              originCity: anchor.origin?.city ?? null,
+              originState: anchor.origin?.state ?? null,
+              destinationCity: anchor.destination?.city ?? null,
+              destinationState: anchor.destination?.state ?? null,
+              laneLabel: this.laneLabel(anchor),
+              laneOpenCount: this.laneCount(anchor, topLanes),
+              totalOpen: res?.total ?? items.length,
+              topLanes,
+              customerName: anchor.customerName ?? null,
+            });
+          },
+          error: () => {
+            // Leave the cast null — data-driven steps fall back to their static demo values.
+          },
+        });
     } catch {
       // Injection/observable construction should never break the walkthrough.
     }
+  }
+
+  /** Stable lane key for grouping: origin city+state → destination city+state, upper-cased. */
+  private laneKey(l: LtlLoadSummary): string | null {
+    const oc = l.origin?.city?.trim();
+    const os = l.origin?.state?.trim();
+    const dc = l.destination?.city?.trim();
+    const ds = l.destination?.state?.trim();
+    if (!oc || !os || !dc || !ds) return null;
+    return `${oc}|${os}|${dc}|${ds}`.toUpperCase();
+  }
+
+  /** Groups loads by lane and returns the busiest lanes, most open freight first. */
+  private rankLanes(items: LtlLoadSummary[]): DemoLane[] {
+    const groups = new Map<string, { sample: LtlLoadSummary; count: number }>();
+    for (const l of items) {
+      const key = this.laneKey(l);
+      if (!key) continue;
+      const g = groups.get(key);
+      if (g) g.count++;
+      else groups.set(key, { sample: l, count: 1 });
+    }
+    return [...groups.values()]
+      .map(({ sample, count }) => ({
+        label: this.laneLabel(sample) ?? '—',
+        originCity: sample.origin?.city ?? null,
+        originState: sample.origin?.state ?? null,
+        destinationCity: sample.destination?.city ?? null,
+        destinationState: sample.destination?.state ?? null,
+        openLoadCount: count,
+      }))
+      .sort((a, b) => b.openLoadCount - a.openLoadCount);
+  }
+
+  /**
+   * Picks the anchor load: prefer the first complete-lane load on the busiest lane (so Consolidate
+   * and Dispatch drive the highest-volume corridor), then any complete-lane load, then any load
+   * with a number. Never invents one.
+   */
+  private pickAnchor(items: LtlLoadSummary[], topLanes: DemoLane[]): LtlLoadSummary | null {
+    const busiestKey = topLanes.length > 0
+      ? `${topLanes[0].originCity}|${topLanes[0].originState}|${topLanes[0].destinationCity}|${topLanes[0].destinationState}`.toUpperCase()
+      : null;
+    return (
+      (busiestKey
+        ? items.find((l) => this.laneKey(l) === busiestKey && l.loadNumber)
+        : undefined) ??
+      items.find((l) => this.laneKey(l) && l.loadNumber) ??
+      items.find((l) => l.loadNumber) ??
+      items[0] ??
+      null
+    );
+  }
+
+  private laneLabel(l: LtlLoadSummary): string | null {
+    const o = l.origin, d = l.destination;
+    if (!o?.city || !o?.state || !d?.city || !d?.state) return null;
+    return `${o.city}, ${o.state} → ${d.city}, ${d.state}`;
+  }
+
+  private laneCount(anchor: LtlLoadSummary, topLanes: DemoLane[]): number | null {
+    const key = this.laneKey(anchor);
+    if (!key) return null;
+    const lane = topLanes.find(
+      (t) => `${t.originCity}|${t.originState}|${t.destinationCity}|${t.destinationState}`.toUpperCase() === key,
+    );
+    return lane?.openLoadCount ?? null;
   }
 
   exit(): void {
@@ -259,8 +363,10 @@ export class DemoDirectorService {
       }
     }
 
-    // Let the step re-resolve its caption/target from what actually rendered (data-driven acts).
-    const resolvedCaption = step.resolveCaption?.() ?? null;
+    // Let the step re-resolve its caption/target from what actually rendered + the live cast
+    // (data-driven acts: inject live figures, or degrade to an honest empty-state caption).
+    const ctx = this.demoContext();
+    const resolvedCaption = step.resolveCaption?.(ctx) ?? null;
     if (resolvedCaption) this.caption.set(resolvedCaption);
 
     if (step.action) {
@@ -271,7 +377,7 @@ export class DemoDirectorService {
       }
     }
 
-    const resolvedTarget = step.resolveTarget?.() ?? null;
+    const resolvedTarget = step.resolveTarget?.(ctx) ?? null;
     this.spotlight.set(resolvedTarget ?? step.target ?? null);
     this.status.set('running');
 
@@ -288,7 +394,7 @@ export class DemoDirectorService {
 
   private skip(step: DirectorStep, token: number): void {
     if (this.isStale(token)) return;
-    const resolved = step.resolveCaption?.() ?? null;
+    const resolved = step.resolveCaption?.(this.demoContext()) ?? null;
     this.caption.set(
       resolved ??
         'Precondition not present on live data right now — skipping this step (nothing was faked).',
@@ -462,6 +568,27 @@ export class DemoDirectorService {
   private saveNarrationPref(value: boolean): void {
     try {
       localStorage?.setItem(DIRECTOR_NARRATION_KEY, String(value));
+    } catch {
+      // Private-mode / disabled storage — preference just won't persist across reloads.
+    }
+  }
+
+  /** Reads the persisted voice persona; defaults to the deep-male house voice. */
+  private loadVoicePref(): DirectorVoicePreset {
+    try {
+      if (typeof localStorage === 'undefined') return DIRECTOR_DEFAULT_VOICE;
+      const raw = localStorage.getItem(DIRECTOR_VOICE_KEY);
+      return raw === 'narrator' || raw === 'auFemale' || raw === 'system'
+        ? raw
+        : DIRECTOR_DEFAULT_VOICE;
+    } catch {
+      return DIRECTOR_DEFAULT_VOICE;
+    }
+  }
+
+  private saveVoicePref(value: DirectorVoicePreset): void {
+    try {
+      localStorage?.setItem(DIRECTOR_VOICE_KEY, value);
     } catch {
       // Private-mode / disabled storage — preference just won't persist across reloads.
     }

@@ -20,12 +20,28 @@ export interface DirectorFill {
   readonly value: string;
 }
 
+/** One lane in the live cast, with how many open loads are moving on it right now. */
+export interface DemoLane {
+  readonly label: string;
+  readonly originCity: string | null;
+  readonly originState: string | null;
+  readonly destinationCity: string | null;
+  readonly destinationState: string | null;
+  readonly openLoadCount: number;
+}
+
 /**
- * A real record pulled from LIVE Alvys reads at the start of a run, used so acts drive live data
- * instead of hardcoded demo ids/lanes (a fixed load number or lane can return an empty/404 against
- * a live tenant). Any field may be null when the live read is unavailable, in which case a step
- * falls back to its static demo value. This is a read of what the app already fetches — no new data
- * source, no fabrication.
+ * The live "cast" the director assembles at the start of every run by reading the app's own
+ * authenticated open-loads feed (the same bearer-token path every page uses), grouping the loads by
+ * lane, and picking the busiest lanes and a real anchor load to build the story around. NOTHING here
+ * is hardcoded or fabricated: if the live read is empty or unavailable every field is null/empty and
+ * the affected steps fall back to their static demo values or skip-with-caption. Numbers change hour
+ * to hour, so they are always derived at runtime — never baked into the script.
+ *
+ * The anchor fields (loadNumber, loadId, origin/destination) describe the single real load the
+ * data-driven acts drive (Consolidate seed, Dispatch Assist lane). The lane roll-up (`topLanes`,
+ * `busiestLaneLabel`, `totalOpen`) feeds the money-first narration ("right now 432 loads are moving;
+ * your busiest lane has 10 waiting to be combined").
  */
 export interface DemoContext {
   readonly loadNumber: string | null;
@@ -34,6 +50,16 @@ export interface DemoContext {
   readonly originState: string | null;
   readonly destinationCity: string | null;
   readonly destinationState: string | null;
+  /** Human lane label for the anchor, e.g. "Tijuana, BCN → Johnstown, OH". Null when unresolved. */
+  readonly laneLabel: string | null;
+  /** Open loads moving on the anchor's lane right now. Null when unresolved. */
+  readonly laneOpenCount: number | null;
+  /** Total open loads seen in the start-of-run sweep. Null when unresolved. */
+  readonly totalOpen: number | null;
+  /** Busiest lanes by open-load count, most freight first (for narration). Empty when unresolved. */
+  readonly topLanes: readonly DemoLane[];
+  /** Customer name on the anchor load, when Alvys supplied one. Null otherwise — never invented. */
+  readonly customerName: string | null;
 }
 
 export interface DirectorStep {
@@ -44,18 +70,20 @@ export interface DirectorStep {
   /** Plain-business-language narration shown in the caption bar. */
   readonly caption: string;
   /**
-   * Optional DOM-inspecting override run after {@link waitFor} settles. Lets an act degrade
-   * gracefully / stay data-driven (e.g. "Invoice Studio present" vs "using billing worklist").
+   * Optional override run after {@link waitFor} settles, given the run's live {@link DemoContext}.
+   * Lets an act stay data-driven — inject live numbers into the narration, or degrade gracefully
+   * (e.g. "Invoice Studio present" vs "using billing worklist", or an honest empty-state caption).
+   * Return null to keep the step's static {@link caption}.
    */
-  readonly resolveCaption?: () => string | null;
+  readonly resolveCaption?: (ctx: DemoContext | null) => string | null;
   /** Honest-state note for gated/no-op writes ("payload prepared, execution gated pending sign-off"). */
   readonly posture?: string;
   /** Route to navigate to before the step runs (skipped when already there). */
   readonly route?: string;
   /** CSS selector to spotlight. When absent the whole workspace is highlighted. */
   readonly target?: string;
-  /** Optional DOM-inspecting override for the spotlight target. */
-  readonly resolveTarget?: () => string | null;
+  /** Optional DOM-inspecting override for the spotlight target (given the live cast). */
+  readonly resolveTarget?: (ctx: DemoContext | null) => string | null;
   /**
    * Selectors to wait for (ANY match) before the step is considered ready. Covers live-data
    * latency; on timeout an {@link optional} step is skipped-with-caption, a required one proceeds
@@ -93,7 +121,12 @@ export type DirectorStepStatus = 'idle' | 'navigating' | 'waiting' | 'running' |
 
 /** Default wait budget for a step's readiness selectors — generous for live Alvys latency. */
 export const DIRECTOR_WAIT_MS = 12_000;
-/** Default dwell on a step before auto-advancing (at 1x speed). */
-export const DIRECTOR_DWELL_MS = 4_000;
+/**
+ * Default dwell on a step before auto-advancing (at 1x speed). This is a *minimum* on-screen time;
+ * a narrated step also waits for its spoken caption to finish (see the service's armAdvance), so the
+ * unhurried, documentary cadence is really driven by the length of each caption's narration. Tuned
+ * so a full at-1x run covers the whole app in roughly half an hour.
+ */
+export const DIRECTOR_DWELL_MS = 7_000;
 /** Selectable playback speeds. */
 export const DIRECTOR_SPEEDS = [0.5, 1, 1.5, 2, 3] as const;
