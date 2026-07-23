@@ -56,14 +56,28 @@ jobs:
             SETTINGS=$(az webapp config appsettings list -g ltl-uat-rg -n ltl-uat-api -o json --only-show-errors)
             echo "Alvys-related app setting NAMES on ltl-uat-api (values not shown):"
             printf '%s' "$SETTINGS" | jq -r '.[].name | select(test("alvys"; "i"))' || true
-            echo "All app setting names:"
-            printf '%s' "$SETTINGS" | jq -r '.[].name' | sort || true
+            echo "Alvys setting value diagnostics (length + keyvault-ref flag only):"
+            printf '%s' "$SETTINGS" | jq -r '.[] | select(.name | test("alvys"; "i")) | "\(.name): len=\((.value // "") | length) kvref=\((.value // "") | startswith("@Microsoft.KeyVault"))"' || true
+            kv_resolve() {
+              local raw="$1"
+              if printf '%s' "$raw" | grep -q '^@Microsoft.KeyVault'; then
+                local uri
+                uri=$(printf '%s' "$raw" | sed -n 's/.*SecretUri=\([^);]*\).*/\1/p')
+                az keyvault secret show --id "$uri" --query value -o tsv --only-show-errors
+              else
+                printf '%s' "$raw"
+              fi
+            }
             if [ -z "$ALVYS_CLIENT_ID" ]; then
-              ALVYS_CLIENT_ID=$(printf '%s' "$SETTINGS" | jq -r '[.[] | select(.name | test("alvys.*client.?id$"; "i"))][0].value // empty')
+              RAW_ID=$(printf '%s' "$SETTINGS" | jq -r '[.[] | select(.name | test("alvys.*client.?id$"; "i"))][0].value // empty')
+              ALVYS_CLIENT_ID=$(kv_resolve "$RAW_ID")
             fi
             if [ -z "$ALVYS_CLIENT_SECRET" ]; then
-              ALVYS_CLIENT_SECRET=$(printf '%s' "$SETTINGS" | jq -r '[.[] | select(.name | test("alvys.*client.?secret$"; "i"))][0].value // empty')
+              RAW_SECRET=$(printf '%s' "$SETTINGS" | jq -r '[.[] | select(.name | test("alvys.*client.?secret$"; "i"))][0].value // empty')
+              ALVYS_CLIENT_SECRET=$(kv_resolve "$RAW_SECRET")
             fi
+            ALVYS_TENANT_ID=$(printf '%s' "$SETTINGS" | jq -r '[.[] | select(.name | test("alvys.*tenant.?id$"; "i"))][0].value // empty')
+            echo "resolved: client_id len=${#ALVYS_CLIENT_ID}, client_secret len=${#ALVYS_CLIENT_SECRET}, tenant_id len=${#ALVYS_TENANT_ID}"
           fi
 
           if [ -z "$ALVYS_CLIENT_ID" ] || [ -z "$ALVYS_CLIENT_SECRET" ]; then
