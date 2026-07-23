@@ -234,7 +234,7 @@ public sealed class ConsolidationAutoExecuteServiceTests
     {
         var plans = BuildPlanService();
         var readiness = BuildReadiness(autoConsolidateEnabled, internalBaseUrl);
-        var options = Options.Create(new ConsolidationAutoExecuteOptions { Enabled = autoConsolidateEnabled });
+        var options = Microsoft.Extensions.Options.Options.Create(new ConsolidationAutoExecuteOptions { Enabled = autoConsolidateEnabled });
         var logger = NullLogger<ConsolidationAutoExecuteService>.Instance;
         tokenProvider ??= new StubTokenProvider("t");
 
@@ -256,11 +256,11 @@ public sealed class ConsolidationAutoExecuteServiceTests
         }
 
         return new AlvysReadinessService(
-            Options.Create(new AlvysWriteOptions()),
-            Options.Create(new AlvysOptions()),
+            Microsoft.Extensions.Options.Options.Create(new AlvysWriteOptions()),
+            Microsoft.Extensions.Options.Options.Create(new AlvysOptions()),
             new InMemoryAlvysSyncTracker(),
-            Options.Create(internalOptions),
-            Options.Create(new ConsolidationAutoExecuteOptions { Enabled = autoConsolidateEnabled }));
+            Microsoft.Extensions.Options.Options.Create(internalOptions),
+            Microsoft.Extensions.Options.Options.Create(new ConsolidationAutoExecuteOptions { Enabled = autoConsolidateEnabled }));
     }
 
     private static ConsolidationPlanService BuildPlanService()

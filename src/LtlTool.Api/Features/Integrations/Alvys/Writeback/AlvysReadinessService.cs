@@ -104,8 +104,8 @@ public sealed class AlvysReadinessService(
         IOptions<AlvysOptions> alvysOptions,
         IAlvysSyncTracker syncTracker)
         : this(writeOptions, alvysOptions, syncTracker,
-            Options.Create(new AlvysInternalApiOptions()),
-            Options.Create(new ConsolidationAutoExecuteOptions()))
+            Microsoft.Extensions.Options.Options.Create(new AlvysInternalApiOptions()),
+            Microsoft.Extensions.Options.Options.Create(new ConsolidationAutoExecuteOptions()))
     {
     }
 
