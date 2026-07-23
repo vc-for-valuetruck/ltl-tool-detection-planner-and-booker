@@ -1,5 +1,5 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MsalService } from '@azure/msal-angular';
 import { AuthSessionStore } from '../../core/auth/auth-session.store';
@@ -197,6 +197,130 @@ export class Dock implements OnInit, OnDestroy {
   protected readonly undoing = signal(false);
   protected readonly undoAvailable = computed(() => this.undoSecondsLeft() > 0 && !this.undone());
   private undoTimer: ReturnType<typeof setInterval> | null = null;
+
+  // --- Auto-combine mode (opt-in one-tap flow) -----------------------------
+  /**
+   * Opt-in "one-tap combine" mode (default OFF). When ON, an effect (see the constructor) walks the
+   * flow for the worker after they pick a yard: auto-pick the parent, auto-add the top-ranked
+   * siblings, and auto-load the plan preview — then surfaces a single "One-tap combine" button.
+   *
+   * Auto-mode is strictly additive and honest: it never combines silently, never fabricates a value,
+   * and ejects to the normal manual flow (via {@link ejectAuto}) the moment any step's data is
+   * missing (Alvys read failed, no load number, no candidates) or the plan preview has blockers. The
+   * manual yard → parent → siblings → review → combine path is untouched when the toggle is OFF.
+   */
+  protected readonly autoMode = signal(false);
+  /** Max siblings auto-mode will add, configurable by the worker. Default 3. */
+  protected readonly autoSiblingCap = signal(3);
+  /** Set to a human reason when auto-mode ejected to manual; drives the eject banner. */
+  protected readonly autoEjectReason = signal<string | null>(null);
+  /** True once a clean plan preview is loaded in auto-mode — arms the one-tap combine button. */
+  protected readonly autoReady = signal(false);
+  /** True once auto-mode has taken at least one step this run — gates the tap-count chip. */
+  protected readonly autoUsed = signal(false);
+  /** Set for the single combine round-trip fired by the one-tap button, so it also prints + opens the card. */
+  private autoFinishRequested = false;
+
+  protected setAutoSiblingCap(value: number): void {
+    if (!Number.isFinite(value)) return;
+    this.autoSiblingCap.set(Math.min(9, Math.max(1, Math.trunc(value))));
+  }
+
+  protected toggleAutoMode(on: boolean): void {
+    this.autoEjectReason.set(null);
+    this.autoReady.set(false);
+    this.autoMode.set(on);
+  }
+
+  constructor() {
+    // Effect-driven step progression: reacts to auto-mode + the current step + the data each step
+    // needs. Every branch is idempotent (it advances the step, so the next run takes the next
+    // branch) and honest (missing data ejects to manual instead of guessing or combining silently).
+    effect(() => {
+      if (!this.autoMode()) return;
+      if (this.loading()) return; // an Alvys read is in flight — wait for it to settle
+      if (this.error()) {
+        // A read failed and the error card is already showing; stop auto rather than stall silently.
+        this.ejectAuto('Auto-suggest unavailable — Alvys read failed. Continue manually.');
+        return;
+      }
+      switch (this.step()) {
+        case 'arrivals':
+          this.autoPickParent();
+          break;
+        case 'siblings':
+          this.autoPickSiblings();
+          break;
+        case 'review':
+          this.autoHandleReview();
+          break;
+      }
+    });
+  }
+
+  /**
+   * Auto-pick the parent. Arrivals carry no uplift/revenue field (that lives on the consolidation
+   * opportunity, a different contract), so we rank honestly by what the board actually supplies:
+   * a corridor-bound truck first, then board order. Only arrivals with a load number can control a
+   * BOL; if none qualify, eject to manual rather than guess.
+   */
+  private autoPickParent(): void {
+    const eligible = this.arrivals().filter((a) => this.canBeParent(a));
+    if (eligible.length === 0) {
+      this.ejectAuto('Auto-suggest unavailable — no inbound load has a load number. Pick the parent manually.');
+      return;
+    }
+    const best = eligible.find((a) => a.dallasBound) ?? eligible[0];
+    this.autoUsed.set(true);
+    this.pickParent(best);
+  }
+
+  /**
+   * Auto-add the top-ranked siblings, capped at {@link autoSiblingCap}. Uses the server's fit
+   * ranking untouched ({@link selectableCandidates} already drops blocked candidates) and sets the
+   * selection directly so the tap count is not inflated. No candidates → eject to manual.
+   */
+  private autoPickSiblings(): void {
+    const picks = this.selectableCandidates().slice(0, this.autoSiblingCap());
+    if (picks.length === 0) {
+      this.ejectAuto('Auto-suggest unavailable — no eligible siblings suggested. Add them manually.');
+      return;
+    }
+    this.selectedSiblingIds.set(picks.map((c) => c.loadId));
+    this.goToReview();
+  }
+
+  /**
+   * At the review step in auto-mode: wait for the preview, then either eject (blockers must be
+   * resolved by a human — never auto-combined) or arm the one-tap combine button on a clean plan.
+   */
+  private autoHandleReview(): void {
+    if (this.previewLoading()) return;
+    if (!this.previewPlan()) return; // preview not back yet (a failure sets error(), handled above)
+    if (this.hasBlockers()) {
+      this.ejectAuto('Auto-suggest paused — the combined plan has blockers. Review and resolve before combining.');
+      return;
+    }
+    this.autoReady.set(true);
+  }
+
+  /** Stops auto-mode and drops the worker into the normal manual flow with an honest banner. */
+  private ejectAuto(reason: string): void {
+    this.autoMode.set(false);
+    this.autoReady.set(false);
+    this.autoEjectReason.set(reason);
+  }
+
+  /**
+   * The single auto-mode action: combine, then (on success) download the BOL packet and open the
+   * click card in a new tab. The yard notification is already fired server-side by combine, and a
+   * plan with blockers is refused by {@link combine} — so this stays honest and read-only.
+   */
+  protected oneTapCombine(): void {
+    if (!this.autoReady() || this.hasBlockers()) return;
+    this.autoFinishRequested = true;
+    this.combine();
+  }
 
   private static readonly stepOrder: DockStep[] = ['warehouse', 'arrivals', 'siblings', 'review', 'result'];
   protected readonly stepIndex = computed(() => Dock.stepOrder.indexOf(this.step()));
@@ -429,8 +553,16 @@ export class Dock implements OnInit, OnDestroy {
           this.step.set('result');
           this.startUndoWindow();
           this.recordCombineMetric(siblings.length);
+          // One-tap auto-finish: print the packet + open the click card. The notification was
+          // already fired by combine, so this only adds the two client-side outputs.
+          if (this.autoFinishRequested) {
+            this.autoFinishRequested = false;
+            this.downloadPdf();
+            this.openClickCardTab();
+          }
         },
         error: (err) => {
+          this.autoFinishRequested = false;
           // A 422 carries the blocked plan itself (not an {error} envelope): surface its blockers
           // at the review step so the worker sees exactly why the combine was refused.
           const blocked = this.blockedPlanOf(err);
@@ -689,6 +821,23 @@ export class Dock implements OnInit, OnDestroy {
     URL.revokeObjectURL(url);
   }
 
+  /**
+   * Opens the Alvys click card in a new tab so the dispatcher can execute it alongside Alvys. Honest
+   * no-op when there is no card text, no window (SSR), or the browser blocked the pop-up — the
+   * on-screen click card and Copy button remain the fallback. Writes nothing to Alvys.
+   */
+  private openClickCardTab(): void {
+    const text = this.plan()?.clickCard.plainText;
+    if (!text) return;
+    if (typeof window === 'undefined' || typeof window.open !== 'function') return;
+    const tab = window.open('', '_blank');
+    if (!tab) return; // pop-up blocked — the on-screen click card stays available
+    tab.document.title = 'Alvys Click Card';
+    const pre = tab.document.createElement('pre');
+    pre.textContent = text;
+    tab.document.body.appendChild(pre);
+  }
+
   protected async copyClickCard(): Promise<void> {
     const text = this.plan()?.clickCard.plainText;
     if (!text) return;
@@ -720,6 +869,11 @@ export class Dock implements OnInit, OnDestroy {
     this.parentTappedAt = null;
     this.copyMessage.set(null);
     this.error.set(null);
+    // Keep the worker's Auto toggle as-is, but clear this run's auto state so a fresh cascade can run.
+    this.autoEjectReason.set(null);
+    this.autoReady.set(false);
+    this.autoUsed.set(false);
+    this.autoFinishRequested = false;
     this.step.set('arrivals');
     this.loadArrivals();
   }

@@ -27,6 +27,138 @@
   line-height: 1.5;
 }
 
+/* ===================== Auto-combine bar ===================== */
+.auto-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-radius: var(--radius-card);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+}
+
+.auto-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  flex: 1 1 320px;
+}
+
+.auto-toggle input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.auto-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.auto-toggle-text strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.auto-toggle-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  max-width: 560px;
+}
+
+.auto-cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.auto-cap input[type='number'] {
+  width: 64px;
+  min-height: 40px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 15px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-border);
+  background: var(--body-bg);
+  color: var(--text-primary);
+}
+
+.auto-eject {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: var(--radius-card);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-text);
+  color: var(--warning-text);
+  font-size: 13px;
+}
+
+.auto-eject strong {
+  font-weight: 700;
+}
+
+/* One-tap combine callout on the review step (auto-mode only). */
+.auto-onetap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 18px;
+  border-radius: var(--radius-card);
+  background: var(--info-row-bg);
+  border: 1px solid var(--accent);
+}
+
+.auto-onetap-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 520px;
+}
+
+.auto-onetap-text strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.auto-onetap-text span {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.btn-onetap {
+  min-height: 56px;
+  font-size: 16px;
+}
+
+.auto-chip {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--info-row-bg);
+  border: 1px solid var(--accent);
+  color: var(--info-text, var(--text-secondary));
+}
+
 /* ===================== Step rail ===================== */
 .steps {
   list-style: none;
