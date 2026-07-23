@@ -73,6 +73,10 @@ builder.Services.AddAuthorizationBuilder()
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new LtlTool.Api.Features.Ltl.YardIngestion.YardEventIngestRequirement());
     })
+    // Diagnostic policy: authentication only, no email-domain check. Used by /api/me/whoami
+    // so a caller currently blocked by AllowedEmailDomain can still inspect their own token
+    // claims to diagnose the block. Read-only, exposes only the caller's own token claims.
+    .AddPolicy(AccessPolicies.AuthenticatedOnly, policy => policy.RequireAuthenticatedUser())
     .SetDefaultPolicy(new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .AddRequirements(new AllowedEmailDomainRequirement())
