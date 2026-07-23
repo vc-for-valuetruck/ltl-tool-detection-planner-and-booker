@@ -561,4 +561,160 @@ describe('Dock', () => {
     expect(c['formatCurrency'](1200)).toContain('1,200');
     expect(c['formatRpm'](1.5)).toBe('$1.50 / mi');
   });
+
+  describe('auto-combine mode', () => {
+    /** Flush the effect-driven cascade to convergence (each transition needs another tick). */
+    function flush(): void {
+      for (let i = 0; i < 8; i++) TestBed.tick();
+    }
+
+    const laredo = { code: 'LAREDO', name: 'Laredo', state: 'TX', nearbyCities: [] };
+
+    it('is off by default and leaves the manual flow untouched', () => {
+      const c = build({});
+      expect(c['autoMode']()).toBeFalse();
+      c['pickWarehouse'](laredo);
+      flush();
+      // With auto off, picking a yard advances to arrivals and stops — no auto parent pick.
+      expect(c['step']()).toBe('arrivals');
+      expect(c['parent']()).toBeNull();
+    });
+
+    it('cascades yard → arrivals → siblings → review, then one-tap combines to result', () => {
+      const combineSpy = jasmine.createSpy('combine').and.returnValue(
+        of({
+          plan: { blockers: [], clickCard: { plainText: 'card' } },
+          audit: { alvysWriteback: 'NotPerformed' },
+          notification: { state: 'Disabled', recipients: [] },
+        } as unknown as DockCombineResponse),
+      );
+      spyOn(window, 'open').and.returnValue(null);
+      spyOn(URL, 'createObjectURL').and.returnValue('blob:x');
+      spyOn(URL, 'revokeObjectURL');
+      const c = build({
+        combine: combineSpy,
+        downloadBolPacket: () => of(new Blob(['%PDF'])),
+        getArrivals: () => of(board([arrival({ tripId: 'a', loadNumber: 'L1', dallasBound: true })])),
+        getCandidates: () =>
+          of({
+            corridorCode: 'LAREDO_TO_DALLAS',
+            candidates: [candidate({ loadId: 'L-2' }), candidate({ loadId: 'L-3' })],
+            scanTruncated: false,
+          } as ConsolidationCandidateResponse),
+      });
+      c['autoMode'].set(true);
+      c['pickWarehouse'](laredo);
+      flush();
+
+      expect(c['step']()).toBe('review');
+      expect(c['parent']()?.loadNumber).toBe('L1');
+      expect(c['selectedSiblingIds']()).toEqual(['L-2', 'L-3']);
+      expect(c['autoReady']()).toBeTrue();
+      expect(c['autoUsed']()).toBeTrue();
+
+      c['oneTapCombine']();
+      expect(combineSpy).toHaveBeenCalled();
+      expect(c['step']()).toBe('result');
+      c['ngOnDestroy']();
+    });
+
+    it('respects the sibling cap', () => {
+      const c = build({
+        getCandidates: () =>
+          of({
+            corridorCode: 'LAREDO_TO_DALLAS',
+            candidates: [
+              candidate({ loadId: 'L-2' }),
+              candidate({ loadId: 'L-3' }),
+              candidate({ loadId: 'L-4' }),
+              candidate({ loadId: 'L-5' }),
+            ],
+            scanTruncated: false,
+          } as ConsolidationCandidateResponse),
+      });
+      c['autoMode'].set(true);
+      c['setAutoSiblingCap'](2);
+      c['pickWarehouse'](laredo);
+      flush();
+      expect(c['selectedSiblingIds']()).toEqual(['L-2', 'L-3']);
+    });
+
+    it('never auto-selects a blocked candidate', () => {
+      const c = build({
+        getCandidates: () =>
+          of({
+            corridorCode: 'LAREDO_TO_DALLAS',
+            candidates: [candidate({ loadId: 'L-2', isBlocked: true }), candidate({ loadId: 'L-3' })],
+            scanTruncated: false,
+          } as ConsolidationCandidateResponse),
+      });
+      c['autoMode'].set(true);
+      c['pickWarehouse'](laredo);
+      flush();
+      expect(c['selectedSiblingIds']()).toEqual(['L-3']);
+    });
+
+    it('ejects to manual when the plan preview has blockers, without combining', () => {
+      const combineSpy = jasmine.createSpy('combine');
+      const c = build(
+        { combine: combineSpy },
+        { buildPlan: () => of(plan({ blockers: ['A sibling is Never-consolidate.'] })) },
+      );
+      c['autoMode'].set(true);
+      c['pickWarehouse'](laredo);
+      flush();
+
+      expect(c['step']()).toBe('review');
+      expect(c['autoMode']()).toBeFalse();
+      expect(c['autoReady']()).toBeFalse();
+      expect(c['autoEjectReason']()).toContain('blockers');
+      expect(combineSpy).not.toHaveBeenCalled();
+    });
+
+    it('ejects to manual when no inbound arrival has a load number', () => {
+      const c = build({ getArrivals: () => of(board([arrival({ loadNumber: null })])) });
+      c['autoMode'].set(true);
+      c['pickWarehouse'](laredo);
+      flush();
+      expect(c['autoMode']()).toBeFalse();
+      expect(c['autoEjectReason']()).toContain('load number');
+      expect(c['parent']()).toBeNull();
+    });
+
+    it('ejects to manual when no siblings are suggested', () => {
+      const c = build({
+        getCandidates: () =>
+          of({
+            corridorCode: 'LAREDO_TO_DALLAS',
+            candidates: [],
+            scanTruncated: false,
+          } as ConsolidationCandidateResponse),
+      });
+      c['autoMode'].set(true);
+      c['pickWarehouse'](laredo);
+      flush();
+      expect(c['autoMode']()).toBeFalse();
+      expect(c['autoEjectReason']()).toContain('manually');
+      expect(c['step']()).toBe('siblings');
+    });
+
+    it('ejects to manual when the arrivals read fails', () => {
+      const c = build({ getArrivals: () => throwError(() => ({ message: 'boom' })) });
+      c['autoMode'].set(true);
+      c['pickWarehouse'](laredo);
+      flush();
+      expect(c['autoMode']()).toBeFalse();
+      expect(c['autoEjectReason']()).toContain('Alvys read failed');
+    });
+
+    it('does not one-tap combine when not armed or when blockers exist', () => {
+      const combineSpy = jasmine.createSpy('combine');
+      const c = build({ combine: combineSpy });
+      c['parent'].set(arrival({ loadNumber: 'L1' }));
+      c['selectedSiblingIds'].set(['L-2']);
+      // autoReady is false → guard blocks.
+      c['oneTapCombine']();
+      expect(combineSpy).not.toHaveBeenCalled();
+    });
+  });
 });

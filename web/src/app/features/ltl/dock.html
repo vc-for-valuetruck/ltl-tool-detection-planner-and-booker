@@ -16,6 +16,39 @@
       }
     </header>
 
+    <!-- Auto-combine toggle (opt-in). OFF by default — the manual flow below is unchanged. -->
+    <div class="auto-bar">
+      <label class="auto-toggle">
+        <input
+          type="checkbox"
+          [checked]="autoMode()"
+          (change)="toggleAutoMode($any($event.target).checked)"
+          data-testid="dock-auto-toggle"
+        />
+        <span class="auto-toggle-text">
+          <strong>Auto-combine</strong>
+          <span class="auto-toggle-sub">
+            Picks the parent, adds the top matching siblings, previews the plan, then one tap combines,
+            prints the BOL packet, opens the click card, and notifies the yard. Read-only — ejects to
+            manual on any missing data or plan blocker.
+          </span>
+        </span>
+      </label>
+      @if (autoMode()) {
+        <label class="auto-cap">
+          Max siblings
+          <input
+            type="number"
+            min="1"
+            max="9"
+            [ngModel]="autoSiblingCap()"
+            (ngModelChange)="setAutoSiblingCap(+$event)"
+            data-testid="dock-auto-cap"
+          />
+        </label>
+      }
+    </div>
+
     <!-- Step rail -->
     <ol class="steps" aria-label="Dock flow">
       <li [class.active]="step() === 'warehouse'" [class.done]="stepIndex() > 0">1 · Yard</li>
@@ -46,6 +79,14 @@
       @if (loading()) {
         <div class="state">Working…</div>
       }
+    }
+
+    <!-- Auto-mode ejected to manual: honest banner, never a silent stall or a fabricated pick. -->
+    @if (autoEjectReason(); as reason) {
+      <div class="auto-eject" role="status" data-testid="dock-auto-eject">
+        <strong>Auto-suggest unavailable — pick manually.</strong>
+        <span>{{ reason }}</span>
+      </div>
     }
 
     <!-- ===================== Step 1: warehouse ===================== -->
@@ -303,6 +344,26 @@
             Combine is disabled until the hold is cleared.
           </div>
         }
+        @if (autoMode() && autoReady() && !hasBlockers() && !presenceBlocksCombine()) {
+          <div class="auto-onetap" data-testid="dock-onetap">
+            <div class="auto-onetap-text">
+              <strong>Ready for one-tap combine</strong>
+              <span>
+                Records the audit, prints the BOL packet, opens the click card, and notifies the yard
+                — all read-only. Nothing is written to Alvys.
+              </span>
+            </div>
+            <button
+              type="button"
+              class="btn-primary btn-onetap"
+              [disabled]="loading() || previewLoading()"
+              (click)="oneTapCombine()"
+              data-testid="dock-onetap-btn"
+            >
+              One-tap combine {{ selectedSiblingIds().length + 1 }} loads
+            </button>
+          </div>
+        }
         <div class="review-actions">
           <button type="button" class="btn-ghost" (click)="backToSiblings()">← Back to siblings</button>
           <button
@@ -348,6 +409,11 @@
 
         <!-- One-tap Undo (no confirmation dialog) + honest notification state / retry chip -->
         <div class="result-bar">
+          @if (autoUsed()) {
+            <span class="auto-chip" data-testid="dock-auto-chip">
+              Auto-combine · {{ tapCount() }} tap{{ tapCount() === 1 ? '' : 's' }}
+            </span>
+          }
           @if (undone()) {
             <span class="undo-chip undone">Combine undone — a retraction audit was recorded.</span>
           } @else if (undoAvailable()) {
