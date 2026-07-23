@@ -83,6 +83,27 @@ public sealed class HealthEndpointTests(TemplateWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task Alvys_health_is_anonymous_and_degraded_without_credentials()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/health/alvys");
+
+        // Anonymous like /api/health. The test config supplies no Alvys credentials, so the Live
+        // provider cannot authenticate — the probe must honestly report "degraded" (not "ok") and
+        // must not attempt any upstream call.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        Assert.Equal("degraded", root.GetProperty("status").GetString());
+        var report = root.GetProperty("report");
+        Assert.False(report.GetProperty("credentialsPresent").GetBoolean());
+        Assert.False(report.GetProperty("tokenAcquired").GetBoolean());
+        Assert.Equal(0, report.GetProperty("probes").GetArrayLength());
+    }
+
+    [Fact]
     public async Task Protected_endpoint_returns_401_when_unauthenticated()
     {
         var client = _factory.CreateClient();

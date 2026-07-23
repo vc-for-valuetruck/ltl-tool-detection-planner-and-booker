@@ -113,6 +113,10 @@ public static class AlvysServiceCollectionExtensions
 
         services.AddSingleton<IAlvysTokenProvider, AlvysTokenProvider>();
 
+        // Read-only Live-path self-test backing GET /api/health/alvys. Uses the same token provider +
+        // named API client as AlvysClient but reports the real HTTP status instead of swallowing it.
+        services.AddScoped<IAlvysDiagnostics, AlvysDiagnostics>();
+
         // Startup token pre-warm (issue #80). No-ops unless the Live provider is configured with
         // credentials; runs off the startup thread so it can never block Kestrel from listening.
         services.AddHostedService<AlvysTokenPrewarmService>();

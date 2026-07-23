@@ -105,6 +105,13 @@ no token/config/secret is ever in the response (covered by
   `/api/me`. An unauthenticated request returns 401 (not 404) because the route is
   matched before authorization runs — see `AlvysSearchEndpointTests`. Health stays
   anonymous.
+- **Live-path diagnostic.** `GET /api/health/alvys` (anonymous, read-only) runs a real
+  token acquisition and one `loads/search` pageSize-1 probe and reports the **actual**
+  HTTP status — unlike `AlvysClient`, which swallows non-2xx into empty results. It
+  distinguishes "Live and healthy" from "Live but Alvys rejects our reads", and when the
+  configured `Alvys:ApiVersion` is rejected it also probes fallback versions and
+  recommends the working one. Exposes no secret: never the bearer token, never a success
+  payload; only non-2xx error snippets (which carry no operational data) are surfaced.
 - **HTTP verb.** Searches are `POST` because the filter set is the request body, not
   because anything is mutated. Single-record reads (the tender-by-id, load and trip
   lookups) and the sub-resource listings (load documents/notes, trip stops) are `GET`.
