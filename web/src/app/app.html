@@ -1,16 +1,18 @@
-<header class="shell-header">
-  <span class="shell-brand">Value Truck &middot; LTL Tool</span>
-  <span class="shell-user" [class.shell-user-demo]="!authConfigured">
-    @if (!authConfigured) {
-      <span class="shell-demo-dot" aria-hidden="true"></span>
-      <span>{{ demoEmail }}</span>
-      <span class="shell-demo-label">Demo mode</span>
-    } @else {
-      <span>{{ demoEmail }}</span>
-    }
-  </span>
-</header>
+@if (showShell()) {
+  <header class="shell-header">
+    <span class="shell-brand">Value Truck &middot; LTL Tool</span>
+    <span class="shell-user" [class.shell-user-demo]="!authConfigured">
+      @if (!authConfigured) {
+        <span class="shell-demo-dot" aria-hidden="true"></span>
+        <span>{{ demoEmail }}</span>
+        <span class="shell-demo-label">Demo mode</span>
+      } @else {
+        <span>{{ demoEmail }}</span>
+      }
+    </span>
+  </header>
+}
 
-<main class="shell-main">
+<main class="shell-main" [class.shell-main-bare]="!showShell()">
   <router-outlet />
 </main>

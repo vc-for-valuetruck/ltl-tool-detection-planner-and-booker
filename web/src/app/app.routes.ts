@@ -1,25 +1,39 @@
 import { Routes } from '@angular/router';
+import { authGuard } from './core/auth/auth.guard';
 
 export const routes: Routes = [
+  // Branded sign-in screen (no shell chrome; app.html hides its header on /login).
+  // Matches the FreightDNA login pattern — full-screen card + Microsoft redirect.
+  {
+    path: 'login',
+    loadComponent: () => import('./pages/login/login-page').then((m) => m.LoginPage),
+  },
+  // Landing "welcome" surface. Kept for the API-health probe; guarded so unauthenticated
+  // users can't reach it — they land on /login instead.
   {
     path: '',
+    pathMatch: 'full',
+    canActivate: [authGuard],
     loadComponent: () => import('./pages/home/home').then((m) => m.Home),
   },
   // Print-only artifact — standalone, no LTL shell chrome. Declared BEFORE the shell parent so the
   // full path wins the match and the click card renders on a clean page.
   {
     path: 'ltl/consolidate/plan/:planId/click-card',
+    canActivate: [authGuard],
     loadComponent: () => import('./features/ltl/click-card').then((m) => m.ClickCard),
   },
   // Read-only Yard webhook admin panel — standalone, outside the LTL shell (mirrors the Alvys ops
   // webhook admin). Shows recent inbound Yard deliveries and receiver configuration; writes nothing.
   {
     path: 'admin/yard/webhooks',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./features/ltl/yard-webhooks-admin').then((m) => m.YardWebhooksAdmin),
   },
   {
     path: 'ltl',
+    canActivate: [authGuard],
     loadComponent: () => import('./features/ltl/ltl-shell').then((m) => m.LtlShell),
     children: [
       {
@@ -90,5 +104,7 @@ export const routes: Routes = [
       },
     ],
   },
+  // Any unknown path is bounced through the root — authGuard then decides whether the
+  // user lands on /login or /ltl-friendly surfaces.
   { path: '**', redirectTo: '' },
 ];
