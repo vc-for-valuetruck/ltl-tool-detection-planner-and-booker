@@ -36,13 +36,13 @@ public sealed class WhoAmIController(IOptions<AccessPolicyOptions> policyOptions
     public IActionResult Get()
     {
         var preferredUsername = User.FindFirstValue("preferred_username");
-        var emailClaim = User.FindFirstValue(ClaimTypes.Email);
-        var upn = User.FindFirstValue("upn");
-        var effectiveEmail = preferredUsername ?? emailClaim ?? upn;
+        var emailClaim = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email");
+        var upn = User.FindFirstValue(ClaimTypes.Upn) ?? User.FindFirstValue("upn");
 
-        var extractedDomain = effectiveEmail?.Split('@', StringSplitOptions.RemoveEmptyEntries) is { Length: 2 } parts
-            ? parts[1]
-            : null;
+        // Resolve exactly as the AllowedEmailDomain policy does — across v1.0/v2.0 token shapes and
+        // ASP.NET's mapped/unmapped claim types — so this diagnostic reflects the real decision.
+        var effectiveEmail = CallerIdentity.ResolveEmail(User);
+        var extractedDomain = CallerIdentity.ExtractDomain(effectiveEmail);
 
         var allowed = _policy.NormalizedEmailDomains;
         var domainMatches = extractedDomain is not null &&
