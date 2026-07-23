@@ -7,7 +7,10 @@ namespace LtlTool.Api.Tests.Agents;
 internal sealed class FixedClock(DateTimeOffset now) : TimeProvider
 {
     public override DateTimeOffset GetUtcNow() => now;
-    public override DateTimeOffset GetLocalNow() => now;
+    // GetLocalNow() is non-virtual; it derives from GetUtcNow() + LocalTimeZone. Pinning the zone to
+    // UTC makes GetLocalNow() return the fixed instant deterministically (the tests use a zero-offset
+    // Now), which the ArDigest agent relies on for its local-hour gate.
+    public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
 }
 
 /// <summary>
