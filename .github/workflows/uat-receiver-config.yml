@@ -1,0 +1,69 @@
+name: Configure UAT Yard-webhook receiver
+
+on:
+  workflow_dispatch:
+    inputs:
+      enabled:
+        description: "Set Yard__Webhooks__Enabled"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: uat-receiver-config
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    name: Set receiver flag + shared secret on ltl-uat-api
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - name: Azure login (LTL UAT OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Apply receiver settings
+        shell: bash
+        env:
+          SHARED_SECRET: ${{ secrets.YARD_WEBHOOK_SHARED_SECRET }}
+          ENABLED: ${{ inputs.enabled }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SHARED_SECRET" ]; then
+            echo "::error::YARD_WEBHOOK_SHARED_SECRET is not configured on the uat environment"
+            exit 1
+          fi
+          echo "::add-mask::$SHARED_SECRET"
+          az webapp config appsettings set \
+            -g ltl-uat-rg -n ltl-uat-api \
+            --only-show-errors -o none --settings \
+            "Yard__Webhooks__Enabled=${ENABLED}" \
+            "Yard__Webhooks__Secret=${SHARED_SECRET}"
+          echo "::notice::applied Yard__Webhooks__Enabled=${ENABLED} + secret to ltl-uat-api"
+
+      - name: Restart + verify route is live
+        shell: bash
+        run: |
+          set -euo pipefail
+          az webapp restart -g ltl-uat-rg -n ltl-uat-api --only-show-errors
+          echo "waiting for app to come back..."
+          for i in $(seq 1 30); do
+            sleep 10
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+              -H 'Content-Type: application/json' -d '{}' \
+              https://ltl-uat-api.azurewebsites.net/api/yard/webhooks/receiver || echo 000)
+            echo "  receiver probe: HTTP $CODE"
+            if [ "$CODE" != "404" ] && [ "$CODE" != "000" ] && [ "$CODE" != "503" ]; then
+              echo "::notice::receiver route live (unsigned probe -> HTTP $CODE, expected 400/401/403)"
+              exit 0
+            fi
+          done
+          echo "::error::receiver still returning $CODE after restart"
+          exit 1
