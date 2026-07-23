@@ -310,12 +310,22 @@ test.describe('LTL demo workflow — Laredo → Dallas pilot', () => {
     // auto-selected lane (whichever it is) drives a populated queue with fit chips and a Current
     // plan panel, then routes to plan detail + click card. Skips honestly if Alvys has nothing to
     // consolidate right now (no pilot seed AND an empty opportunity sweep).
-    const oppResp = await request.get(`${API_URL}/api/ltl/consolidation/opportunities?limit=25`);
-    const healthResp = await request.get(`${API_URL}/api/ltl/consolidation/corridors/health`);
-    const opps = oppResp.ok()
+    // These preflight reads hit LIVE Alvys and have a known multi-second cold-read latency. Give
+    // them a generous budget and treat a timeout/failure the same as an empty read, so a slow
+    // upstream degrades to the honest skip below instead of erroring the whole test.
+    const safeGet = async (url: string) => {
+      try {
+        return await request.get(url, { timeout: 30_000 });
+      } catch {
+        return null;
+      }
+    };
+    const oppResp = await safeGet(`${API_URL}/api/ltl/consolidation/opportunities?limit=25`);
+    const healthResp = await safeGet(`${API_URL}/api/ltl/consolidation/corridors/health`);
+    const opps = oppResp?.ok()
       ? ((await oppResp.json()).opportunities ?? []).length
       : 0;
-    const pilotSeed = healthResp.ok()
+    const pilotSeed = healthResp?.ok()
       ? (
           ((await healthResp.json()) as {
             corridors?: Array<{ seedLoadId?: string | null; seedLoadNumber?: string | null }>;
