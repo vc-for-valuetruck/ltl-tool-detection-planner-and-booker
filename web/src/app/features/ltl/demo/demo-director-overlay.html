@@ -1,0 +1,73 @@
+@if (showCaption()) {
+  <div class="director" data-testid="director-overlay" role="region" aria-label="Demo Director">
+    <!-- Spotlight: a transparent window over the target, dimming the rest via box-shadow. When no
+         target is measured we fall back to a light full-screen scrim so the caption still reads. -->
+    @if (rect(); as r) {
+      <div
+        class="director-spot"
+        data-testid="director-spotlight"
+        [style.top.px]="r.top"
+        [style.left.px]="r.left"
+        [style.width.px]="r.width"
+        [style.height.px]="r.height"
+      ></div>
+    } @else {
+      <div class="director-scrim director-scrim-soft"></div>
+    }
+
+    <!-- Caption / control bar. Pinned bottom, above the scrim, always interactive. -->
+    <div class="director-bar" data-testid="director-bar">
+      <div class="director-meta">
+        <span class="director-badge">Demo Director</span>
+        <span class="director-act" data-testid="director-act">{{ actLabel() }}</span>
+        <span class="director-counter" data-testid="director-step-counter">{{ director.counter() }}</span>
+        @if (director.status() === 'skipped') {
+          <span class="director-flag director-flag-skip">skipped</span>
+        }
+        @if (director.finished()) {
+          <span class="director-flag director-flag-done">complete</span>
+        }
+      </div>
+
+      <p class="director-caption" data-testid="director-caption">{{ director.caption() }}</p>
+
+      @if (director.posture(); as p) {
+        <p class="director-posture" data-testid="director-posture">
+          <span class="director-posture-tag">Honest state</span>{{ p }}
+        </p>
+      }
+      @if (director.note(); as n) {
+        <p class="director-note" data-testid="director-status">{{ n }}</p>
+      }
+
+      <div class="director-controls">
+        <button type="button" class="director-btn" data-testid="director-prev"
+          [disabled]="director.index() === 0" (click)="director.prev()">‹ Prev</button>
+
+        @if (director.playing()) {
+          <button type="button" class="director-btn director-btn-primary" data-testid="director-pause"
+            (click)="director.pause()">Pause</button>
+        } @else {
+          <button type="button" class="director-btn director-btn-primary" data-testid="director-play"
+            (click)="director.play()">{{ director.finished() ? 'Replay' : 'Play' }}</button>
+        }
+
+        <button type="button" class="director-btn" data-testid="director-next"
+          (click)="director.next()">Next ›</button>
+
+        <label class="director-speed">
+          Speed
+          <select data-testid="director-speed" [value]="director.speed()"
+            (change)="onSpeedChange($any($event.target).value)">
+            @for (s of director.speeds; track s) {
+              <option [value]="s">{{ s }}×</option>
+            }
+          </select>
+        </label>
+
+        <button type="button" class="director-btn director-btn-exit" data-testid="director-exit"
+          (click)="director.exit()">Exit</button>
+      </div>
+    </div>
+  </div>
+}

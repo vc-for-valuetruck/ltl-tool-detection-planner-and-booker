@@ -1,0 +1,31 @@
+<section class="launcher" data-testid="director-launcher">
+  <div class="launcher-card">
+    <span class="launcher-badge">Demo Director</span>
+    <h1 class="launcher-title">Autonomous LTL walkthrough</h1>
+    <p class="launcher-sub">
+      One click and the app drives itself through the full Search → Match → Assign → Bill workflow
+      on <strong>live UAT data</strong> — live Alvys reads, no mocks, no synthetic data. Gated writes
+      stay gated and say so.
+    </p>
+
+    <ol class="launcher-acts">
+      @for (act of acts(); track act; let i = $index) {
+        <li><span class="launcher-act-num">{{ i + 1 }}</span>{{ act }}</li>
+      }
+    </ol>
+
+    <div class="launcher-actions">
+      <button type="button" class="launcher-go" data-testid="director-start" (click)="start()">
+        ▶ Start walkthrough
+      </button>
+      <button type="button" class="launcher-ghost" data-testid="director-start-paused" (click)="startPaused()">
+        Start paused (step through manually)
+      </button>
+    </div>
+
+    <p class="launcher-hint">
+      Tip: open <code>/ltl/demo/director?autostart=1</code> to begin immediately, or add
+      <code>&amp;speed=2</code> to speed up narration.
+    </p>
+  </div>
+</section>

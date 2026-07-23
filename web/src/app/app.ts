@@ -2,11 +2,12 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { RUNTIME_CONFIG, isAuthConfigured } from './runtime-config';
+import { DemoDirectorOverlay } from './features/ltl/demo/demo-director-overlay';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet],
+  imports: [RouterOutlet, DemoDirectorOverlay],
   templateUrl: './app.html',
   styleUrls: ['./app.css'],
 })

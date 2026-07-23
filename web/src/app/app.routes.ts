@@ -114,6 +114,15 @@ export const routes: Routes = [
         loadComponent: () => import('./features/ltl/plan-detail').then((m) => m.PlanDetail),
         data: { crumb: 'Plan detail' },
       },
+      // Demo Director launch surface. Opening this URL (optionally ?autostart=1) kicks off the
+      // in-app autonomous walkthrough; the DemoDirectorService then navigates the real workspace
+      // and the app-root overlay drives the screen.
+      {
+        path: 'demo/director',
+        loadComponent: () =>
+          import('./features/ltl/demo/demo-director-launcher').then((m) => m.DemoDirectorLauncher),
+        data: { crumb: 'Demo Director' },
+      },
     ],
   },
   // Any unknown path is bounced through the root — authGuard then decides whether the
