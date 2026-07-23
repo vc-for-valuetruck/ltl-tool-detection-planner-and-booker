@@ -65,3 +65,60 @@ export interface DockCombineResponse {
   /** Outcome of the combine-summary notification; `state === 'Disabled'` when no recipients configured. */
   notification: DockNotificationResult;
 }
+
+/** Which photo/inspection gates the yard captured. Honest `false` for an uncaptured gate. */
+export interface PhotoGates {
+  tractor: boolean;
+  trailer: boolean;
+  seal: boolean;
+}
+
+/**
+ * Yard-presence projection for the Review-step chip (mirrors DockPresenceResponse). Presence is a
+ * peer signal, never operational truth: `configured === false` (integration off) and `available ===
+ * false` (yard unreachable) both render the grey "unavailable" chip. `securityHold` is the red state
+ * that disables Combine; `atYard === false` is amber; otherwise green. Never fabricated into a pass.
+ */
+export interface DockPresenceResponse {
+  configured: boolean;
+  available: boolean;
+  onRecord: boolean;
+  atYard: boolean;
+  driverPresent: boolean;
+  securityHold: boolean;
+  releasedAt?: string;
+  lastEventAt?: string;
+  gates?: PhotoGates;
+}
+
+/** One freight line on a yard-originated LTL draft. Every measure nullable — render "—", never 0. */
+export interface YardFreightLine {
+  loadId?: string;
+  pallets?: number;
+  pieces?: number;
+  weightLbs?: number;
+  dims?: { lengthIn?: number; widthIn?: number; heightIn?: number };
+  osd?: { overage?: boolean; shortage?: boolean; damage?: boolean; notes?: string };
+}
+
+/**
+ * A yard-originated LTL consolidation opportunity (from an `LtlDraftCreated` webhook), surfaced as a
+ * dock incoming-opportunity card. Inbound suggestion only — the dock acts on it inside its own
+ * Alvys-backed combine flow. Null fields are rendered "—" (honest missing state, never fabricated).
+ */
+export interface YardOpportunityView {
+  id: string;
+  draftId: string;
+  yardCode?: string;
+  parentLoadId?: string;
+  siblingLoadIds: string[];
+  freight: YardFreightLine[];
+  createdByStation?: string;
+  scannedAt?: string;
+  receivedAt: string;
+}
+
+/** The dock incoming-opportunity list (newest first). */
+export interface DockOpportunitiesResponse {
+  opportunities: YardOpportunityView[];
+}

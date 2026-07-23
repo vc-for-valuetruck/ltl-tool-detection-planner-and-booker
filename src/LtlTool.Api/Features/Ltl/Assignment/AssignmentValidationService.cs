@@ -27,7 +27,8 @@ public sealed class AssignmentValidationService(IOptions<LtlOptions> options, Ti
     /// </summary>
     public AssignmentValidationResult Validate(
         LtlLoadSummary load, AssignmentRequest request, MatchCandidate candidate,
-        EquipmentEventAssessment? equipmentEvents = null)
+        EquipmentEventAssessment? equipmentEvents = null,
+        YardPresenceAssessment yardPresence = default)
     {
         var issues = new List<AssignmentIssue>();
         var now = clock.GetUtcNow();
@@ -38,8 +39,46 @@ public sealed class AssignmentValidationService(IOptions<LtlOptions> options, Ti
         ValidateEquipmentEvents(equipmentEvents, issues);
         ValidateWindows(load, now, issues);
         ValidateLoadData(load, issues);
+        ValidateYardPresence(yardPresence, issues);
 
         return new AssignmentValidationResult { Issues = issues };
+    }
+
+    /// <summary>
+    /// Folds the yard-presence signal into validation. Only runs when a lookup was actually attempted
+    /// (the Yard integration is configured), so unconfigured deployments never warn. A security hold on
+    /// the release is a hard <see cref="AssignmentIssueSeverity.Block"/>; an unreachable yard and
+    /// equipment not physically at the yard are non-blocking <see cref="AssignmentIssueSeverity.Warn"/>
+    /// findings — presence is a peer signal, never fabricated into a pass.
+    /// </summary>
+    private static void ValidateYardPresence(
+        YardPresenceAssessment assessment, List<AssignmentIssue> issues)
+    {
+        if (!assessment.Attempted)
+            return;
+
+        var presence = assessment.Presence;
+        if (presence is null)
+        {
+            // The yard was consulted but could not be reached / answered — never assume presence.
+            issues.Add(Warn("YARD_PRESENCE_UNAVAILABLE",
+                "Yard presence could not be confirmed (yard unreachable). Equipment location is unverified."));
+            return;
+        }
+
+        if (presence.SecurityHold)
+        {
+            issues.Add(Block("SECURITY_HOLD_ON_RELEASE",
+                "The yard has placed a security hold on this equipment's release. Assignment is blocked until cleared."));
+        }
+
+        if (!presence.AtYard)
+        {
+            issues.Add(Warn("EQUIPMENT_NOT_AT_YARD",
+                presence.OnRecord
+                    ? "Equipment is not currently at the yard per the yard system."
+                    : "The yard has no record of this equipment; its yard presence is unverified."));
+        }
     }
 
     private static void ValidateEquipmentEvents(

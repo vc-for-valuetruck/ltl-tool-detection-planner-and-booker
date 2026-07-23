@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using LtlTool.Api.Features.Integrations.Yard;
+using LtlTool.Api.Features.Integrations.Yard.Webhooks;
 using LtlTool.Api.Features.Ltl.Arrivals;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Security;
@@ -17,9 +19,15 @@ namespace LtlTool.Api.Features.Ltl.Dock;
 [Route("api/ltl/dock")]
 [Authorize(Policy = AccessPolicies.AllowedEmailDomain)]
 [Produces("application/json")]
-public sealed class DockController(DockService dock, ILogger<DockController> logger) : ControllerBase
+public sealed class DockController(
+    DockService dock,
+    IYardPresenceClient yardPresence,
+    IYardWebhookStore yardWebhooks,
+    ILogger<DockController> logger) : ControllerBase
 {
     private readonly DockService _dock = dock;
+    private readonly IYardPresenceClient _yardPresence = yardPresence;
+    private readonly IYardWebhookStore _yardWebhooks = yardWebhooks;
     private readonly ILogger<DockController> _logger = logger;
 
     /// <summary>
@@ -190,6 +198,47 @@ public sealed class DockController(DockService dock, ILogger<DockController> log
             request?.TapCount ?? 0,
             request?.TimeToCombineMs ?? 0);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Yard presence for a proposed pairing, projected for the Review-step chip. Read-only and honest:
+    /// returns a grey "unavailable" shape when the Yard integration is off or the yard could not be
+    /// reached — presence is never fabricated into a pass. A security hold surfaces so the UI can disable
+    /// Combine. Alvys stays authoritative; this is a peer signal only.
+    /// </summary>
+    [HttpGet("presence")]
+    [ProducesResponseType(typeof(DockPresenceResponse), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DockPresenceResponse>> GetPresence(
+        [FromQuery] string? tractor,
+        [FromQuery] string? trailer,
+        [FromQuery] string? driverId,
+        CancellationToken ct)
+    {
+        if (!_yardPresence.IsConfigured)
+        {
+            return Ok(DockPresenceResponse.NotConfigured);
+        }
+
+        var presence = await _yardPresence.GetPresenceAsync(tractor, trailer, driverId, ct);
+        return Ok(presence is null
+            ? DockPresenceResponse.Unavailable
+            : DockPresenceResponse.From(presence));
+    }
+
+    /// <summary>
+    /// Yard-originated LTL consolidation opportunities (from <c>LtlDraftCreated</c> webhooks), newest
+    /// first. Inbound suggestions only — the dock acts on them inside its own Alvys-backed combine flow.
+    /// Empty when the webhook boundary is dormant or nothing has arrived.
+    /// </summary>
+    [HttpGet("opportunities")]
+    [ProducesResponseType(typeof(DockOpportunitiesResponse), StatusCodes.Status200OK)]
+    public ActionResult<DockOpportunitiesResponse> GetOpportunities([FromQuery] int max = 50)
+    {
+        var limit = max <= 0 ? 50 : Math.Min(max, 200);
+        var opportunities = _yardWebhooks.ListOpportunities(limit)
+            .Select(YardOpportunityView.From)
+            .ToArray();
+        return Ok(new DockOpportunitiesResponse { Opportunities = opportunities });
     }
 
     private string CurrentUser() =>

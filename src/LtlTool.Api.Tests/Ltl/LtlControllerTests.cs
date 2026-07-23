@@ -36,6 +36,7 @@ public sealed class LtlControllerTests
                 client, options,
                 Microsoft.Extensions.Options.Options.Create(new ConsolidationOptions()),
                 LtlTestFactory.Clock()),
+            new LtlTool.Api.Tests.Yard.FakeYardPresenceClient(),
             NullLogger<LtlController>.Instance);
 
         var identity = user is null ? new ClaimsIdentity() : new ClaimsIdentity([new Claim("preferred_username", user)], "test");

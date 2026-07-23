@@ -739,3 +739,81 @@
 :host(.printing-card) .print-clickcard {
   display: block;
 }
+
+/* --- Yard presence chip (issue #166) ------------------------------------- */
+/* A peer signal at the Review step. Colour encodes state only; the text is authoritative. */
+.presence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+}
+
+.presence-chip .presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.presence-green {
+  background: var(--success-bg, #e6f4ea);
+  color: var(--success-text, #1e7e34);
+  border-color: var(--success-text, #1e7e34);
+}
+
+.presence-amber {
+  background: var(--warn-bg, #fff4e5);
+  color: var(--warn-text, #a15c00);
+  border-color: var(--warn-text, #a15c00);
+}
+
+.presence-red {
+  background: var(--danger-bg, #fdecea);
+  color: var(--danger-text, #b3261e);
+  border-color: var(--danger-text, #b3261e);
+}
+
+.presence-grey {
+  background: var(--card-bg);
+  color: var(--text-muted);
+  border-color: var(--card-border);
+}
+
+/* --- Incoming yard opportunities (issue #166 · LtlDraftCreated) ---------- */
+.opportunities .opp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.opp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--info-text, #2563eb);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+
+.opp-parent {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.opp-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.opp-meta {
+  color: var(--text-muted);
+}

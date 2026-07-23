@@ -4,6 +4,7 @@ using LtlTool.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace LtlTool.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260722020000_AddYardWebhooksAndReconciliation")]
+    partial class AddYardWebhooksAndReconciliation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -688,213 +691,6 @@ namespace LtlTool.Api.Migrations
                     b.HasIndex("TruckUnit");
 
                     b.ToTable("YardArtifacts", (string)null);
-                });
-
-            modelBuilder.Entity("LtlTool.Api.Features.Ltl.YardIngestion.YardEventRecord", b =>
-                {
-                    b.Property<string>("DedupeKey")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<bool>("AffectsSchedulerInput")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<string>("CorrelationId")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("EventId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("PayloadJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTimeOffset>("ReceivedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<int>("SchemaVersion")
-                        .HasColumnType("int");
-
-                    b.Property<long>("Sequence")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("SourceRecordId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("SourceRecordType")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("SourceSystem")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("YardLocationId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.HasKey("DedupeKey");
-
-                    b.HasIndex("Sequence");
-
-                    b.HasIndex("SourceSystem", "SourceRecordType", "SourceRecordId");
-
-                    b.ToTable("YardEvents", (string)null);
-                });
-
-            modelBuilder.Entity("LtlTool.Api.Features.Ltl.YardIngestion.YardScheduleInput", b =>
-                {
-                    b.Property<string>("Id")
-                        .HasMaxLength(320)
-                        .HasColumnType("nvarchar(320)");
-
-                    b.Property<DateTimeOffset?>("AppointmentAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<double>("Completeness")
-                        .HasColumnType("float");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("DestinationLocationId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<bool>("DockCompleted")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("DockId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<int>("EventCount")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("HasOpenException")
-                        .HasColumnType("bit");
-
-                    b.Property<double?>("HeightInches")
-                        .HasColumnType("float");
-
-                    b.Property<string>("HoldState")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("nvarchar(16)");
-
-                    b.Property<string>("LatestEventId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("LatestEventType")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<DateTimeOffset>("LatestOccurredAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<double?>("LengthInches")
-                        .HasColumnType("float");
-
-                    b.Property<string>("OriginLocationId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("ParentSourceRecordId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<int?>("PieceCount")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Readiness")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("nvarchar(16)");
-
-                    b.Property<string>("RelatedRecordIdsJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("RelationshipType")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
-                    b.Property<bool>("SchedulerEligible")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("SecurityCleared")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("SourceRecordId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("SourceRecordType")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("SourceSystem")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<string>("TrailerId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("TruckId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<double?>("WeightLbs")
-                        .HasColumnType("float");
-
-                    b.Property<double?>("WidthInches")
-                        .HasColumnType("float");
-
-                    b.Property<string>("YardLocationId")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("HoldState");
-
-                    b.HasIndex("Readiness");
-
-                    b.HasIndex("UpdatedAt");
-
-                    b.HasIndex("YardLocationId");
-
-                    b.ToTable("YardScheduleInputs", (string)null);
                 });
 #pragma warning restore 612, 618
         }
