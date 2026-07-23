@@ -37,3 +37,6 @@ GET  api/ltl/dock/candidates
 POST api/ltl/dock/combine
 GET  api/ltl/dock/presence
 GET  api/ltl/dock/opportunities
+GET  api/ltl/dispatch/recommendations
+POST api/ltl/dispatch/assemble
+GET  api/ltl/dispatch/assemblies

@@ -122,6 +122,7 @@ internal class FakeAlvysClient : IAlvysClient
     public List<AlvysCustomer> Customers { get; set; } = [];
     public List<AlvysTender> Tenders { get; set; } = [];
     public List<AlvysLocation> Locations { get; set; } = [];
+    public List<AlvysUser> Users { get; set; } = [];
 
     /// <summary>Trip id → its stops, served by <see cref="ListTripStopsAsync"/>.</summary>
     public Dictionary<string, List<AlvysTripStopDetail>> TripStops { get; set; } = [];
@@ -221,7 +222,7 @@ internal class FakeAlvysClient : IAlvysClient
         });
     }
     public Task<AlvysUsersResponse> SearchUsersAsync(UserSearchRequest request, CancellationToken ct = default)
-        => throw new NotSupportedException();
+        => Task.FromResult(new AlvysUsersResponse { Total = Users.Count, Items = Users });
     public Task<AlvysTendersResponse> SearchTendersAsync(TenderSearchRequest request, CancellationToken ct = default)
     {
         IEnumerable<AlvysTender> matched = Tenders;

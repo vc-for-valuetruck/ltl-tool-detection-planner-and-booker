@@ -1,0 +1,174 @@
+<section class="dispatch-assist" data-testid="dispatch-assist">
+  <header class="da-head">
+    <h1>Dispatch Assist</h1>
+    <p class="da-sub">
+      Inform and assemble the right driver and truck. Ranked, explainable candidates from live Alvys
+      fleet data — read-only. Assembling records the decision internally; nothing is written to Alvys.
+    </p>
+  </header>
+
+  <form class="da-query" (ngSubmit)="search()">
+    <div class="da-field">
+      <label for="da-load">Load #</label>
+      <input
+        id="da-load"
+        type="text"
+        name="loadId"
+        [ngModel]="loadId()"
+        (ngModelChange)="loadId.set($event)"
+        placeholder="e.g. 100482"
+        autocomplete="off"
+        data-testid="da-loadid"
+      />
+    </div>
+    <span class="da-or">or lane</span>
+    <div class="da-field">
+      <label for="da-ocity">Origin city</label>
+      <input id="da-ocity" type="text" name="originCity" [ngModel]="originCity()" (ngModelChange)="originCity.set($event)" autocomplete="off" />
+    </div>
+    <div class="da-field da-field-sm">
+      <label for="da-ostate">Origin state</label>
+      <input id="da-ostate" type="text" name="originState" [ngModel]="originState()" (ngModelChange)="originState.set($event)" placeholder="TX" autocomplete="off" />
+    </div>
+    <div class="da-field">
+      <label for="da-dcity">Dest. city</label>
+      <input id="da-dcity" type="text" name="destinationCity" [ngModel]="destinationCity()" (ngModelChange)="destinationCity.set($event)" autocomplete="off" />
+    </div>
+    <div class="da-field da-field-sm">
+      <label for="da-dstate">Dest. state</label>
+      <input id="da-dstate" type="text" name="destinationState" [ngModel]="destinationState()" (ngModelChange)="destinationState.set($event)" placeholder="TX" autocomplete="off" />
+    </div>
+    <button type="submit" class="da-go" [disabled]="!canSearch() || loading()" data-testid="da-search">
+      {{ loading() ? 'Ranking…' : 'Rank candidates' }}
+    </button>
+  </form>
+
+  @if (error(); as e) {
+    <div class="da-alert da-alert-bad" role="alert">{{ e }}</div>
+  }
+
+  @if (loading()) {
+    <div class="da-loading" aria-live="polite">Assembling candidates from Alvys…</div>
+  }
+
+  @if (target(); as t) {
+    <div class="da-target" data-testid="da-target">
+      <div class="da-target-lane">
+        <strong>Target:</strong>
+        {{ t.originCity || '—' }}{{ t.originState ? ', ' + t.originState : '' }}
+        <span aria-hidden="true">→</span>
+        {{ t.destinationCity || '—' }}{{ t.destinationState ? ', ' + t.destinationState : '' }}
+        @if (t.loadNumber) { <span class="da-load-pill">Load {{ t.loadNumber }}</span> }
+      </div>
+      <div class="da-target-src">{{ t.source }}</div>
+    </div>
+  }
+
+  @if (result()?.truncated) {
+    <div class="da-alert da-alert-warn">
+      Candidate sweep was capped — more fleet exists than was scored. Narrow the lane to see the rest.
+    </div>
+  }
+
+  @if (result() && candidates().length === 0 && !loading()) {
+    <div class="da-empty">No rankable candidates were found for this target.</div>
+  }
+
+  @if (candidates().length > 0) {
+    <table class="da-table" data-testid="da-candidates">
+      <thead>
+        <tr>
+          <th class="da-score-col">Score</th>
+          <th>Driver</th>
+          <th>Truck</th>
+          <th>Trailer</th>
+          <th>Duty</th>
+          <th class="da-why-col">Why</th>
+          <th class="da-act-col"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (c of candidates(); track rowKey(c)) {
+          <tr [class.da-preferred]="c.isPreferredPairing">
+            <td class="da-score-col">
+              <span class="da-score da-score-{{ scoreBand(c.score) }}">{{ c.score }}</span>
+            </td>
+            <td>
+              <div class="da-driver">{{ c.driverName || '—' }}</div>
+              <div class="da-muted">
+                {{ c.driverHomeState || '—' }}
+                @if (c.referenceMilesFromOrigin !== null) { · ≈{{ c.referenceMilesFromOrigin }} mi* }
+              </div>
+            </td>
+            <td>{{ c.truckNumber || '—' }}</td>
+            <td>
+              {{ c.trailerNumber || '—' }}
+              @if (c.trailerEquipmentType) { <div class="da-muted">{{ c.trailerEquipmentType }}</div> }
+            </td>
+            <td>
+              <span class="da-duty">{{ c.dutyStatus }}</span>
+              @if (c.isPreferredPairing) { <span class="da-pref-tag" title="Dispatcher-curated pairing">preferred</span> }
+            </td>
+            <td class="da-why-col">
+              <ul class="da-reasons">
+                @for (r of c.reasons; track r) { <li>{{ r }}</li> }
+              </ul>
+            </td>
+            <td class="da-act-col">
+              <button
+                type="button"
+                class="da-assemble"
+                (click)="assemble(c)"
+                [disabled]="assemblingId() !== null"
+                [attr.data-testid]="'da-assemble-' + rowKey(c)"
+              >
+                {{ assemblingId() === rowKey(c) ? 'Recording…' : 'Assemble' }}
+              </button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+    <p class="da-foot">* Home-base state-centroid reference distance — not live GPS. {{ result()?.alvysPosture }}</p>
+  }
+
+  @if (assembleError(); as ae) {
+    <div class="da-alert da-alert-bad" role="alert">{{ ae }}</div>
+  }
+
+  @if (lastAssembly(); as a) {
+    <div class="da-result" data-testid="da-assembly-result">
+      <div class="da-result-head">
+        <strong>Assembled.</strong> Recorded {{ a.recordedAt | date: 'short' }} by {{ a.recordedBy }}.
+        <span class="da-writeback">Alvys: {{ a.alvysWriteback }}</span>
+      </div>
+
+      @if (a.notify.overrideActive) {
+        <div class="da-alert da-alert-warn" data-testid="da-override-banner">
+          Notifications are rerouted to the safe address
+          <strong>{{ a.notify.overrideRecipient }}</strong> — the real driver/dispatcher were not
+          emailed. Clear <code>Ltl:Comms:OverrideRecipient</code> to reach them.
+        </div>
+      }
+
+      <div class="da-notify">
+        <span class="da-notify-state da-notify-{{ notifyTone(a.notify.state) }}">
+          Notify: {{ a.notify.state }}
+        </span>
+        @if (a.notify.detail) { <span class="da-muted">{{ a.notify.detail }}</span> }
+      </div>
+
+      @if (a.notify.intendedRecipients.length > 0) {
+        <ul class="da-recipients">
+          @for (r of a.notify.intendedRecipients; track r.role) {
+            <li>
+              <span class="da-role">{{ r.role }}</span>
+              {{ r.name || '—' }}
+              <span class="da-muted">{{ r.address || 'no email on file' }}</span>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  }
+</section>
