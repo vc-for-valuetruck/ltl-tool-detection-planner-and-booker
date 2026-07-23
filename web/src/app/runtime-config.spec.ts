@@ -20,4 +20,17 @@ describe('runtime-config', () => {
     expect(isAuthConfigured(normalizeRuntimeConfig({ tenantId: 't' }))).toBeFalse();
     expect(isAuthConfigured(normalizeRuntimeConfig(null))).toBeFalse();
   });
+
+  it('treats the E2E placeholder GUID as unconfigured (demo mode)', () => {
+    const placeholder = '00000000-0000-0000-0000-000000000000';
+    expect(
+      isAuthConfigured(normalizeRuntimeConfig({ tenantId: placeholder, clientId: placeholder })),
+    ).toBeFalse();
+    expect(
+      isAuthConfigured(normalizeRuntimeConfig({ tenantId: 't', clientId: placeholder })),
+    ).toBeFalse();
+    expect(
+      isAuthConfigured(normalizeRuntimeConfig({ tenantId: placeholder, clientId: 'c' })),
+    ).toBeFalse();
+  });
 });

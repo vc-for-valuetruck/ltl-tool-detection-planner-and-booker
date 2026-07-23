@@ -6,9 +6,11 @@ import { RUNTIME_CONFIG, isAuthConfigured } from '../../runtime-config';
 /**
  * Route guard that mirrors FreightDNA's auth pattern: if Entra is configured and
  * no MSAL account exists, redirect to the branded `/login` screen. If Entra is
- * NOT configured, the guard also redirects to `/login` — the login page surfaces
- * the misconfiguration explicitly (Sign in disabled + status banner) instead of
- * letting protected routes load in a broken half-authed state.
+ * NOT configured (empty runtime-config, or the placeholder GUIDs the E2E demo
+ * stack injects), the guard lets traffic through — the app shell already
+ * surfaces a "Demo mode" indicator, and there is no real Entra tenant behind a
+ * sign-in redirect in that environment. Only real, configured Entra deployments
+ * enforce the /login gate.
  *
  * The login click itself calls `MsalService.loginRedirect(...)`, which is the
  * only place interactive sign-in is triggered — guards do not start login on
@@ -19,8 +21,11 @@ export const authGuard: CanActivateFn = (): true | UrlTree => {
   const msal = inject(MsalService);
   const config = inject(RUNTIME_CONFIG);
 
+  // Demo / unconfigured environments (local ng serve without RUNTIME_*, the
+  // docker-compose demo stack, Playwright E2E) render normally without a login
+  // gate — there's nothing to authenticate against.
   if (!isAuthConfigured(config)) {
-    return router.parseUrl('/login');
+    return true;
   }
 
   const hasAccount = msal.instance.getAllAccounts().length > 0;
