@@ -20,7 +20,8 @@ public sealed class AllowedEmailDomainHandler(IOptions<AccessPolicyOptions> opti
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context, AllowedEmailDomainRequirement requirement)
     {
-        if (_options.AllowedEmailDomains.Length == 0)
+        var allowed = _options.NormalizedEmailDomains;
+        if (allowed.Length == 0)
         {
             context.Succeed(requirement);
             return Task.CompletedTask;
@@ -35,7 +36,7 @@ public sealed class AllowedEmailDomainHandler(IOptions<AccessPolicyOptions> opti
             : null;
 
         if (domain is not null &&
-            _options.AllowedEmailDomains.Any(d => string.Equals(d, domain, StringComparison.OrdinalIgnoreCase)))
+            allowed.Any(d => string.Equals(d, domain, StringComparison.OrdinalIgnoreCase)))
         {
             context.Succeed(requirement);
         }
