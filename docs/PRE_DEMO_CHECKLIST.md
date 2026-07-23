@@ -51,11 +51,23 @@
 
 - The API now returns a small ProblemDetails body with `traceId` — read it aloud if asked, and keep going. Nothing was written to Alvys (read-only posture).
 
-## The three moments that matter
+## The four moments that matter
 
-1. **Consolidate corridor chip** — leads with real projected uplift $ (per PR pair 26-07-22).
-2. **Billing worklist header** — leads with revenue-at-risk $ across today's filtered loads (per PR pair 26-07-22).
-3. **Dock combine result** — click card + BOL packet + audit + "Not pushed to Alvys" label. This is the honest-state pinnacle.
+1. **Consolidate corridor chip** — leads with real projected uplift $ (PR #170).
+2. **Billing worklist header** — leads with revenue-at-risk $ across today's filtered loads (PR #170).
+3. **Dock → Auto toggle → One-tap combine** (PR #175). Flip **Auto** at the top of `/ltl/dock`. Pick a yard. The tool auto-picks the parent, auto-adds the top siblings, auto-previews the plan, then arms one **“One-tap combine”** button. That single tap:
+   - records the internal audit,
+   - prints the BOL packet,
+   - opens the Alvys click card in a new tab,
+   - fires the yard notification.
+   All read-only against Alvys. If any Alvys read fails or the plan has a blocker, Auto ejects to manual with an honest banner — it never combines silently.
+4. **Dock combine result** — click card + BOL packet + audit + “Not pushed to Alvys” label. Honest-state pinnacle.
+
+## The demo narrative in three lines
+
+- **Consolidate:** *“Before I even open a plan, the corridor tells me there’s roughly **+$X of consolidation uplift** sitting on this lane right now.”*
+- **Billing:** *“Across today’s live Alvys billing worklist, the tool is flagging **$X in unpaid balance and Y loads with revenue-blocking exceptions** — that’s the leakage this screen exists to stop.”*
+- **Dock one-tap:** *“One button. The tool picks the parent, adds the top siblings, previews the combined plan, prints the BOL packet, opens the Alvys click card, and notifies the yard — all read-only, all auditable. The dispatcher applies the click card in Alvys manually. That’s the whole automation ceiling until the Alvys writeback sign-off is signed.”*
 
 ## Do-not-demo list (avoid on stage)
 
@@ -63,6 +75,8 @@
 - The trailer-fit sidecar's public URL (403 by design).
 - The **Search** tab of the runbook without first clicking **Loads** in the sidebar — the `/ltl` landing is a different screen (the opportunity queue), not the filter grid.
 - The `AI Hub Analytics` menu (does not exist here — that was a FreightDNA-only feature; do not narrate it as an LTL feature).
+- **Background agents** (opportunity/exception/AR-digest sweepers). PR #176 is drafted but deferred until after the demo (EF migration conflict with the Yard-boundary feature #171). Do not narrate them as live.
+- **Auto-execute Alvys clicks.** [`docs/AUTO_CONSOLIDATE_SPEC.md`](AUTO_CONSOLIDATE_SPEC.md) is a spec, not shipped code. It is the next revenue lever, but it needs the two-reviewer sign-off in `docs/ltl-tool.md` first. If asked, say: “That’s the next lever. It’s specced, scoped to the sandbox, and gated on the sign-off in `ltl-tool.md`. Production is architecturally unreachable until the sign-off row is filled.”
 
 ## If something breaks and you need to bail out
 
