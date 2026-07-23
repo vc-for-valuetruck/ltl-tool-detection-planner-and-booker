@@ -7,6 +7,7 @@ using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using LtlTool.Api.Features.Ltl.Signals;
 using LtlTool.Api.Features.Ltl.YardArtifacts;
+using LtlTool.Api.Features.Ltl.YardIngestion;
 using Microsoft.EntityFrameworkCore;
 
 namespace LtlTool.Api.Data;
@@ -49,6 +50,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Yard-originated LTL consolidation opportunities from <c>LtlDraftCreated</c> webhooks (see <see cref="EfYardWebhookStore"/>). Inbound suggestions only — the dock acts on them inside its own Alvys-backed flow.</summary>
     public DbSet<YardLtlOpportunity> YardLtlOpportunities => Set<YardLtlOpportunity>();
+
+    /// <summary>Durable, append-only Yard event inbox (see <see cref="EfYardEventStore"/>). Idempotency-keyed; internal data, never Alvys.</summary>
+    public DbSet<YardEventRecord> YardEvents => Set<YardEventRecord>();
+
+    /// <summary>Normalized scheduler projection derived from the Yard event inbox (see <see cref="EfYardEventStore"/>). Rebuilt deterministically per source record.</summary>
+    public DbSet<YardScheduleInput> YardScheduleInputs => Set<YardScheduleInput>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -280,6 +287,60 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(e => e.EventId).IsUnique();
             // Dock listing is newest-first.
             entity.HasIndex(e => e.ReceivedAt);
+        });
+
+        modelBuilder.Entity<YardEventRecord>(entity =>
+        {
+            entity.ToTable("YardEvents");
+            // The dedupe key (eventId + source record identity) is the natural idempotency key:
+            // a duplicate delivery collides on the PK and is acked without a second projection.
+            entity.HasKey(e => e.DedupeKey);
+            entity.Property(e => e.DedupeKey).HasMaxLength(512);
+            entity.Property(e => e.EventId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.EventType).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.Category).IsRequired().HasMaxLength(32);
+            entity.Property(e => e.SourceSystem).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.SourceRecordType).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.SourceRecordId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.YardLocationId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.CorrelationId).HasMaxLength(64);
+            // Verbatim payload for audit/replay; nvarchar(max) so a large object round-trips.
+            entity.Property(e => e.PayloadJson).IsRequired();
+
+            // Per-record event log query (projection rebuild) is the hot path.
+            entity.HasIndex(e => new { e.SourceSystem, e.SourceRecordType, e.SourceRecordId });
+            // Store-assigned monotonic ordinal; also the newest-first audit-listing key.
+            entity.HasIndex(e => e.Sequence);
+        });
+
+        modelBuilder.Entity<YardScheduleInput>(entity =>
+        {
+            entity.ToTable("YardScheduleInputs");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(320);
+            entity.Property(e => e.SourceSystem).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.SourceRecordType).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.SourceRecordId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.YardLocationId).IsRequired().HasMaxLength(128);
+            // Readiness / hold state stored as readable strings so the table is legible.
+            entity.Property(e => e.Readiness).IsRequired().HasMaxLength(16);
+            entity.Property(e => e.HoldState).IsRequired().HasMaxLength(16);
+            entity.Property(e => e.LatestEventType).HasMaxLength(128);
+            entity.Property(e => e.LatestEventId).HasMaxLength(128);
+            entity.Property(e => e.TruckId).HasMaxLength(128);
+            entity.Property(e => e.TrailerId).HasMaxLength(128);
+            entity.Property(e => e.DockId).HasMaxLength(128);
+            entity.Property(e => e.OriginLocationId).HasMaxLength(128);
+            entity.Property(e => e.DestinationLocationId).HasMaxLength(128);
+            entity.Property(e => e.RelationshipType).HasMaxLength(32);
+            entity.Property(e => e.ParentSourceRecordId).HasMaxLength(128);
+            entity.Property(e => e.RelatedRecordIdsJson).IsRequired();
+
+            // Scheduler worklist filters (readiness / hold / type / yard) and newest-first ordering.
+            entity.HasIndex(e => e.Readiness);
+            entity.HasIndex(e => e.HoldState);
+            entity.HasIndex(e => e.YardLocationId);
+            entity.HasIndex(e => e.UpdatedAt);
         });
     }
 }

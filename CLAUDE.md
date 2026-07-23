@@ -103,6 +103,19 @@ defensible recommendations, and revenue protection.
 - `GET  /api/ltl/reporting/margin-rollup?groupBy={Customer|Rep|Lane}` — read-only margin/exception rollup over the same normalized load set as the billing worklist, aggregated by customer, rep (Alvys id only — no rep-name field exists), or lane (derived from origin/destination). No external BI connection.
 - `GET  /api/ltl/reporting/margin-rollup/export?groupBy={Customer|Rep|Lane}` — CSV rendering of the same margin rollup, for external reporting tools (e.g. Power BI's Text/CSV connector) to pull Alvys-derived data directly from this tool. Same auth, same read-only data — only the response shape changes.
 
+### Yard→LTL scheduler ingestion (versioned; peer-system contract, no Alvys relay)
+
+Yard is a peer system; it POSTs freight events over HTTP and the LTL tool persists them to its own
+SQL store and derives a scheduler projection. **No shared DB, no cross-database read, no Alvys
+read/write.** Service-to-service auth via the `YardEventIngest` policy (Yard managed-identity Entra
+app role `YardEvents.Ingest`, or a configured scope). Contract: [`docs/YARD_LTL_INGESTION.md`](docs/YARD_LTL_INGESTION.md).
+- `POST /api/v1/yard-events` — ingest one Yard event. Idempotent on `eventId` + source record identity: 202 first delivery, 200 duplicate (no second projection), 400 contract violation. Administrative/unknown events are audited but never projected.
+- `GET  /api/v1/yard-events/schedule-input?readiness={r}&holdState={h}&sourceRecordType={t}&yardLocationId={y}&schedulableOnly={bool}&max={n}` — scheduler worklist projections, newest-updated first.
+- `GET  /api/v1/yard-events/schedule-input/{sourceSystem}/{sourceRecordType}/{sourceRecordId}` — one projection (200/404).
+- `GET  /api/v1/yard-events/events?max={n}` — recent inbox events, newest first (audit).
+- `GET  /api/v1/yard-events/events/{sourceSystem}/{sourceRecordType}/{sourceRecordId}` — all events for one record, oldest first.
+- `POST /api/v1/yard-events/schedule-input/{sourceSystem}/{sourceRecordType}/{sourceRecordId}/replay` — rebuild one projection from stored events without a new event (admin/repair; 200/404).
+
 Angular `/ltl` provides Search, Billing Worklist, Exceptions, detail drawer,
 recommended matches, assignment validation, billing readiness, visibility, saved views.
 

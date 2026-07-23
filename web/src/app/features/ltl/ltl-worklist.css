@@ -24,6 +24,38 @@
   color: var(--text-secondary);
 }
 
+/* Revenue-at-risk tile on the Billing worklist head. Honest by construction: only rendered
+   when at least one filtered row contributed a real unpaidBalance number — rows with a
+   missing balance are excluded, never coerced to zero. */
+.revenue-at-risk {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 14px;
+  border-radius: var(--radius-card, 10px);
+  background: var(--warning-bg, #fffbeb);
+  border: 1px solid var(--warning-border, #fde68a);
+  align-self: flex-start;
+}
+.revenue-at-risk-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--warning-text, #92400e);
+}
+.revenue-at-risk-amount {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.revenue-at-risk-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .filter-row {
   display: flex;
   align-items: center;

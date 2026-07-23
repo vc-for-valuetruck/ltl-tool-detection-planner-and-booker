@@ -97,6 +97,21 @@
   color: var(--warning-text);
 }
 
+/* Projected-uplift $ pill on corridor chips — leads the demo with money, not counts.
+   Rendered only when the representative opportunity has a real positive uplift. */
+.corridor-chip-uplift {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--success-bg, #ecfdf5);
+  color: var(--success-text, #047857);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
 /* ===================== Filter row ===================== */
 .filter-row {
   display: flex;

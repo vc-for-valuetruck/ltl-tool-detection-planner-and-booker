@@ -108,10 +108,12 @@
   }
 </section>
 
-<footer class="live-footer">
-  <span>{{ dataSource() }}</span>
-  <span aria-hidden="true">·</span>
-  <span>{{ totalScanned() }} loads scanned</span>
-  <span aria-hidden="true">·</span>
-  <span>updated {{ generatedAt() ? (generatedAt() | date: 'short') : '—' }}</span>
-</footer>
+@if (!loading() && !error()) {
+  <footer class="live-footer">
+    <span>{{ dataSource() }}</span>
+    <span aria-hidden="true">·</span>
+    <span>{{ totalScanned() }} loads scanned</span>
+    <span aria-hidden="true">·</span>
+    <span>updated {{ generatedAt() ? (generatedAt() | date: 'short') : '—' }}</span>
+  </footer>
+}

@@ -64,6 +64,14 @@ builder.Services.AddAuthorizationBuilder()
         policy.RequireAuthenticatedUser();
         policy.AddRequirements(new AllowedEmailDomainRequirement());
     })
+    // Service-to-service policy for the Yard→LTL ingestion endpoint. Satisfied by the Yard managed
+    // identity's Entra app role / scope (not an email domain). The handler is registered in
+    // AddYardIngestion; see YardEventIngestHandler for the Demo-mode / disabled-check escape hatches.
+    .AddPolicy(AccessPolicies.YardEventIngest, policy =>
+    {
+        policy.RequireAuthenticatedUser();
+        policy.AddRequirements(new LtlTool.Api.Features.Ltl.YardIngestion.YardEventIngestRequirement());
+    })
     .SetDefaultPolicy(new AuthorizationPolicyBuilder()
         .RequireAuthenticatedUser()
         .AddRequirements(new AllowedEmailDomainRequirement())
@@ -183,6 +191,35 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// Belt-and-braces: any uncaught exception on any endpoint returns a small, honest ProblemDetails
+// body instead of a bare 500 with an empty response. Callers (SPA / integrations) already expect
+// error bodies of the shape { error: string }; the ProblemDetails writer here emits that shape's
+// superset so their existing error handlers keep working. Alvys credentials / payloads are never
+// echoed — only the exception type and a stable request id.
+app.UseExceptionHandler(handler => handler.Run(async context =>
+{
+    var feature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+    var ex = feature?.Error;
+    var log = context.RequestServices.GetService<ILoggerFactory>()?.CreateLogger("UnhandledException");
+    log?.LogError(ex, "Unhandled exception on {Method} {Path} — returning 500 ProblemDetails.",
+        context.Request.Method, context.Request.Path);
+
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    context.Response.ContentType = "application/problem+json";
+    var problem = new
+    {
+        type = "about:blank",
+        title = "Unexpected server error",
+        status = 500,
+        // Kept generic on purpose so we never leak Alvys payloads / stack traces to clients.
+        // The correlated log line above carries the actual exception type + message server-side.
+        error = "Something went wrong on the server. The dispatcher can retry safely — nothing was written to Alvys.",
+        traceId = context.TraceIdentifier,
+    };
+    await System.Text.Json.JsonSerializer.SerializeAsync(
+        context.Response.Body, problem, options: (System.Text.Json.JsonSerializerOptions?)null, cancellationToken: context.RequestAborted);
+}));
 
 app.UseCors();
 app.UseAuthentication();

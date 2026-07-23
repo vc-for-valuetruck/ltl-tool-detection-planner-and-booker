@@ -6,6 +6,19 @@
       Loads needing billing attention from live Alvys — readiness first, revenue risk visible.
       Read-only; nothing is written to Alvys.
     </span>
+
+    @if (!loading() && !error() && revenueAtRisk() !== null) {
+      <!-- Honest revenue-at-risk pill: sums load.billing.unpaidBalance across the currently-
+           filtered worklist. Only renders when at least one row contributed a real number —
+           rows with a missing unpaidBalance are excluded, never counted as zero. -->
+      <div class="revenue-at-risk" data-testid="billing-revenue-at-risk">
+        <span class="revenue-at-risk-label">Revenue at risk</span>
+        <span class="revenue-at-risk-amount">{{ formatCurrency(revenueAtRisk()) }}</span>
+        <span class="revenue-at-risk-sub">
+          across {{ loadsWithRiskBadges() }} load{{ loadsWithRiskBadges() === 1 ? '' : 's' }} with revenue-blocking exceptions
+        </span>
+      </div>
+    }
   </div>
 
   <div class="filter-row">

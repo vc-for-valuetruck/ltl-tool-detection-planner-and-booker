@@ -30,6 +30,16 @@
             {{ row.openLoadCount }} open
           </span>
         }
+        @if (row.projectedUplift !== null && row.projectedUplift > 0) {
+          <!-- Honest "projected uplift $" chip — shows the same figure the plan-detail Economics
+               panel would show if this lane were opened. Only rendered when the value is a real,
+               positive number; never fabricated. -->
+          <span class="corridor-chip-uplift"
+                data-testid="corridor-chip-uplift"
+                [attr.title]="'Projected consolidation uplift on the representative opportunity for this lane'">
+            +{{ formatCurrency(row.projectedUplift) }} uplift
+          </span>
+        }
       </button>
     } @empty {
       <span class="corridor-chip-count muted">Corridors unavailable — anchor load search still works.</span>
