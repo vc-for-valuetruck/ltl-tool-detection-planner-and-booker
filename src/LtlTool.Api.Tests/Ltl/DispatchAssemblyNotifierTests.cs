@@ -51,12 +51,12 @@ public sealed class DispatchAssemblyNotifierTests
         NotificationOptions? notifications = null) =>
         new(
             graph,
-            Options.Create(new DispatchCommsOptions
+            Microsoft.Extensions.Options.Options.Create(new DispatchCommsOptions
             {
                 Enabled = commsEnabled,
                 OverrideRecipient = overrideRecipient,
             }),
-            Options.Create(notifications ?? ConfiguredEmail()),
+            Microsoft.Extensions.Options.Options.Create(notifications ?? ConfiguredEmail()),
             NullLogger<DispatchAssemblyNotifier>.Instance);
 
     private static IReadOnlyList<DispatchNotifyRecipient> Recipients() =>
