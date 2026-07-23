@@ -129,16 +129,24 @@ jobs:
             exit 1
           fi
 
-      - name: Update `uat` environment variable ALLOWED_EMAIL_DOMAINS
+      - name: Update `uat` environment variable ALLOWED_EMAIL_DOMAINS (best-effort)
+        id: env_var_update
         if: ${{ inputs.update_env_variable && !inputs.dry_run }}
+        continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Prefer a user-provided PAT with `repo` + `admin:repo_hook` scope stored as
+          # ENV_VARS_ADMIN_TOKEN on the uat environment. Falls back to the workflow's own
+          # GITHUB_TOKEN, which GitHub restricts from writing environment variables via the
+          # REST API — so this step will emit a warning and continue when only GITHUB_TOKEN
+          # is available. The primary outcome (applying AllowedEmailDomains to the running
+          # API) has already succeeded by this point; keeping the env-variable in sync is
+          # housekeeping to prevent drift on the next full deploy.
+          GH_TOKEN: ${{ secrets.ENV_VARS_ADMIN_TOKEN || secrets.GITHUB_TOKEN }}
           NEW_VALUE: ${{ inputs.domains }}
         shell: bash
         run: |
           set -euo pipefail
-          # Try updating the existing variable; if it doesn't exist, create it. Both endpoints
-          # are idempotent from our perspective — we always end with the desired value.
+          # Try updating the existing variable; if it doesn't exist, create it.
           if gh api "repos/${{ github.repository }}/environments/uat/variables/ALLOWED_EMAIL_DOMAINS" >/dev/null 2>&1; then
             gh api --method PATCH \
               "repos/${{ github.repository }}/environments/uat/variables/ALLOWED_EMAIL_DOMAINS" \
@@ -150,6 +158,13 @@ jobs:
               -f name=ALLOWED_EMAIL_DOMAINS -f value="$NEW_VALUE" >/dev/null
             echo "::notice::Created uat env variable ALLOWED_EMAIL_DOMAINS."
           fi
+
+      - name: Warn if env-variable update was skipped
+        if: ${{ inputs.update_env_variable && !inputs.dry_run && steps.env_var_update.outcome != 'success' }}
+        shell: bash
+        run: |
+          echo "::warning::Could not update the uat env variable ALLOWED_EMAIL_DOMAINS automatically. This is expected when only GITHUB_TOKEN is available (GitHub restricts it from writing environment variables). The API is already restricted to '${{ inputs.domains }}', but on the next full deploy the deploy workflow will re-apply whatever ALLOWED_EMAIL_DOMAINS is currently set to on the uat environment — which may differ from what you just applied here."
+          echo "::warning::To avoid drift, either update the variable manually (Settings → Environments → uat → Variables → ALLOWED_EMAIL_DOMAINS = ${{ inputs.domains }}), or store a PAT with 'repo' scope as the ENV_VARS_ADMIN_TOKEN secret on the uat environment and this step will succeed next time."
 
       - name: Summary
         if: always()
@@ -174,6 +189,10 @@ jobs:
               echo "- Dry-run: **yes** (no changes applied)."
             fi
             if [ "${{ inputs.update_env_variable }}" = "true" ] && [ "${{ inputs.dry_run }}" = "false" ]; then
-              echo "- \`uat\` env variable \`ALLOWED_EMAIL_DOMAINS\` updated to: \`${{ inputs.domains }}\`"
+              if [ "${{ steps.env_var_update.outcome }}" = "success" ]; then
+                echo "- \`uat\` env variable \`ALLOWED_EMAIL_DOMAINS\` updated to: \`${{ inputs.domains }}\`"
+              else
+                echo "- ⚠️ \`uat\` env variable \`ALLOWED_EMAIL_DOMAINS\` **not** updated (GITHUB_TOKEN can't write env variables). Update it manually or add an \`ENV_VARS_ADMIN_TOKEN\` PAT secret on the uat environment. The running API is still restricted to the applied domain(s) above."
+              fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"
