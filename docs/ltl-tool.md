@@ -67,10 +67,46 @@ change is made to let a write reach a production Alvys tenant:
    wrong (e.g. wrong carrier tendered, wrong trip dispatched) — who is notified, how it
    is corrected in Alvys.
 
+## Production gate (item 3) — implemented, default-off, unwired
+
+The independent production gate item 3 requires now exists in code as of PR
+[#183](https://github.com/vc-for-valuetruck/ltl-tool-detection-planner-and-booker/pull/183),
+on `AlvysWriteOptions` (`src/LtlTool.Api/Features/Integrations/Alvys/Writeback/AlvysWriteOptions.cs`):
+
+- `Alvys:Writeback:AllowProduction` (default `false`) — master production switch.
+- `Alvys:Writeback:SignOffConfirmed` (default `false`) — operator's assertion that the sign-off row
+  below is filled and the PR approved.
+- `Alvys:Writeback:ProductionBaseUrl` (default empty) — must be the **real** production host
+  (`HasProductionBaseUrl` requires `integrations.alvys.com`, the deliberate inverse of the sandbox
+  rule `HasSandboxBaseUrl`, which rejects it).
+- `Alvys:Writeback:ProductionApprovedOperations` (default empty) — per-operation allowlist; approval
+  is per-operation, never blanket, because blast radius differs per operation (item 2).
+
+`IsProductionExecutionAllowed(op)` returns true only when **all four** are satisfied. A startup
+`Validate(...).ValidateOnStart()` guard (`AlvysServiceCollectionExtensions`) fails the app closed if
+`AllowProduction=true` is set without the other three — a half-configured production posture can
+never silently arm.
+
+**Deliberately NOT wired to a live transport.** This gate governs *authorisation only*. The change
+that introduced it did **not** point any HTTP write client at `integrations.alvys.com`. Wiring the
+transport to a live freight tenant is a separate, human-performed step in a reviewed PR, to be done
+only after the sign-off row below is filled. An autonomous agent must not be what makes a production
+tenant reachable. `load-create` / `trip-create` remain impossible via the Public API (no contracted
+endpoint exists — verified against `docs.alvys.com/llms.txt`); the contracted lifecycle writes that
+*do* exist (`load-update` OrderNumber-only, `upload-load-document` BOL) already run sandbox-gated.
+
+### How sign-off is recorded
+
+Joshua Davis's **GitHub approval of PR #183** is the recorded human sign-off. When that approval
+lands, the approver fills the template row below (Approved-by + Date + Production-gate-implemented =
+Yes) in a normal reviewed PR (two reviewers per `docs/AUTO_CONSOLIDATE_SPEC.md` §3.4), and only then
+may `SignOffConfirmed`/`AllowProduction` be turned on in the target environment.
+
 ## Sign-off log
 
 | Operation | Contract confirmed (link/doc) | Approved by | Date | Production gate implemented |
 |---|---|---|---|---|
+| _TEMPLATE — Alvys public-API lifecycle path_ (`upload-load-document` BOL, `load-update` OrderNumber) | Public API `POST /loads/{loadNumber}/document` + `PATCH /loads/{loadNumber}` (docs.alvys.com, verified 2026-07-21) | _(pending human approval of PR #183 by Joshua Davis)_ | | Gate present (default-off, unwired) — see section above |
 | `upload-load-document` | Public API `POST /loads/{loadNumber}/document` (docs.alvys.com, verified 2026-07-21; see [ALVYS_API_DECISIONS.md](./ALVYS_API_DECISIONS.md)) | _(pending)_ | | No |
 | `upload-trip-document` | Public API `POST /trips/{tripId}/document` (docs.alvys.com, verified 2026-07-21) | _(pending)_ | | No |
 | `create-carrier-invoice` | Public API `POST /invoices/carrier-invoice` (docs.alvys.com, verified 2026-07-21) | _(pending)_ | | No |
