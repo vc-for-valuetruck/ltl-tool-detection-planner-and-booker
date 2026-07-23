@@ -1,6 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Ltl.Agent;
 using LtlTool.Api.Features.Ltl.Assignment;
+using LtlTool.Api.Features.Ltl.Billing;
 using LtlTool.Api.Features.Ltl.Bol;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.DispatchPlanner;
@@ -186,6 +187,15 @@ public static class LtlServiceCollectionExtensions
         // survive restarts and back the filterable /ltl/assignments history page. Scoped to the
         // DbContext lifetime. Still records AlvysWriteback = NotPerformed — nothing pushed to Alvys.
         services.AddScoped<IAssignmentAuditStore, EfAssignmentAuditStore>();
+
+        // Invoice Studio (Wave 2 billing): assembles a customer invoice from a consolidation, keeps
+        // per-load charges editable, computes totals + combined driver-RPM, tracks BOL presence, and
+        // builds the exact contracted Alvys write payloads as gated previews (AuditOnly → NotPerformed).
+        // Durable EF store (AppDbContext); the PDF builder is stateless. Read-only against Alvys —
+        // nothing is pushed until the separate production execution gate is enabled.
+        services.AddScoped<IInvoiceStore, EfInvoiceStore>();
+        services.AddSingleton<InvoicePdfBuilder>();
+        services.AddScoped<InvoiceStudioService>();
 
         // Tool-local dispatcher saved views, persisted durably in AppDbContext (server-side, never
         // browser storage). Scoped to match the DbContext lifetime. Owner-scoped; no Alvys writeback.

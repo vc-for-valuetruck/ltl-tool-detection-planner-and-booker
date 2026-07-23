@@ -150,6 +150,8 @@ public enum AlvysWriteOperationKind
     UploadTripDocument,
     /// <summary>Attach a carrier invoice document to a trip (Public API, separately flag-gated).</summary>
     CreateCarrierInvoice,
+    /// <summary>Post a customer payment against an invoiced load (Public API).</summary>
+    CreateCustomerPayment,
 
     // --- Phase-2 consolidation writes (internal API — observed, not contracted; decision #10) ---
 
@@ -380,6 +382,21 @@ public static class AlvysWriteOperationRegistry
                 "Attach a carrier invoice document to a trip via the contracted Alvys Public-API " +
                 "multipart endpoint. Separately flag-gated (Alvys:Writeback:EnableCarrierInvoice) " +
                 "because an unmatched PaymentType silently defaults to 30-day terms in Alvys.",
+            WorkflowStage = "Bill",
+            RequiresEtag = false,
+            LiveSupport = AlvysLiveSupport.Supported,
+            RequiredToEnable = null,
+        },
+        new()
+        {
+            Code = "create-customer-payment",
+            Kind = AlvysWriteOperationKind.CreateCustomerPayment,
+            Title = "Post customer payment",
+            Description =
+                "Post a customer payment against an invoiced load via the contracted Alvys Public-API " +
+                "endpoint (POST /invoices/customer-payments). Amount{Amount,Currency} + PaymentDate + " +
+                "ReferenceNumber (idempotency). The load must already be Invoiced/Completed/Financed " +
+                "upstream; this closes the billed → paid loop.",
             WorkflowStage = "Bill",
             RequiresEtag = false,
             LiveSupport = AlvysLiveSupport.Supported,

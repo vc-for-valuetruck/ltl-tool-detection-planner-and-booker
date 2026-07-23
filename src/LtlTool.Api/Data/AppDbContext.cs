@@ -3,6 +3,7 @@ using LtlTool.Api.Features.Integrations.Alvys.Writeback;
 using LtlTool.Api.Features.Integrations.Yard.Webhooks;
 using LtlTool.Api.Features.Ltl.Agents;
 using LtlTool.Api.Features.Ltl.Assignment;
+using LtlTool.Api.Features.Ltl.Billing;
 using LtlTool.Api.Features.Ltl.Bol;
 using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.SavedViews;
@@ -60,6 +61,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Durable background-agent liveness heartbeats (see <see cref="EfAgentHeartbeatStore"/>). Internal telemetry, one row per agent, never Alvys data.</summary>
     public DbSet<AgentHeartbeat> AgentHeartbeats => Set<AgentHeartbeat>();
+
+    /// <summary>Durable assembled customer invoices (see <see cref="EfInvoiceStore"/>). App-side only; never written back to Alvys.</summary>
+    public DbSet<InvoiceRecord> Invoices => Set<InvoiceRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -357,6 +361,33 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
             // One heartbeat row per agent (upsert target): the agent name is unique.
             entity.HasIndex(e => e.AgentName).IsUnique();
+        });
+
+        modelBuilder.Entity<InvoiceRecord>(entity =>
+        {
+            entity.ToTable("Invoices");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(64);
+            entity.Property(e => e.InvoiceNumber).IsRequired().HasMaxLength(64);
+            // Enum stored as a readable string so the table is legible in the database.
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(e => e.CorridorCode).HasMaxLength(64);
+            entity.Property(e => e.CustomerId).HasMaxLength(128);
+            entity.Property(e => e.CustomerName).HasMaxLength(256);
+            entity.Property(e => e.ParentLoadId).HasMaxLength(128);
+            entity.Property(e => e.ParentLoadNumber).HasMaxLength(64);
+            entity.Property(e => e.Notes).HasMaxLength(4000);
+            // Load lines (with per-load charges) and edit history stored as JSON; nvarchar(max).
+            entity.Property(e => e.LoadsJson).IsRequired();
+            entity.Property(e => e.EditHistoryJson).IsRequired();
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.UpdatedBy).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.FinalizedBy).HasMaxLength(256);
+            entity.Property(e => e.AlvysWriteback).IsRequired().HasMaxLength(32);
+
+            // List view filters by parent load and status, ordered newest-updated first.
+            entity.HasIndex(e => e.ParentLoadId);
+            entity.HasIndex(e => e.Status);
         });
     }
 }

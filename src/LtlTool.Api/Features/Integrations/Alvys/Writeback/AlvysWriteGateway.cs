@@ -383,6 +383,16 @@ public sealed class AlvysWriteGateway(
                 }
                 break;
 
+            case AlvysWriteOperationKind.CreateCustomerPayment:
+                Require(!string.IsNullOrWhiteSpace(request.LoadNumber), "LOAD_NUMBER_REQUIRED",
+                    "A load number is required to post a customer payment.");
+                Require(request.PaymentAmount is > 0m, "PAYMENT_AMOUNT_REQUIRED",
+                    "A payment amount greater than zero is required.");
+                Require(!string.IsNullOrWhiteSpace(request.ReferenceNumber), "REFERENCE_NUMBER_REQUIRED",
+                    "A ReferenceNumber is required as the idempotency key so a repeat post cannot " +
+                    "double-pay upstream.");
+                break;
+
             case AlvysWriteOperationKind.AddExtendedStop:
                 Require(!string.IsNullOrWhiteSpace(request.TripId), "TRIP_ID_REQUIRED",
                     "A parent trip id is required.");
@@ -580,6 +590,22 @@ public sealed class AlvysWriteGateway(
                 if (!string.IsNullOrWhiteSpace(request.PaymentType))
                     body["PaymentType"] = request.PaymentType.Trim();
                 target = "POST /invoices/carrier-invoice (multipart)";
+                break;
+
+            case AlvysWriteOperationKind.CreateCustomerPayment:
+                // Mirrors the Alvys Amount{Amount,Currency} money shape. ReferenceNumber is the
+                // upstream idempotency key. PaymentDate defaults to now only for the preview body when
+                // not supplied — never fabricated into a stored value elsewhere.
+                body["LoadNumber"] = request.LoadNumber;
+                body["Amount"] = new Dictionary<string, object?>
+                {
+                    ["Amount"] = request.PaymentAmount,
+                    ["Currency"] = string.IsNullOrWhiteSpace(request.PaymentCurrency)
+                        ? "USD" : request.PaymentCurrency.Trim().ToUpperInvariant(),
+                };
+                body["PaymentDate"] = request.PaymentDate;
+                body["ReferenceNumber"] = request.ReferenceNumber?.Trim();
+                target = "POST /invoices/customer-payments";
                 break;
 
             default:

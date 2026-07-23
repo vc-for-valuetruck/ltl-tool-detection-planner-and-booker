@@ -1,0 +1,373 @@
+<section class="is-studio" data-testid="invoice-studio">
+  <header class="is-head">
+    <h1>Invoice Studio</h1>
+    <p class="is-sub">
+      Assemble a customer invoice from a consolidation — parent load plus siblings, each row linked to
+      its BOL. Charges are editable, totals and combined driver-RPM compute live, and every Alvys write
+      is a gated preview. Read-only against Alvys; invoices persist app-side only.
+    </p>
+  </header>
+
+  <div class="is-toolbar">
+    <div class="is-field">
+      <label for="is-status">Status</label>
+      <select
+        id="is-status"
+        [ngModel]="statusFilter()"
+        (ngModelChange)="onStatusFilterChange($event)"
+        data-testid="is-status-filter"
+      >
+        <option value="">All</option>
+        <option value="Draft">Draft</option>
+        <option value="Final">Final</option>
+      </select>
+    </div>
+    <button type="button" class="is-btn is-btn-primary" (click)="startAssemble()" data-testid="is-assemble">
+      Assemble invoice
+    </button>
+    <button type="button" class="is-btn" (click)="refresh()" [disabled]="listLoading()">Refresh</button>
+  </div>
+
+  @if (listError(); as e) {
+    <div class="is-alert is-alert-bad" role="alert">{{ e }}</div>
+  }
+
+  @if (listLoading()) {
+    <div class="is-muted-block" aria-live="polite">Loading invoices…</div>
+  } @else if (invoices().length === 0) {
+    <div class="is-muted-block">No invoices yet. Assemble one from a consolidation to get started.</div>
+  } @else {
+    <table class="is-table" data-testid="is-list">
+      <thead>
+        <tr>
+          <th>Invoice #</th>
+          <th>Status</th>
+          <th>Customer</th>
+          <th>Parent load</th>
+          <th class="is-num">Loads</th>
+          <th class="is-num">Missing BOL</th>
+          <th class="is-num">Total</th>
+          <th class="is-num">RPM</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (inv of invoices(); track inv.id) {
+          <tr
+            class="is-row"
+            [class.is-row-active]="selected()?.id === inv.id"
+            (click)="select(inv.id)"
+            [attr.data-testid]="'is-row-' + inv.id"
+          >
+            <td class="is-strong">{{ inv.invoiceNumber }}</td>
+            <td><span class="is-status is-status-{{ inv.status | lowercase }}">{{ inv.status }}</span></td>
+            <td>{{ inv.customerName || '—' }}</td>
+            <td>{{ inv.parentLoadNumber || '—' }}</td>
+            <td class="is-num">{{ inv.loadCount }}</td>
+            <td class="is-num">
+              @if (inv.loadsMissingBolCount > 0) {
+                <span class="is-flag">{{ inv.loadsMissingBolCount }}</span>
+              } @else { — }
+            </td>
+            <td class="is-num">{{ inv.invoiceTotal | number: '1.2-2' }}</td>
+            <td class="is-num">
+              {{ inv.combinedRevenuePerMile !== null && inv.combinedRevenuePerMile !== undefined ? (inv.combinedRevenuePerMile | number: '1.2-2') : '—' }}
+            </td>
+            <td class="is-muted">{{ inv.updatedAt | date: 'short' }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  }
+
+  <!-- ===================== Assemble / edit form ===================== -->
+  @if (showForm()) {
+    <div class="is-panel" data-testid="is-form">
+      <div class="is-panel-head">
+        <h2>{{ editingId() ? 'Edit invoice' : 'Assemble invoice' }}</h2>
+        <button type="button" class="is-btn is-btn-ghost" (click)="cancelForm()">Cancel</button>
+      </div>
+
+      @if (formError(); as fe) {
+        <div class="is-alert is-alert-bad" role="alert">{{ fe }}</div>
+      }
+
+      <div class="is-form-grid">
+        @if (!editingId()) {
+          <div class="is-field">
+            <label for="is-invnum">Invoice # (optional)</label>
+            <input id="is-invnum" type="text" [ngModel]="formInvoiceNumber()" (ngModelChange)="formInvoiceNumber.set($event)" placeholder="auto if blank" />
+          </div>
+          <div class="is-field">
+            <label for="is-corridor">Corridor</label>
+            <input id="is-corridor" type="text" [ngModel]="formCorridor()" (ngModelChange)="formCorridor.set($event)" placeholder="e.g. LRD-DAL" />
+          </div>
+          <div class="is-field">
+            <label for="is-customer">Customer</label>
+            <input id="is-customer" type="text" [ngModel]="formCustomerName()" (ngModelChange)="formCustomerName.set($event)" />
+          </div>
+        }
+        <div class="is-field is-field-wide">
+          <label for="is-notes">Notes</label>
+          <input id="is-notes" type="text" [ngModel]="formNotes()" (ngModelChange)="formNotes.set($event)" />
+        </div>
+      </div>
+
+      @if (formMissingBol().length > 0) {
+        <div class="is-alert is-alert-warn" data-testid="is-missing-bol">
+          Missing BOL on: <strong>{{ formMissingBol().join(', ') }}</strong>. Siblings without a BOL on
+          file are flagged for billing before finalizing.
+        </div>
+      }
+
+      <!-- loads -->
+      @for (load of draftLoads(); track $index; let loadIdx = $index) {
+        <div class="is-load" [class.is-load-parent]="load.isParent" [attr.data-testid]="'is-load-' + loadIdx">
+          <div class="is-load-head">
+            <label class="is-parent-pick">
+              <input type="radio" name="is-parent" [checked]="load.isParent" (change)="setParent(loadIdx)" />
+              Parent
+            </label>
+            <div class="is-field">
+              <label>Load #</label>
+              <input type="text" [ngModel]="load.loadNumber" (ngModelChange)="load.loadNumber = $event" [ngModelOptions]="{ standalone: true }" />
+            </div>
+            <div class="is-field">
+              <label>Customer</label>
+              <input type="text" [ngModel]="load.customerName" (ngModelChange)="load.customerName = $event" [ngModelOptions]="{ standalone: true }" />
+            </div>
+            <div class="is-field is-field-sm">
+              <label>Status</label>
+              <input type="text" [ngModel]="load.status" (ngModelChange)="load.status = $event" [ngModelOptions]="{ standalone: true }" />
+            </div>
+            <div class="is-field is-field-sm">
+              <label>Loaded mi</label>
+              <input type="number" [ngModel]="load.loadedMiles" (ngModelChange)="load.loadedMiles = $event" [ngModelOptions]="{ standalone: true }" />
+            </div>
+            <div class="is-field is-field-sm">
+              <label>Driver rate</label>
+              <input type="number" [ngModel]="load.driverTripRate" (ngModelChange)="load.driverTripRate = $event" [ngModelOptions]="{ standalone: true }" />
+            </div>
+            <label class="is-bol-pick">
+              <input type="checkbox" [ngModel]="load.bolPresent" (ngModelChange)="load.bolPresent = $event" [ngModelOptions]="{ standalone: true }" />
+              BOL on file
+            </label>
+            @if (draftLoads().length > 1) {
+              <button type="button" class="is-btn is-btn-ghost is-remove" (click)="removeLoad(loadIdx)" title="Remove load">✕</button>
+            }
+          </div>
+
+          <div class="is-field is-field-wide">
+            <label>Alvys load URL</label>
+            <input type="url" [ngModel]="load.alvysLoadUrl" (ngModelChange)="load.alvysLoadUrl = $event" [ngModelOptions]="{ standalone: true }" placeholder="https://…" />
+          </div>
+
+          <!-- charges -->
+          <table class="is-charges">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Description</th>
+                <th class="is-num">Amount</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (charge of load.charges; track $index; let chargeIdx = $index) {
+                <tr>
+                  <td>
+                    <select [ngModel]="charge.type" (ngModelChange)="charge.type = $event" [ngModelOptions]="{ standalone: true }">
+                      @for (t of chargeTypes; track t) { <option [value]="t">{{ t }}</option> }
+                    </select>
+                  </td>
+                  <td>
+                    <input type="text" [ngModel]="charge.description" (ngModelChange)="charge.description = $event" [ngModelOptions]="{ standalone: true }" />
+                  </td>
+                  <td class="is-num">
+                    <input type="number" class="is-amount" [ngModel]="charge.amount" (ngModelChange)="charge.amount = $event" [ngModelOptions]="{ standalone: true }" />
+                  </td>
+                  <td>
+                    <button type="button" class="is-btn is-btn-ghost is-remove" (click)="removeCharge(loadIdx, chargeIdx)" title="Remove charge">✕</button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          <div class="is-load-foot">
+            <button type="button" class="is-btn is-btn-ghost" (click)="addCharge(loadIdx)">+ Add charge</button>
+            <span class="is-load-total">Line total: {{ loadTotal(load) | number: '1.2-2' }}</span>
+          </div>
+        </div>
+      }
+
+      <div class="is-form-foot">
+        <button type="button" class="is-btn" (click)="addLoad()">+ Add sibling load</button>
+        <div class="is-form-total" data-testid="is-form-total">
+          Invoice total: <strong>{{ formTotal() | number: '1.2-2' }}</strong>
+        </div>
+        <button type="button" class="is-btn is-btn-primary" (click)="save()" [disabled]="saving()" data-testid="is-save">
+          {{ saving() ? 'Saving…' : editingId() ? 'Save changes' : 'Create invoice' }}
+        </button>
+      </div>
+    </div>
+  }
+
+  <!-- ===================== Detail ===================== -->
+  @if (!showForm()) {
+    @if (detailError(); as de) {
+      <div class="is-alert is-alert-bad" role="alert">{{ de }}</div>
+    }
+    @if (detailLoading()) {
+      <div class="is-muted-block" aria-live="polite">Opening invoice…</div>
+    }
+    @if (selected(); as inv) {
+      <div class="is-panel" data-testid="is-detail">
+        <div class="is-panel-head">
+          <h2>
+            {{ inv.invoiceNumber }}
+            <span class="is-status is-status-{{ inv.status | lowercase }}">{{ inv.status }}</span>
+            <span class="is-writeback">Alvys: {{ inv.alvysWriteback }}</span>
+          </h2>
+          <div class="is-panel-actions">
+            @if (inv.status !== 'Final') {
+              <button type="button" class="is-btn" (click)="startEdit()">Edit</button>
+              <button type="button" class="is-btn" (click)="finalize()" data-testid="is-finalize">Finalize</button>
+            }
+            <button type="button" class="is-btn" (click)="downloadPdf()" data-testid="is-pdf">Download PDF</button>
+          </div>
+        </div>
+
+        <dl class="is-meta">
+          <div><dt>Customer</dt><dd>{{ inv.customerName || '—' }}</dd></div>
+          <div><dt>Corridor</dt><dd>{{ inv.corridorCode || '—' }}</dd></div>
+          <div><dt>Parent load</dt><dd>{{ inv.parentLoadNumber || '—' }}</dd></div>
+          <div><dt>Invoice total</dt><dd>{{ inv.invoiceTotal | number: '1.2-2' }}</dd></div>
+          <div>
+            <dt>Combined driver value</dt>
+            <dd>{{ inv.combinedDriverTripValue !== null && inv.combinedDriverTripValue !== undefined ? (inv.combinedDriverTripValue | number: '1.2-2') : '—' }}</dd>
+          </div>
+          <div>
+            <dt>Driver loaded miles</dt>
+            <dd>{{ inv.driverLoadedMiles !== null && inv.driverLoadedMiles !== undefined ? (inv.driverLoadedMiles | number: '1.0-0') : '—' }}</dd>
+          </div>
+          <div>
+            <dt>Combined RPM</dt>
+            <dd>{{ inv.combinedRevenuePerMile !== null && inv.combinedRevenuePerMile !== undefined ? (inv.combinedRevenuePerMile | number: '1.2-2') : '—' }}</dd>
+          </div>
+        </dl>
+
+        @if (inv.notes) { <p class="is-notes">{{ inv.notes }}</p> }
+
+        @if (inv.loadsMissingBol.length > 0) {
+          <div class="is-alert is-alert-warn">
+            Missing BOL on: <strong>{{ inv.loadsMissingBol.join(', ') }}</strong>.
+          </div>
+        }
+
+        <table class="is-table" data-testid="is-detail-loads">
+          <thead>
+            <tr>
+              <th>Load #</th>
+              <th>Role</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>BOL</th>
+              <th class="is-num">Line total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (load of inv.loads; track load.loadId) {
+              <tr>
+                <td class="is-strong">{{ load.loadNumber || '—' }}</td>
+                <td>{{ load.isParent ? 'Parent' : 'Sibling' }}</td>
+                <td>{{ load.customerName || '—' }}</td>
+                <td>{{ load.status || '—' }}</td>
+                <td>
+                  @if (load.bolPresent) { <span class="is-ok">On file</span> }
+                  @else { <span class="is-flag">Missing</span> }
+                </td>
+                <td class="is-num">{{ load.lineTotal | number: '1.2-2' }}</td>
+                <td>
+                  @if (load.alvysLoadUrl) {
+                    <a [href]="load.alvysLoadUrl" target="_blank" rel="noopener">Alvys ↗</a>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        <!-- edit history -->
+        @if (inv.editHistory.length > 0) {
+          <details class="is-history">
+            <summary>Edit history ({{ inv.editHistory.length }})</summary>
+            <ul>
+              @for (ev of inv.editHistory; track $index) {
+                <li>
+                  <span class="is-muted">{{ ev.at | date: 'short' }}</span>
+                  <strong>{{ ev.action }}</strong> by {{ ev.by }}
+                  @if (ev.detail) { <span class="is-muted">— {{ ev.detail }}</span> }
+                </li>
+              }
+            </ul>
+          </details>
+        }
+
+        <!-- Alvys write-payload preview (gated) -->
+        <div class="is-preview">
+          <div class="is-preview-head">
+            <h3>Alvys write preview</h3>
+            <div class="is-field is-field-sm">
+              <label for="is-etag">Parent load ETag</label>
+              <input id="is-etag" type="text" [ngModel]="parentEtag()" (ngModelChange)="parentEtag.set($event)" placeholder="optional" />
+            </div>
+            <button type="button" class="is-btn" (click)="loadPreviews()" [disabled]="previewLoading()" data-testid="is-preview-btn">
+              {{ previewLoading() ? 'Building…' : 'Preview payloads' }}
+            </button>
+          </div>
+          <p class="is-muted">
+            The exact contracted Alvys payloads for this invoice. Every operation is gated — nothing is
+            sent (writeback stays <code>NotPerformed</code>) until the production gate is enabled.
+          </p>
+
+          @if (previews(); as rows) {
+            @if (rows.length === 0) {
+              <div class="is-muted-block">No Alvys operations apply to this invoice.</div>
+            } @else {
+              @for (op of rows; track op.operationCode) {
+                <div class="is-op" [attr.data-testid]="'is-op-' + op.operationCode">
+                  <div class="is-op-head">
+                    <strong>{{ op.title }}</strong>
+                    <span class="is-disp is-disp-{{ dispositionTone(op.disposition) }}">{{ op.disposition }}</span>
+                    <span class="is-muted">{{ op.mode }}</span>
+                  </div>
+                  <p class="is-op-msg">{{ op.message }}</p>
+                  @if (op.blockers.length > 0) {
+                    <ul class="is-op-blockers">
+                      @for (b of op.blockers; track b) { <li>{{ b }}</li> }
+                    </ul>
+                  }
+                  @if (op.requiredToEnable) {
+                    <p class="is-muted">To enable: {{ op.requiredToEnable }}</p>
+                  }
+                  @if (op.payload; as p) {
+                    <div class="is-op-target">
+                      <code>{{ p.operationCode }}</code> → {{ p.targetDescription }}
+                      @if (p.requiresEtag) {
+                        <span class="is-etag-state" [class.is-ok]="p.etagSupplied" [class.is-flag]="!p.etagSupplied">
+                          {{ p.etagSupplied ? 'ETag supplied' : 'ETag required' }}
+                        </span>
+                      }
+                    </div>
+                    <pre class="is-payload">{{ formatBody(p.body) }}</pre>
+                  }
+                </div>
+              }
+            }
+          }
+        </div>
+      </div>
+    }
+  }
+</section>

@@ -51,6 +51,12 @@ export const routes: Routes = [
         data: { crumb: 'Exceptions' },
       },
       {
+        path: 'invoice-studio',
+        loadComponent: () =>
+          import('./features/ltl/ltl-invoice-studio').then((m) => m.LtlInvoiceStudio),
+        data: { crumb: 'Invoice Studio' },
+      },
+      {
         path: 'tenders',
         loadComponent: () => import('./features/ltl/ltl-tenders').then((m) => m.LtlTenders),
         data: { crumb: 'Tenders' },
