@@ -1,0 +1,127 @@
+name: Verify Alvys write scopes
+
+# Read-only diagnostic. Resolves Alvys OAuth client credentials (from GitHub
+# secrets when present, otherwise from the ltl-uat-api app settings via Azure
+# OIDC), fetches a client_credentials token, and prints ONLY the decoded scope
+# claim. Performs NO Alvys write. The token and credentials are masked.
+
+on:
+  workflow_dispatch:
+    inputs:
+      audience:
+        description: "OAuth audience"
+        required: false
+        default: "https://api.alvys.com/public/"
+      token_url:
+        description: "OAuth token endpoint"
+        required: false
+        default: "https://auth.alvys.com/oauth/token"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: verify-alvys-write-scopes
+  cancel-in-progress: false
+
+jobs:
+  verify-scopes:
+    name: Fetch token and print decoded scope claim only
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - name: Azure login (LTL UAT OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve credentials and decode scope claim
+        shell: bash
+        env:
+          SECRET_CLIENT_ID: ${{ secrets.ALVYS_CLIENT_ID }}
+          SECRET_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}
+          AUDIENCE: ${{ inputs.audience }}
+          TOKEN_URL: ${{ inputs.token_url }}
+        run: |
+          set -euo pipefail
+
+          ALVYS_CLIENT_ID="${SECRET_CLIENT_ID:-}"
+          ALVYS_CLIENT_SECRET="${SECRET_CLIENT_SECRET:-}"
+
+          if [ -z "$ALVYS_CLIENT_ID" ] || [ -z "$ALVYS_CLIENT_SECRET" ]; then
+            echo "GitHub secrets incomplete; reading Alvys credentials from ltl-uat-api app settings..."
+            SETTINGS=$(az webapp config appsettings list -g ltl-uat-rg -n ltl-uat-api -o json --only-show-errors)
+            resolve() {
+              printf '%s' "$SETTINGS" | python3 -c '
+import sys, json, re
+settings = {s["name"]: s["value"] for s in json.load(sys.stdin)}
+pattern = re.compile(sys.argv[1], re.IGNORECASE)
+for name, value in settings.items():
+    if pattern.search(name):
+        print(value)
+        break
+' "$1"
+            }
+            [ -z "$ALVYS_CLIENT_ID" ] && ALVYS_CLIENT_ID=$(resolve 'alvys.*client.?id$')
+            [ -z "$ALVYS_CLIENT_SECRET" ] && ALVYS_CLIENT_SECRET=$(resolve 'alvys.*client.?secret$')
+          fi
+
+          if [ -z "$ALVYS_CLIENT_ID" ] || [ -z "$ALVYS_CLIENT_SECRET" ]; then
+            echo "::error::could not resolve Alvys client credentials from secrets or app settings"
+            exit 1
+          fi
+          echo "::add-mask::$ALVYS_CLIENT_ID"
+          echo "::add-mask::$ALVYS_CLIENT_SECRET"
+
+          RESP=$(curl -sS --fail-with-body -X POST "$TOKEN_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{\"client_id\":\"${ALVYS_CLIENT_ID}\",\"client_secret\":\"${ALVYS_CLIENT_SECRET}\",\"audience\":\"${AUDIENCE}\",\"grant_type\":\"client_credentials\"}") \
+            || { echo "::error::token request failed"; exit 1; }
+
+          TOKEN=$(printf '%s' "$RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))')
+          if [ -z "$TOKEN" ]; then
+            echo "::error::no access_token in token response"
+            exit 1
+          fi
+          echo "::add-mask::$TOKEN"
+
+          SCOPES=$(printf '%s' "$TOKEN" | python3 - <<'PY'
+          import sys, json, base64
+
+          tok = sys.stdin.read().strip()
+          try:
+              payload_b64 = tok.split('.')[1]
+          except IndexError:
+              print("ERROR: token is not a JWT", file=sys.stderr)
+              sys.exit(1)
+
+          payload_b64 += '=' * (-len(payload_b64) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+
+          scope = claims.get('scope')
+          if scope is None:
+              scp = claims.get('scp')
+              scope = ' '.join(scp) if isinstance(scp, list) else (scp or '')
+
+          print(scope)
+          PY
+          )
+
+          echo "::notice::decoded scope claim printed below (token itself is masked and never shown)"
+          echo "----- Alvys token scopes -----"
+          printf '%s\n' "$SCOPES" | tr ' ' '\n' | sed '/^$/d' | sort
+
+          echo "----- Presence check for the write scopes the writeback lifecycle needs -----"
+          MISSING=0
+          for want in load:create load:update trip:create document; do
+            if printf '%s' "$SCOPES" | tr ' ' '\n' | grep -qix "$want"; then
+              echo "  present : $want"
+            else
+              echo "  MISSING : $want"
+              MISSING=1
+            fi
+          done
+          exit 0
