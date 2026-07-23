@@ -1,6 +1,7 @@
 using LtlTool.Api.Features.Integrations.Alvys.Webhooks;
 using LtlTool.Api.Features.Integrations.Alvys.Writeback;
 using LtlTool.Api.Features.Integrations.Yard.Webhooks;
+using LtlTool.Api.Features.Ltl.Agents;
 using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Bol;
 using LtlTool.Api.Features.Ltl.Consolidation;
@@ -56,6 +57,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Normalized scheduler projection derived from the Yard event inbox (see <see cref="EfYardEventStore"/>). Rebuilt deterministically per source record.</summary>
     public DbSet<YardScheduleInput> YardScheduleInputs => Set<YardScheduleInput>();
+
+    /// <summary>Durable background-agent liveness heartbeats (see <see cref="EfAgentHeartbeatStore"/>). Internal telemetry, one row per agent, never Alvys data.</summary>
+    public DbSet<AgentHeartbeat> AgentHeartbeats => Set<AgentHeartbeat>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -341,6 +345,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.HasIndex(e => e.HoldState);
             entity.HasIndex(e => e.YardLocationId);
             entity.HasIndex(e => e.UpdatedAt);
+        });
+
+        modelBuilder.Entity<AgentHeartbeat>(entity =>
+        {
+            entity.ToTable("AgentHeartbeats");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AgentName).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(16);
+            entity.Property(e => e.LastErrorType).HasMaxLength(128);
+
+            // One heartbeat row per agent (upsert target): the agent name is unique.
+            entity.HasIndex(e => e.AgentName).IsUnique();
         });
     }
 }

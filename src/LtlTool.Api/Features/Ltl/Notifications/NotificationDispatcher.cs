@@ -41,8 +41,12 @@ public sealed class NotificationDispatcher(
 
     /// <summary>
     /// Fires the trigger. Returns the stored event, or null when it was a duplicate (already fired).
+    /// When <paramref name="inAppOnly"/> is true, external channels (Teams/email) are skipped
+    /// entirely regardless of recipient config — used by the AR digest, which is an in-app-only
+    /// summary and must never trigger a Graph/email send.
     /// </summary>
-    public async Task<NotificationEvent?> DispatchAsync(NotificationTrigger trigger, CancellationToken ct)
+    public async Task<NotificationEvent?> DispatchAsync(
+        NotificationTrigger trigger, CancellationToken ct, bool inAppOnly = false)
     {
         var key = BuildIdempotencyKey(trigger);
         if (store.Contains(key))
@@ -64,7 +68,10 @@ public sealed class NotificationDispatcher(
         }
 
         // External channels only fan out to the recipients explicitly configured for them.
-        foreach (var kind in new[] { NotificationChannelKind.Teams, NotificationChannelKind.Email })
+        // Skipped wholesale for in-app-only triggers (e.g. the AR digest).
+        foreach (var kind in inAppOnly
+            ? Array.Empty<NotificationChannelKind>()
+            : new[] { NotificationChannelKind.Teams, NotificationChannelKind.Email })
         {
             var targeted = recipients.Where(r => r.Channel == kind).ToArray();
             if (targeted.Length == 0) continue;
@@ -148,6 +155,8 @@ public sealed class NotificationDispatcher(
             NotificationStage.BillingReady => ["billing team"],
             NotificationStage.Invoiced => ["billing", "account owner"],
             NotificationStage.ExceptionRaised => ["dispatcher", "ops lead"],
+            NotificationStage.OpportunityDetected => ["dispatcher", "load planner", "account owner"],
+            NotificationStage.ArDigest => ["billing", "account owner"],
             _ => new[] { "dispatcher" },
         };
 

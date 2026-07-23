@@ -8,6 +8,7 @@ using LtlTool.Api.Features.Integrations.Alvys;
 using LtlTool.Api.Features.Integrations.Yard;
 using LtlTool.Api.Features.Integrations.Yard.Webhooks;
 using LtlTool.Api.Features.Ltl;
+using LtlTool.Api.Features.Ltl.Agents;
 using LtlTool.Api.Options;
 using LtlTool.Api.Security;
 
@@ -99,6 +100,11 @@ builder.Services.AddAlvysIntegration(builder.Configuration);
 // LTL decision-support layer (normalization, billing readiness, match scoring, search,
 // internal assignment audit) on top of the read-only Alvys integration.
 builder.Services.AddLtlDecisionSupport(builder.Configuration);
+
+// Read-only background agents (opportunity + exception sweepers, AR digest) with a durable,
+// honest heartbeat. Flag-gated OFF by default under Ltl:Agents:*:Enabled; every agent reuses
+// existing Alvys reads and the internal notification store, and none writes to Alvys.
+builder.Services.AddLtlAgents(builder.Configuration);
 
 // AI narrative HTTP surface (Phase 2 · Sprint 1, #149/#150). Binds AI options and registers the
 // real NarrativeService (Azure OpenAI, DefaultAzureCredential, 10-min in-memory cache) when
