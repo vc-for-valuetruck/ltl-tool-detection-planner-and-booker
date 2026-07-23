@@ -20,6 +20,22 @@ export interface DirectorFill {
   readonly value: string;
 }
 
+/**
+ * A real record pulled from LIVE Alvys reads at the start of a run, used so acts drive live data
+ * instead of hardcoded demo ids/lanes (a fixed load number or lane can return an empty/404 against
+ * a live tenant). Any field may be null when the live read is unavailable, in which case a step
+ * falls back to its static demo value. This is a read of what the app already fetches — no new data
+ * source, no fabrication.
+ */
+export interface DemoContext {
+  readonly loadNumber: string | null;
+  readonly loadId: string | null;
+  readonly originCity: string | null;
+  readonly originState: string | null;
+  readonly destinationCity: string | null;
+  readonly destinationState: string | null;
+}
+
 export interface DirectorStep {
   /** Stable id (used in tests + as the overlay step key). */
   readonly id: string;
@@ -54,8 +70,18 @@ export interface DirectorStep {
   readonly actionSelector?: string;
   /** Value for a `fill` action. */
   readonly fillValue?: string;
+  /**
+   * Live-data override for a `fill` action's value. Given the run's {@link DemoContext}, returns the
+   * value to type (e.g. a real load number), or null to fall back to {@link fillValue}.
+   */
+  readonly resolveFillValue?: (ctx: DemoContext) => string | null;
   /** Fields for a `fillMany` action. */
   readonly fields?: readonly DirectorFill[];
+  /**
+   * Live-data override for a `fillMany` action's fields. Given the run's {@link DemoContext}, returns
+   * the fields to type (e.g. a real origin/destination lane), or null to fall back to {@link fields}.
+   */
+  readonly resolveFields?: (ctx: DemoContext) => readonly DirectorFill[] | null;
   /** Base dwell before auto-advance (ms), scaled by 1/speed. Defaults to {@link DIRECTOR_DWELL_MS}. */
   readonly dwellMs?: number;
   /** When true, a missing precondition skips this step (with an honest caption) instead of stalling. */

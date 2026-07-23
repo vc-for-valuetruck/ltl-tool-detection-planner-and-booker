@@ -1,7 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
+import { of } from 'rxjs';
+import { LtlService } from '../ltl.service';
 import { DemoDirectorLauncher } from './demo-director-launcher';
 import { DemoDirectorService } from './demo-director.service';
+
+/** Stubs the one read the director makes at start — an empty live-load result is enough here. */
+const ltlStub = {
+  search: () => of({ items: [], page: 0, pageSize: 0, total: 0, truncated: false }),
+};
 
 class RouterStub {
   url = '/ltl/demo/director';
@@ -20,6 +27,7 @@ function configure(queryParams: Record<string, string>) {
         provide: ActivatedRoute,
         useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } },
       },
+      { provide: LtlService, useValue: ltlStub },
     ],
   });
 }

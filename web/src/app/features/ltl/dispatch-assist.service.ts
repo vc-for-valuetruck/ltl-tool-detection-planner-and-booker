@@ -1,6 +1,6 @@
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, retry, timer } from 'rxjs';
 import { RUNTIME_CONFIG } from '../../runtime-config';
 import {
   DispatchAssembleRequest,
@@ -29,7 +29,12 @@ export class DispatchAssistService {
     if (query.destinationCity) params = params.set('destinationCity', query.destinationCity);
     if (query.destinationState) params = params.set('destinationState', query.destinationState);
     if (query.top && query.top > 0) params = params.set('top', String(query.top));
-    return this.http.get<DispatchRecommendationsResponse>(`${this.base}/recommendations`, { params });
+    return this.http
+      .get<DispatchRecommendationsResponse>(`${this.base}/recommendations`, { params })
+      // A cold Alvys read can hiccup transiently (gateway/5xx/network) while credentials are valid.
+      // Retry twice with a short backoff so a demo/dispatcher isn't shown a false "no data" on the
+      // first slow response. A 4xx (e.g. 404 unresolvable load) is deterministic — surface it now.
+      .pipe(retry({ count: 2, delay: retryTransient }));
   }
 
   /** Records the chosen driver+truck+trailer app-side and fires the notify step. Never writes Alvys. */
@@ -43,4 +48,15 @@ export class DispatchAssistService {
     if (loadId) params = params.set('loadId', loadId);
     return this.http.get<readonly DispatchAssembly[]>(`${this.base}/assemblies`, { params });
   }
+}
+
+/**
+ * Retry predicate for the recommendations read: back off ~400ms · attempt on a transient failure
+ * (network error or 5xx), but re-throw a 4xx immediately (a client error like an unresolvable load
+ * won't fix itself on retry, and retrying it only delays the honest message).
+ */
+function retryTransient(error: unknown, retryCount: number): Observable<number> {
+  const status = error instanceof HttpErrorResponse ? error.status : 0;
+  if (status >= 400 && status < 500) throw error;
+  return timer(retryCount * 400);
 }
