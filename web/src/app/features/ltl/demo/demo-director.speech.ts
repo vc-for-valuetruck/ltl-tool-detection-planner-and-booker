@@ -42,12 +42,14 @@ export class DemoDirectorNarrator {
     this.cancel();
     try {
       const utterance = new SpeechSynthesisUtterance(trimmed);
-      utterance.lang = 'en-US';
+      const voice = this.pickVoice();
+      if (voice) utterance.voice = voice;
+      // Match the accent to the chosen voice; default to en-AU so an engine that synthesises
+      // by language alone (no matching voice object) still speaks with an Australian accent.
+      utterance.lang = voice?.lang || 'en-AU';
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
-      const voice = this.pickVoice();
-      if (voice) utterance.voice = voice;
       utterance.onend = () => {
         if (this.active === utterance) this.isSpeakingFlag = false;
       };
@@ -76,11 +78,26 @@ export class DemoDirectorNarrator {
     }
   }
 
-  /** Prefer an en-US voice, then any English voice, else let the engine choose (null). */
+  /**
+   * Voice preference for the walkthrough narration:
+   *   1. an Australian (en-AU) female voice (e.g. Karen / Catherine / Hayley),
+   *   2. any en-AU voice,
+   *   3. a British (en-GB) female voice,
+   *   4. any en-US voice, then any English voice,
+   *   5. else let the engine choose (null).
+   * Female detection is a best-effort name heuristic — installed voice names vary by platform,
+   * so a miss simply falls through to the next tier rather than failing.
+   */
   private pickVoice(): SpeechSynthesisVoice | null {
     try {
       const voices = this.synth?.getVoices?.() ?? [];
+      const isAU = (v: SpeechSynthesisVoice) => /en[-_]AU/i.test(v.lang);
+      const isGB = (v: SpeechSynthesisVoice) => /en[-_]GB/i.test(v.lang);
+      const isFemale = (v: SpeechSynthesisVoice) => DemoDirectorNarrator.FEMALE_VOICE_NAME.test(v.name);
       return (
+        voices.find((v) => isAU(v) && isFemale(v)) ??
+        voices.find((v) => isAU(v)) ??
+        voices.find((v) => isGB(v) && isFemale(v)) ??
         voices.find((v) => /en[-_]US/i.test(v.lang)) ??
         voices.find((v) => /^en/i.test(v.lang)) ??
         null
@@ -89,6 +106,14 @@ export class DemoDirectorNarrator {
       return null;
     }
   }
+
+  /**
+   * Best-effort female-voice name heuristic. Leads with the common en-AU female voices
+   * (Karen / Catherine / Hayley), then broader female names and the explicit "female" marker
+   * that several engines put in the voice name.
+   */
+  private static readonly FEMALE_VOICE_NAME =
+    /karen|catherine|hayley|female|samantha|tessa|fiona|serena|moira|veena|zira|susan|linda|heather|nicky|kate|olivia|joanna|amy|emma|libby/i;
 }
 
 /** localStorage key for the persisted narration on/off preference. */
