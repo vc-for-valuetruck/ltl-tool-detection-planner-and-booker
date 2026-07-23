@@ -166,6 +166,26 @@ if (!app.Environment.IsEnvironment("Testing"))
     // full API access under a synthetic identity.
     var effectiveAccessPolicy = app.Services
         .GetRequiredService<Microsoft.Extensions.Options.IOptions<AccessPolicyOptions>>().Value;
+    // Effective email-domain allow-list, after comma-split/trim/lowercase/dedupe. Logged at
+    // startup so a 403-triage can confirm from logs alone what the running app actually admits
+    // (root-caused the UAT 403: a comma-separated value had landed in a single array element).
+    // Domain names are not PII; no token/claim/secret is logged here.
+    var accessLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AccessPolicy");
+    var normalizedDomains = effectiveAccessPolicy.NormalizedEmailDomains;
+    if (normalizedDomains.Length == 0)
+    {
+        accessLogger.LogInformation(
+            "AccessPolicy email-domain allow-list is EMPTY — admitting any authenticated user in the tenant. "
+            + "(Raw AllowedEmailDomains entries: {RawCount}.)",
+            (effectiveAccessPolicy.AllowedEmailDomains ?? []).Length);
+    }
+    else
+    {
+        accessLogger.LogInformation(
+            "AccessPolicy admitting {DomainCount} email domain(s): {Domains}.",
+            normalizedDomains.Length, string.Join(", ", normalizedDomains));
+    }
+
     if (effectiveAccessPolicy.Mode == AccessPolicyMode.Demo)
     {
         var demoLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AccessPolicy");

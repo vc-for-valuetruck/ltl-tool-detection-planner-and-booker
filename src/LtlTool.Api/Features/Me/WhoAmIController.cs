@@ -44,7 +44,7 @@ public sealed class WhoAmIController(IOptions<AccessPolicyOptions> policyOptions
             ? parts[1]
             : null;
 
-        var allowed = _policy.AllowedEmailDomains;
+        var allowed = _policy.NormalizedEmailDomains;
         var domainMatches = extractedDomain is not null &&
             allowed.Any(d => string.Equals(d, extractedDomain, StringComparison.OrdinalIgnoreCase));
         var wouldAllow = allowed.Length == 0 || domainMatches;
