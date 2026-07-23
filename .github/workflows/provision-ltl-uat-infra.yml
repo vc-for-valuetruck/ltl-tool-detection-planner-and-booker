@@ -37,6 +37,23 @@ on:
         required: false
         default: ''
         type: string
+      existing_api_client_id:
+        description: >-
+          Optional. Application (client) id of a pre-created API Entra app registration. When
+          supplied together with existing_spa_client_id, this workflow skips the `az ad app
+          create` steps entirely — so it can be run by a service principal that lacks the
+          tenant-level Entra "Application Developer" role. Have a directory admin create the two
+          app registrations manually (see docs/AZURE_UAT_DEPLOY.md) and paste the app ids here.
+        required: false
+        default: ''
+        type: string
+      existing_spa_client_id:
+        description: >-
+          Optional. Application (client) id of a pre-created SPA (web) Entra app registration.
+          Must be supplied together with existing_api_client_id — both go together.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -130,9 +147,28 @@ jobs:
       - name: Ensure Entra API app registration
         id: api_app
         shell: bash
+        env:
+          EXISTING_API_CLIENT_ID: ${{ github.event.inputs.existing_api_client_id }}
+          EXISTING_SPA_CLIENT_ID: ${{ github.event.inputs.existing_spa_client_id }}
         run: |
           set -euo pipefail
           NAME="${{ github.event.inputs.base_name }}-api"
+
+          # Bring-your-own path: caller passed in pre-created Entra client ids because the
+          # workflow's service principal lacks tenant-level Entra rights. We just record the
+          # value and defer creating a new client secret (that step also requires Entra rights
+          # — the caller will set AZURE_AD_CLIENT_SECRET directly instead).
+          if [ -n "$EXISTING_API_CLIENT_ID" ] && [ -n "$EXISTING_SPA_CLIENT_ID" ]; then
+            echo "::notice::Using pre-created API Entra app registration $EXISTING_API_CLIENT_ID (skipping az ad app create)."
+            echo "app_id=$EXISTING_API_CLIENT_ID" >> "$GITHUB_OUTPUT"
+            echo "api_secret_generated=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -n "$EXISTING_API_CLIENT_ID" ] || [ -n "$EXISTING_SPA_CLIENT_ID" ]; then
+            echo "::error::existing_api_client_id and existing_spa_client_id must be provided together (or both left blank)."
+            exit 1
+          fi
+
           APP_ID=$(az ad app list --display-name "$NAME" --query "[0].appId" -o tsv)
           if [ -z "$APP_ID" ]; then
             echo "Creating Entra app registration: $NAME"
@@ -219,9 +255,18 @@ jobs:
       - name: Ensure Entra SPA app registration
         id: spa_app
         shell: bash
+        env:
+          EXISTING_SPA_CLIENT_ID: ${{ github.event.inputs.existing_spa_client_id }}
         run: |
           set -euo pipefail
           NAME="${{ github.event.inputs.base_name }}-web"
+
+          if [ -n "$EXISTING_SPA_CLIENT_ID" ]; then
+            echo "::notice::Using pre-created SPA Entra app registration $EXISTING_SPA_CLIENT_ID (skipping az ad app create)."
+            echo "app_id=$EXISTING_SPA_CLIENT_ID" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           APP_ID=$(az ad app list --display-name "$NAME" --query "[0].appId" -o tsv)
           if [ -z "$APP_ID" ]; then
             echo "Creating Entra app registration: $NAME"
