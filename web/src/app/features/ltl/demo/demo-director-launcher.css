@@ -1,0 +1,119 @@
+.launcher {
+  display: flex;
+  justify-content: center;
+  padding: 48px 20px;
+}
+
+.launcher-card {
+  max-width: 620px;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 32px 34px;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
+}
+
+.launcher-badge {
+  display: inline-block;
+  background: linear-gradient(90deg, #0ea5e9, #6366f1);
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+.launcher-title {
+  margin: 16px 0 8px;
+  font-size: 26px;
+  color: #0f172a;
+}
+
+.launcher-sub {
+  margin: 0 0 20px;
+  color: #475569;
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+.launcher-acts {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.launcher-acts li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.launcher-act-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #0ea5e9;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.launcher-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.launcher-go {
+  background: #0ea5e9;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 22px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.launcher-go:hover {
+  background: #0284c7;
+}
+
+.launcher-ghost {
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.launcher-ghost:hover {
+  background: #f1f5f9;
+}
+
+.launcher-hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+}
+.launcher-hint code {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}

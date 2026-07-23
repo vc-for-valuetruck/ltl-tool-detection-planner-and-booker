@@ -1,0 +1,196 @@
+.director {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none; /* let the spotlighted UI stay clickable; only the bar captures clicks */
+  font-family:
+    'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Transparent window over the target; the huge spread box-shadow dims everything else. */
+.director-spot {
+  position: fixed;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 9999px rgba(15, 23, 42, 0.55),
+    0 0 0 2px rgba(56, 189, 248, 0.9),
+    0 0 22px 4px rgba(56, 189, 248, 0.55);
+  transition:
+    top 0.25s ease,
+    left 0.25s ease,
+    width 0.25s ease,
+    height 0.25s ease;
+  pointer-events: none;
+}
+
+.director-scrim {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+.director-scrim-soft {
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.director-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(880px, calc(100vw - 32px));
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 14px;
+  padding: 16px 20px;
+  box-shadow: 0 18px 48px rgba(2, 6, 23, 0.55);
+  pointer-events: auto; /* controls are interactive even though the wrapper isn't */
+}
+
+.director-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.director-badge {
+  background: linear-gradient(90deg, #0ea5e9, #6366f1);
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.director-act {
+  font-weight: 600;
+  color: #7dd3fc;
+}
+
+.director-counter {
+  margin-left: auto;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.director-flag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.director-flag-skip {
+  background: rgba(234, 179, 8, 0.2);
+  color: #facc15;
+}
+.director-flag-done {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.director-caption {
+  margin: 0 0 8px;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.director-posture {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #fcd34d;
+  background: rgba(234, 179, 8, 0.1);
+  border-left: 3px solid #f59e0b;
+  padding: 7px 10px;
+  border-radius: 6px;
+}
+.director-posture-tag {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  margin-right: 8px;
+  color: #f59e0b;
+}
+
+.director-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.director-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.director-btn {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.director-btn:hover:not(:disabled) {
+  background: #334155;
+}
+.director-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.director-btn-primary {
+  background: #0ea5e9;
+  border-color: #0ea5e9;
+  color: #04283b;
+}
+.director-btn-primary:hover:not(:disabled) {
+  background: #38bdf8;
+}
+.director-btn-exit {
+  margin-left: auto;
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+.director-btn-exit:hover {
+  background: #7f1d1d;
+  color: #fff;
+}
+
+.director-speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+.director-speed select {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 5px 6px;
+  font-size: 12px;
+}
+
+@media (max-width: 620px) {
+  .director-counter {
+    margin-left: 0;
+  }
+  .director-btn-exit {
+    margin-left: 0;
+  }
+}

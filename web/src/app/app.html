@@ -16,3 +16,7 @@
 <main class="shell-main" [class.shell-main-bare]="!showShell()">
   <router-outlet />
 </main>
+
+<!-- Global Demo Director overlay: rendered once here so it persists across every route change the
+     director drives. Invisible until DemoDirectorService.active(). -->
+<app-demo-director-overlay />
