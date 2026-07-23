@@ -1,4 +1,11 @@
-import { ApplicationConfig, EnvironmentProviders, Provider, provideZoneChangeDetection } from '@angular/core';
+import {
+  ApplicationConfig,
+  EnvironmentProviders,
+  Provider,
+  inject,
+  provideAppInitializer,
+  provideZoneChangeDetection,
+} from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors, withInterceptorsFromDi, HTTP_INTERCEPTORS } from '@angular/common/http';
 import { sessionExpiredInterceptor } from './core/auth/session-expired.interceptor';
@@ -77,6 +84,27 @@ export function buildAppConfig(rawConfig: RuntimeConfig): ApplicationConfig {
     MsalService,
     MsalGuard,
     MsalBroadcastService,
+    // MSAL v4 requires `initialize()` be awaited before any other API call — otherwise
+    // `loginRedirect()` from the branded /login screen throws
+    // `BrowserAuthError: uninitialized_public_client_application`. `provideAppInitializer`
+    // (Angular 20+) blocks bootstrap on the returned promise, so by the time the app
+    // renders and a user clicks Sign in, MSAL is ready. `handleRedirectPromise()` here
+    // also clears any pending redirect state (returning tokens from a completed sign-in)
+    // before route guards run — matches the FreightDNA `AuthFacadeService.initializeAsync`
+    // pattern.
+    provideAppInitializer(async () => {
+      const msal = inject(MsalService);
+      try {
+        await msal.instance.initialize();
+        await msal.instance.handleRedirectPromise();
+        const account = msal.instance.getAllAccounts()[0];
+        if (account) {
+          msal.instance.setActiveAccount(account);
+        }
+      } catch (err) {
+        console.error('[Auth] MSAL initialize failed', err);
+      }
+    }),
   ];
 
   // Only attach bearer tokens to API calls when auth is actually configured.
