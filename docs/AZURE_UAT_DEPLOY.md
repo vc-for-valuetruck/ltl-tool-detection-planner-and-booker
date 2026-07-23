@@ -259,7 +259,7 @@ Optional GitHub environment **variables** (all have safe defaults — set only t
 ```text
 AZURE_RESOURCE_GROUP=ltl-uat-rg
 LTL_UAT_BASE_NAME=ltl-uat
-ALLOWED_EMAIL_DOMAIN=valuetruck.com
+ALLOWED_EMAIL_DOMAIN=            # empty by default — admits any authenticated user in the tenant. Set to e.g. `valuetruck.com` to restrict.
 ALVYS_PROVIDER=Fallback
 ALVYS_API_BASE_URL=https://integrations.alvys.com
 ALVYS_API_VERSION=v1
@@ -267,6 +267,8 @@ ALVYS_WRITEBACK_MODE=Disabled
 LTL_DETECTION_ENABLED=false
 LTL_DEFAULT_TIMEZONE=America/Chicago
 ```
+
+> The API uses `AllowedEmailDomainHandler.cs`: an empty `AccessPolicy__AllowedEmailDomains__*` list admits any authenticated user in the tenant. Sign-in still requires a valid Entra token from the configured tenant, so this is not "open to the internet" — it just doesn't add a second email-domain check on top.
 
 Optional secrets (only if you have a live Alvys sandbox/tenant to point at — leave unset to run
 against the `Fallback` provider):
