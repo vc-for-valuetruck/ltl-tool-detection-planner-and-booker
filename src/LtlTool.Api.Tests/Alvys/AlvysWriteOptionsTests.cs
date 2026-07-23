@@ -123,4 +123,116 @@ public sealed class AlvysWriteOptionsTests
         Assert.True(armed.IsRecognisedSandboxEnvironment);
         Assert.True(armed.HasSandboxBaseUrl);
     }
+
+    // --------------------------------------------------------------------------------------------
+    // Production-execution gate (docs/ltl-tool.md item 3). These are guardrail tests: production must
+    // stay refused until an operator deliberately opens ALL four gates AND a human sign-off is
+    // confirmed. Treat any regression here as highest-severity.
+    // --------------------------------------------------------------------------------------------
+
+    private static AlvysWriteOptions FullyOpenProductionGate() => new()
+    {
+        AllowProduction = true,
+        SignOffConfirmed = true,
+        ProductionBaseUrl = "https://integrations.alvys.com",
+        ProductionApprovedOperations = ["upload-load-document"],
+    };
+
+    [Fact]
+    public void Production_gate_defaults_refuse_everything()
+    {
+        var options = new AlvysWriteOptions();
+
+        Assert.False(options.AllowProduction);
+        Assert.False(options.SignOffConfirmed);
+        Assert.Equal("", options.ProductionBaseUrl);
+        Assert.Empty(options.ProductionApprovedOperations);
+        Assert.False(options.HasProductionBaseUrl);
+        Assert.False(options.IsProductionExecutionAllowed("upload-load-document"));
+        Assert.True(options.ProductionEnablementIsCoherent); // AllowProduction=false ⇒ coherent
+    }
+
+    [Fact]
+    public void Fully_open_gate_authorises_only_the_named_operation()
+    {
+        var options = FullyOpenProductionGate();
+
+        Assert.True(options.IsProductionExecutionAllowed("upload-load-document"));
+        // An operation not on the allowlist is still refused even with every other gate open.
+        Assert.False(options.IsProductionExecutionAllowed("tender-accept"));
+        Assert.False(options.IsProductionExecutionAllowed(null));
+        Assert.Empty(options.ProductionBlockers("upload-load-document"));
+    }
+
+    [Fact]
+    public void Production_refused_when_AllowProduction_is_off()
+    {
+        var options = FullyOpenProductionGate();
+        options.AllowProduction = false;
+
+        Assert.False(options.IsProductionExecutionAllowed("upload-load-document"));
+        Assert.Contains(options.ProductionBlockers("upload-load-document"),
+            b => b.Contains("AllowProduction=false"));
+    }
+
+    [Fact]
+    public void Production_refused_when_signoff_not_confirmed()
+    {
+        var options = FullyOpenProductionGate();
+        options.SignOffConfirmed = false;
+
+        Assert.False(options.IsProductionExecutionAllowed("upload-load-document"));
+        Assert.False(options.ProductionEnablementIsCoherent); // AllowProduction on but sign-off off
+        Assert.Contains(options.ProductionBlockers("upload-load-document"),
+            b => b.Contains("SignOffConfirmed=false"));
+    }
+
+    [Fact]
+    public void Production_refused_when_operation_not_on_allowlist()
+    {
+        var options = FullyOpenProductionGate();
+        options.ProductionApprovedOperations = [];
+
+        Assert.False(options.IsProductionExecutionAllowed("upload-load-document"));
+        Assert.False(options.ProductionEnablementIsCoherent);
+        Assert.Contains(options.ProductionBlockers("upload-load-document"),
+            b => b.Contains("per-operation production allowlist"));
+    }
+
+    /// <summary>
+    /// The inverse of the sandbox rule: the production base URL is only valid when it IS the real
+    /// Alvys production host. A sandbox-looking or empty URL can never authorise a production write.
+    /// </summary>
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    [InlineData("https://sandbox.alvys.example", false)]
+    [InlineData("https://uat-integrations.internal", false)]
+    [InlineData("https://integrations.alvys.com", true)]
+    [InlineData("https://integrations.alvys.com/api/p/v1", true)]
+    [InlineData("https://INTEGRATIONS.ALVYS.COM", true)]
+    public void Production_base_url_must_be_the_real_production_host(string url, bool expected)
+    {
+        var options = new AlvysWriteOptions { ProductionBaseUrl = url };
+        Assert.Equal(expected, options.HasProductionBaseUrl);
+    }
+
+    [Fact]
+    public void Production_refused_when_base_url_is_not_the_production_host()
+    {
+        var options = FullyOpenProductionGate();
+        options.ProductionBaseUrl = "https://sandbox.alvys.example";
+
+        Assert.False(options.IsProductionExecutionAllowed("upload-load-document"));
+        Assert.False(options.ProductionEnablementIsCoherent);
+        Assert.Contains(options.ProductionBlockers("upload-load-document"),
+            b => b.Contains("real Alvys production host"));
+    }
+
+    [Fact]
+    public void Setting_AllowProduction_alone_is_incoherent()
+    {
+        var options = new AlvysWriteOptions { AllowProduction = true };
+        Assert.False(options.ProductionEnablementIsCoherent);
+    }
 }

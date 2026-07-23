@@ -22,9 +22,20 @@ public static class AlvysServiceCollectionExtensions
 
         // Sandbox-gated writeback boundary. Bound from "Alvys:Writeback"; defaults to Disabled so
         // a fresh clone / CI / production never writes back to Alvys.
+        //
+        // The .Validate/.ValidateOnStart guard enforces the production-enablement coherence rule
+        // (docs/ltl-tool.md item 3): AllowProduction cannot be set on its own. A half-configured
+        // production posture fails the app closed at startup instead of silently arming.
         services
             .AddOptions<AlvysWriteOptions>()
-            .Bind(configuration.GetSection(AlvysWriteOptions.SectionName));
+            .Bind(configuration.GetSection(AlvysWriteOptions.SectionName))
+            .Validate(
+                o => o.ProductionEnablementIsCoherent,
+                "Alvys:Writeback:AllowProduction=true requires SignOffConfirmed=true, a "
+                + "ProductionBaseUrl pointing at the real Alvys production host, and at least one "
+                + "entry in ProductionApprovedOperations. Refusing to start with a half-configured "
+                + "production enablement.")
+            .ValidateOnStart();
 
         // Internal-API (Phase-2 consolidation) write path. Bound from "Alvys:InternalApi"; defaults
         // to Enabled=false with every per-operation arm switch off, so a fresh clone / CI /
