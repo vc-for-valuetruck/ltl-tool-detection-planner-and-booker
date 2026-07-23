@@ -17,6 +17,8 @@
   <router-outlet />
 </main>
 
-<!-- Global Demo Director overlay: rendered once here so it persists across every route change the
-     director drives. Invisible until DemoDirectorService.active(). -->
-<app-demo-director-overlay />
+<!-- App-owned overlay outlet: rendered once here so a mounted overlay persists across every route
+     change. Isolated features register their overlay via OverlayOutletService (the Demo Director
+     mounts its spotlight overlay when its launcher route loads). Null → nothing renders. The app
+     root deliberately does NOT import any feature overlay directly — see OverlayOutletService. -->
+<ng-container *ngComponentOutlet="overlayOutlet.component()" />

@@ -8,8 +8,13 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test --watch=false --browsers=ChromeHeadless",
+    "test:app": "ng test --watch=false --browsers=ChromeHeadless --exclude=**/features/ltl/demo/**",
+    "test:demo": "ng test --watch=false --browsers=ChromeHeadless --include=**/features/ltl/demo/**/*.spec.ts",
+    "check:boundaries": "node scripts/check-demo-boundaries.mjs",
     "test:e2e": "playwright test --headed --project=chromium",
     "test:e2e:ci": "playwright test --project=chromium",
+    "test:e2e:app:ci": "playwright test --project=app",
+    "test:e2e:demo:ci": "playwright test --project=demo-director",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install --with-deps chromium"
   },

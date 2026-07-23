@@ -20,9 +20,10 @@ interface SpotRect {
 
 /**
  * The Demo Director's visual layer: a spotlight overlay + narrating caption bar with playback
- * controls. Mounted once at the app root ({@link App}) and only rendered while the director is
- * {@link DemoDirectorService.active}. It owns zero business logic — it renders the service's
- * signals and forwards control clicks back to the service.
+ * controls. Mounted onto the app-owned overlay outlet by the launcher (via `OverlayOutletService`),
+ * so it renders once at the app root and persists across route changes; only rendered while the
+ * director is {@link DemoDirectorService.active}. It owns zero business logic — it renders the
+ * service's signals and forwards control clicks back to the service.
  *
  * The spotlight is a transparent window over the currently-targeted element (found by the
  * service's {@link DemoDirectorService.spotlight} selector) using a giant box-shadow to dim the
