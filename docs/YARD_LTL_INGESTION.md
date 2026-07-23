@@ -26,7 +26,7 @@ Yard's tables, and no Alvys relay** — this endpoint neither reads nor writes A
 {
   "eventId": "3f2b…",             // UUID, required, non-empty
   "schemaVersion": 1,              // integer, must equal the supported version (1)
-  "eventType": "truck.arrived",    // string, classified to a freight category (see vocabulary)
+  "eventType": "yard.truck.arrived", // string, classified to a freight category (see vocabulary)
   "occurredAt": "2026-07-01T12:00:00Z", // UTC timestamp the event occurred in the yard
   "sourceSystem": "yard-control",  // must match the configured expected source
   "sourceRecordType": "appointment", // e.g. appointment / trailer
@@ -79,16 +79,23 @@ Optional keys read from `payload` (all others are retained verbatim in the inbox
 ## Canonical `eventType` vocabulary
 
 Classification normalizes the wire string first (lower-case; `_`, `-`, space, `/`, `:` collapse to
-`.`), so `Truck_Arrived`, `truck-arrived`, and `truck.arrived` all match. Unrecognized types
-**fail closed** to `Unknown` (audited, never projected).
+`.`), so `Truck_Arrived`, `truck-arrived`, and `truck.arrived` all match. The deployed Yard producer
+namespaces every wire type under a leading `yard.` segment (e.g. `yard.truck.arrived`,
+`yard.ltl-draft.created`); that one producer namespace is stripped before matching, so the prefixed
+and unprefixed forms are equivalent. Unrecognized types **fail closed** to `Unknown` (audited, never
+projected).
+
+Wire types the deployed `value-truck-yard` producer emits today
+(`value-truck-yard/api/src/VtYard.Api/Services/YardEvents.cs`) are marked **[producer]** in the
+table; every one of them must classify to a freight category, never `Unknown`.
 
 | Category | Canonical + tolerated wire types | Scheduler input |
 |---|---|---|
-| Arrival | `arrival`, `truck.arrived`, `truck.arrival`, `gate.arrival` | yes |
+| Arrival | `arrival`, `truck.arrived` **[producer: `yard.truck.arrived`]**, `truck.arrival`, `gate.arrival` | yes |
 | Departure | `departure`, `truck.departed`, `gate.departure` | yes |
 | CheckIn | `check.in`, `checkin`, `driver.check.in` | yes |
 | LoadStart | `load.start`, `loading.started` | yes |
-| LoadComplete | `load.complete`, `loading.completed`, `dock.complete` | yes (dock milestone) |
+| LoadComplete | `load.complete`, `loading.completed`, `dock.complete`, `inspection.completed` **[producer: `yard.inspection.completed`]** | yes (dock milestone) |
 | UnloadStart | `unload.start`, `unloading.started` | yes |
 | UnloadComplete | `unload.complete`, `unloading.completed` | yes |
 | TrailerAssignment | `trailer.assignment`, `trailer.assigned` | yes |
@@ -97,10 +104,10 @@ Classification normalizes the wire string first (lower-case; `_`, `-`, space, `/
 | FreightWeight | `freight.weight`, `freight.weight.captured` | yes |
 | Appointment | `appointment`, `appointment.scheduled`, `appointment.updated` | yes |
 | Exception | `exception`, `exception.raised` | yes (flags open exception) |
-| Hold | `hold`, `hold.placed`, `security.hold` | yes (hold state) |
-| Release | `release`, `load.released`, `security.release` | yes (security clearance) |
-| Cancellation | `cancellation`, `cancelled`, `canceled` | yes (terminal) |
-| Split | `split`, `load.split` | yes (relationship) |
+| Hold | `hold`, `hold.placed`, `gate.hold.placed` **[producer: `yard.gate.hold-placed`]**, `security.hold` | yes (hold state) |
+| Release | `release`, `load.released` **[producer: `yard.load.released`]**, `security.release` | yes (security clearance) |
+| Cancellation | `cancellation`, `cancelled`, `canceled`, `ltl.draft.rejected` **[producer: `yard.ltl-draft.rejected`]** | yes (terminal) |
+| Split | `split`, `load.split`, `ltl.draft.created` / `.updated` / `.submitted` / `.approved` **[producer: `yard.ltl-draft.*`]** | yes (relationship) |
 | Consolidation | `consolidation`, `load.consolidated` | yes (relationship) |
 | Administrative | `gate.log`, `note.added`, `visitor.scheduled`, `report.generated`, `user.login` | no (audited only) |
 | Unknown | anything unrecognized | no (audited only) |

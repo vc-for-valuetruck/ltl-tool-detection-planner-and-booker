@@ -96,6 +96,7 @@ public static class YardEventClassifier
 
             ["hold"] = YardEventCategory.Hold,
             ["hold.placed"] = YardEventCategory.Hold,
+            ["gate.hold.placed"] = YardEventCategory.Hold,
             ["security.hold"] = YardEventCategory.Hold,
 
             ["release"] = YardEventCategory.Release,
@@ -111,6 +112,19 @@ public static class YardEventClassifier
             ["consolidation"] = YardEventCategory.Consolidation,
             ["load.consolidated"] = YardEventCategory.Consolidation,
 
+            // Dock-inspection completion — the "dock done / load-ready" milestone that advances
+            // readiness. The deployed Yard producer emits this as yard.inspection.completed.
+            ["inspection.completed"] = YardEventCategory.LoadComplete,
+
+            // LTL freight-split draft lifecycle (producer emits yard.ltl-draft.*). Each draft state
+            // is the split relationship being proposed/refined, so it is a Split; a rejected draft
+            // is the producer's cancellation signal for that draft record.
+            ["ltl.draft.created"] = YardEventCategory.Split,
+            ["ltl.draft.updated"] = YardEventCategory.Split,
+            ["ltl.draft.submitted"] = YardEventCategory.Split,
+            ["ltl.draft.approved"] = YardEventCategory.Split,
+            ["ltl.draft.rejected"] = YardEventCategory.Cancellation,
+
             // Explicitly administrative wire types Yard is known to emit — mapped so they are
             // documented as excluded rather than merely falling through to Unknown.
             ["gate.log"] = YardEventCategory.Administrative,
@@ -125,9 +139,21 @@ public static class YardEventClassifier
     {
         if (string.IsNullOrWhiteSpace(eventType))
             return YardEventCategory.Unknown;
-        return Map.TryGetValue(Normalize(eventType), out var category)
-            ? category
-            : YardEventCategory.Unknown;
+
+        var normalized = Normalize(eventType);
+        if (Map.TryGetValue(normalized, out var category))
+            return category;
+
+        // The deployed Yard producer namespaces every wire type under a leading `yard.`
+        // segment (e.g. `yard.truck.arrived`, `yard.ltl-draft.created`). The canonical
+        // vocabulary keys are stored unprefixed, so strip that one producer namespace and
+        // retry before failing closed — otherwise every real Yard event lands in Unknown.
+        const string producerPrefix = "yard.";
+        if (normalized.StartsWith(producerPrefix, StringComparison.Ordinal) &&
+            Map.TryGetValue(normalized[producerPrefix.Length..], out category))
+            return category;
+
+        return YardEventCategory.Unknown;
     }
 
     /// <summary>
