@@ -1,0 +1,266 @@
+.dispatch-assist {
+  padding: 1.25rem 1.5rem;
+  max-width: 1200px;
+}
+
+.da-head h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.35rem;
+}
+
+.da-sub {
+  margin: 0 0 1rem;
+  color: var(--muted, #6b7280);
+  max-width: 70ch;
+  font-size: 0.9rem;
+}
+
+.da-query {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  background: var(--surface-2, #f7f8fa);
+  border: 1px solid var(--border, #e2e5ea);
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+
+.da-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.da-field label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted, #6b7280);
+}
+
+.da-field input {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border, #cbd0d8);
+  border-radius: 6px;
+  min-width: 9rem;
+  font-size: 0.9rem;
+}
+
+.da-field-sm input {
+  min-width: 4.5rem;
+  text-transform: uppercase;
+}
+
+.da-or {
+  padding-bottom: 0.55rem;
+  color: var(--muted, #9aa1ac);
+  font-size: 0.8rem;
+}
+
+.da-go,
+.da-assemble {
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  background: var(--accent, #1f5eff);
+  color: #fff;
+}
+
+.da-go:disabled,
+.da-assemble:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.da-alert {
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  margin: 0.5rem 0;
+  font-size: 0.88rem;
+}
+
+.da-alert-bad {
+  background: #fdecec;
+  color: #a12020;
+  border: 1px solid #f3c6c6;
+}
+
+.da-alert-warn {
+  background: #fff6e5;
+  color: #8a5a00;
+  border: 1px solid #f2d79a;
+}
+
+.da-loading,
+.da-empty {
+  padding: 0.9rem;
+  color: var(--muted, #6b7280);
+}
+
+.da-target {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.5rem 0.2rem;
+  flex-wrap: wrap;
+}
+
+.da-target-src {
+  font-size: 0.78rem;
+  color: var(--muted, #9aa1ac);
+}
+
+.da-load-pill {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #1f5eff;
+  font-size: 0.78rem;
+}
+
+.da-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.da-table th,
+.da-table td {
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--border, #eceef2);
+  vertical-align: top;
+}
+
+.da-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted, #6b7280);
+}
+
+.da-preferred {
+  background: #fbfdff;
+}
+
+.da-score-col {
+  width: 3.5rem;
+  text-align: center;
+}
+
+.da-score {
+  display: inline-block;
+  min-width: 2.1rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 6px;
+  font-weight: 700;
+  text-align: center;
+  color: #fff;
+}
+
+.da-score-excellent { background: #157347; }
+.da-score-good { background: #2f855a; }
+.da-score-possible { background: #b7791f; }
+.da-score-review { background: #9aa1ac; }
+
+.da-driver {
+  font-weight: 600;
+}
+
+.da-muted {
+  color: var(--muted, #9aa1ac);
+  font-size: 0.8rem;
+}
+
+.da-duty {
+  font-weight: 600;
+}
+
+.da-pref-tag {
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #1f5eff;
+  font-size: 0.7rem;
+}
+
+.da-why-col {
+  width: 34%;
+}
+
+.da-reasons {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.da-reasons li {
+  margin: 0.1rem 0;
+}
+
+.da-act-col {
+  width: 6.5rem;
+  text-align: right;
+}
+
+.da-foot {
+  font-size: 0.75rem;
+  color: var(--muted, #9aa1ac);
+  margin-top: 0.5rem;
+}
+
+.da-result {
+  margin-top: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border, #e2e5ea);
+  border-radius: 10px;
+  background: var(--surface-2, #f7f8fa);
+}
+
+.da-result-head {
+  margin-bottom: 0.5rem;
+}
+
+.da-writeback {
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #eceef2;
+  color: #4b5563;
+  font-size: 0.75rem;
+}
+
+.da-notify {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.4rem 0;
+}
+
+.da-notify-state {
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  border-radius: 6px;
+}
+
+.da-notify-ok { background: #e6f4ea; color: #157347; }
+.da-notify-bad { background: #fdecec; color: #a12020; }
+.da-notify-muted { background: #eceef2; color: #4b5563; }
+
+.da-recipients {
+  margin: 0.4rem 0 0;
+  padding-left: 1rem;
+}
+
+.da-role {
+  display: inline-block;
+  min-width: 5rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}

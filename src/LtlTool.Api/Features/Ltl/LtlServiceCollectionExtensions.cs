@@ -169,6 +169,19 @@ public static class LtlServiceCollectionExtensions
         // consolidation rule, never an Alvys write.
         services.AddScoped<DispatchPlannerService>();
 
+        // Dispatch Assist ("inform and assemble the right driver and truck"). Read-only ranking over
+        // the Alvys fleet + dispatch-preferences, an app-side assembly record, and a notify step that
+        // reuses the shared Graph mail transport. Comms are flag-gated (Ltl:Comms:Enabled, default OFF)
+        // and rerouted to Ltl:Comms:OverrideRecipient while under override. The Alvys write seam stays a
+        // no-op (NoOpDispatchAssemblyWriteback) — nothing is written back to Alvys from this slice.
+        services
+            .AddOptions<DispatchAssist.DispatchCommsOptions>()
+            .Bind(configuration.GetSection(DispatchAssist.DispatchCommsOptions.SectionName));
+        services.AddScoped<DispatchAssist.DispatchAssistService>();
+        services.AddScoped<DispatchAssist.DispatchAssemblyNotifier>();
+        services.AddSingleton<DispatchAssist.IDispatchAssemblyStore, DispatchAssist.InMemoryDispatchAssemblyStore>();
+        services.AddSingleton<DispatchAssist.IDispatchAssemblyWriteback, DispatchAssist.NoOpDispatchAssemblyWriteback>();
+
         // Internal, non-Alvys assignment audit. Durable EF Core store (AppDbContext) so decisions
         // survive restarts and back the filterable /ltl/assignments history page. Scoped to the
         // DbContext lifetime. Still records AlvysWriteback = NotPerformed — nothing pushed to Alvys.

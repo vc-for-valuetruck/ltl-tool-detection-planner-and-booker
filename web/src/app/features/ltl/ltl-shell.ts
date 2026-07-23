@@ -82,6 +82,7 @@ export class LtlShell implements OnInit, OnDestroy {
     {
       title: 'Operations',
       items: [
+        { label: 'Dispatch Assist', route: '/ltl/dispatch', monogram: 'P' },
         { label: 'Dock', route: '/ltl/dock', monogram: 'D' },
         { label: 'Consolidate', route: '/ltl/consolidate', monogram: 'C' },
         { label: 'Loads', route: '/ltl/loads', monogram: 'L' },

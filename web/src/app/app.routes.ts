@@ -84,6 +84,12 @@ export const routes: Routes = [
         data: { crumb: 'Dock' },
       },
       {
+        path: 'dispatch',
+        loadComponent: () =>
+          import('./features/ltl/dispatch-assist').then((m) => m.DispatchAssist),
+        data: { crumb: 'Dispatch Assist' },
+      },
+      {
         path: 'consolidate/plan/:planId',
         loadComponent: () => import('./features/ltl/plan-detail').then((m) => m.PlanDetail),
         data: { crumb: 'Plan detail' },
