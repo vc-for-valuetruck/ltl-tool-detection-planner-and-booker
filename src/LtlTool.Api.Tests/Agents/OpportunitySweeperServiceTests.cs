@@ -93,14 +93,14 @@ public sealed class OpportunitySweeperServiceTests
         services.AddSingleton<IAgentHeartbeatStore>(heartbeats);
         services.AddSingleton<INotificationChannel, InAppNotificationChannel>();
         services.AddSingleton<ICapacityCostSolver, NullCapacityCostSolver>();
-        services.AddSingleton(Options.Create(new CapacityCostSolverOptions()));
-        services.AddSingleton(Options.Create(new NotificationOptions()));
+        services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new CapacityCostSolverOptions()));
+        services.AddSingleton(Microsoft.Extensions.Options.Options.Create(new NotificationOptions()));
         services.AddScoped<ConsolidationOpportunityService>();
         services.AddScoped<NotificationDispatcher>();
 
         var provider = services.BuildServiceProvider();
 
-        var agentOptions = Options.Create(new AgentsOptions { OpportunitySweeper = opportunityOptions });
+        var agentOptions = Microsoft.Extensions.Options.Options.Create(new AgentsOptions { OpportunitySweeper = opportunityOptions });
         var service = new OpportunitySweeperService(
             provider,
             clock,
