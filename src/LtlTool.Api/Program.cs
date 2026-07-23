@@ -206,7 +206,8 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
         error = "Something went wrong on the server. The dispatcher can retry safely — nothing was written to Alvys.",
         traceId = context.TraceIdentifier,
     };
-    await System.Text.Json.JsonSerializer.SerializeAsync(context.Response.Body, problem, context.RequestAborted);
+    await System.Text.Json.JsonSerializer.SerializeAsync(
+        context.Response.Body, problem, options: (System.Text.Json.JsonSerializerOptions?)null, cancellationToken: context.RequestAborted);
 }));
 
 app.UseCors();
