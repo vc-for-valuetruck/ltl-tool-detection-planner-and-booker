@@ -173,52 +173,12 @@ az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --sett
   Ltl__Optimization__AgentCommands__Enabled="$LTL_AGENT_COMMANDS_ENABLED" \
   >/dev/null
 
-# Configure the AllowedEmailDomains list separately from the bulk app-settings call so we can
-# reliably tighten, loosen, or clear the restriction across redeploys. This block:
-#   1) Deletes any existing AccessPolicy__AllowedEmailDomains__* keys first — required so
-#      shrinking the list (e.g. from 3 domains to 1) doesn't leave stale __1/__2/__3 entries
-#      hanging around and quietly admitting people we removed.
-#   2) If the resolved ALLOWED_EMAIL_DOMAINS list is non-empty, splits it on commas, trims
-#      whitespace, lowercases, drops blanks/dupes, and re-writes as AccessPolicy__AllowedEmailDomains__0,
-#      __1, __2, … which the .NET config array binder rehydrates into AccessPolicyOptions.AllowedEmailDomains[].
-# `az webapp config appsettings set` with an empty value would leave the key present with value
-# '' — which the handler would treat as a one-element list containing '' (rejecting everyone),
-# hence the delete-first, set-only-when-non-empty pattern.
-
-EXISTING_KEYS=$(az webapp config appsettings list --name "$API_APP" --resource-group "$RG" \
-  --query "[?starts_with(name, 'AccessPolicy__AllowedEmailDomains__')].name" -o tsv 2>/dev/null || true)
-if [ -n "$EXISTING_KEYS" ]; then
-  # shellcheck disable=SC2086
-  az webapp config appsettings delete --name "$API_APP" --resource-group "$RG" \
-    --setting-names $EXISTING_KEYS >/dev/null
-fi
-
-if [ -n "$ALLOWED_EMAIL_DOMAINS" ]; then
-  # Split on commas, trim, lowercase, drop blanks, de-dupe (preserve first-seen order).
-  NORMALIZED_DOMAINS=$(printf '%s' "$ALLOWED_EMAIL_DOMAINS" | tr ',' '\n' \
-    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
-    | tr '[:upper:]' '[:lower:]' \
-    | awk 'NF && !seen[$0]++')
-
-  if [ -n "$NORMALIZED_DOMAINS" ]; then
-    echo "Restricting $API_APP access to email domain(s):"
-    printf '  • %s\n' $NORMALIZED_DOMAINS
-    SETTINGS_ARGS=""
-    INDEX=0
-    while IFS= read -r DOMAIN; do
-      SETTINGS_ARGS="$SETTINGS_ARGS AccessPolicy__AllowedEmailDomains__${INDEX}=${DOMAIN}"
-      INDEX=$((INDEX + 1))
-    done <<EOF
-$NORMALIZED_DOMAINS
-EOF
-    # shellcheck disable=SC2086
-    az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --settings $SETTINGS_ARGS >/dev/null
-  else
-    echo "ALLOWED_EMAIL_DOMAINS resolved to an empty list after normalization — admitting any authenticated user in the tenant."
-  fi
-else
-  echo "ALLOWED_EMAIL_DOMAINS is empty — admitting any authenticated user in the tenant."
-fi
+# Apply AccessPolicy__AllowedEmailDomains__* via the shared helper so the deploy path and the
+# standalone "Set UAT AllowedEmailDomains" workflow (.github/workflows/set-uat-allowed-email-domains.yml)
+# use one source of truth for splitting, de-duping, and delete-first semantics.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RG="$RG" API_APP="$API_APP" DOMAINS="$ALLOWED_EMAIL_DOMAINS" \
+  bash "$SCRIPT_DIR/set-allowed-email-domains.sh"
 
 echo "Configuring $WEB_APP application settings..."
 az webapp config appsettings set --name "$WEB_APP" --resource-group "$RG" --settings \

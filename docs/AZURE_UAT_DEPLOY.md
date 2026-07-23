@@ -271,6 +271,14 @@ LTL_DEFAULT_TIMEZONE=America/Chicago
 
 > The API uses `AllowedEmailDomainHandler.cs`: an empty `AccessPolicy__AllowedEmailDomains__*` list admits any authenticated user in the tenant. Sign-in still requires a valid Entra token from the configured tenant, so this is not "open to the internet" — it just doesn't add a second email-domain check on top.
 
+### Changing AllowedEmailDomains without a full redeploy
+
+Use the **Set UAT AllowedEmailDomains** workflow to tighten / loosen / clear the restriction on the running API in ~30 seconds, without waiting for a full deploy:
+
+> Actions → **Set UAT AllowedEmailDomains** → Run workflow → fill `domains` (e.g. `valuetruck.com,valuelogistics.com`, or leave blank to admit any authenticated user), leave `update_env_variable` checked so the next full deploy applies the same value.
+
+Behind the scenes it calls `scripts/set-allowed-email-domains.sh` (same helper the deploy path uses — one source of truth for splitting, de-duping, and delete-first semantics), restarts the API, and probes `/api/health`.
+
 Optional secrets (only if you have a live Alvys sandbox/tenant to point at — leave unset to run
 against the `Fallback` provider):
 
