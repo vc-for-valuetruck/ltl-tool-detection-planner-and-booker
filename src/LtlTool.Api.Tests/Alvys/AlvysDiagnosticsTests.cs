@@ -23,7 +23,7 @@ public sealed class AlvysDiagnosticsTests
         => new(
             new StubHttpClientFactory(handler, new Uri("https://alvys.test/")),
             token ?? new StubTokenProvider(),
-            Options.Create(options),
+            Microsoft.Extensions.Options.Options.Create(options),
             new CapturingLogger<AlvysDiagnostics>());
 
     private static AlvysOptions LiveWithCreds(string version = "v1") => new()
