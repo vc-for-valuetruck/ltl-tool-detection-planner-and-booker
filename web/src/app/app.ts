@@ -1,5 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { MsalService } from '@azure/msal-angular';
 import { filter } from 'rxjs';
 import { RUNTIME_CONFIG, isAuthConfigured } from './runtime-config';
 
@@ -13,6 +14,7 @@ import { RUNTIME_CONFIG, isAuthConfigured } from './runtime-config';
 export class App {
   private readonly config = inject(RUNTIME_CONFIG);
   private readonly router = inject(Router);
+  private readonly msal = inject(MsalService);
 
   protected readonly authConfigured = isAuthConfigured(this.config);
   /** Demo-mode identity shown top-right when Entra auth isn't configured for this environment. */
@@ -27,9 +29,41 @@ export class App {
 
   protected readonly showShell = computed(() => !this.currentUrl().startsWith('/login'));
 
+  /**
+   * Signed-in user label shown in the shell header when Entra auth is configured. Refreshes on
+   * every navigation so a returning-from-Entra redirect picks the account up as soon as MSAL's
+   * `handleRedirectPromise` (see `provideAppInitializer` in app.config.ts) sets it active. Falls
+   * back to the demo email only when auth is not configured — the "Demo mode" pill in the
+   * template makes that state legible so nobody mistakes it for a real signed-in identity.
+   */
+  private readonly accountLabel = signal<string>(this.resolveAccountLabel());
+
+  protected readonly displayEmail = computed(() =>
+    this.authConfigured ? this.accountLabel() : this.demoEmail,
+  );
+
   constructor() {
     this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
-      .subscribe((e) => this.currentUrl.set(e.urlAfterRedirects));
+      .subscribe((e) => {
+        this.currentUrl.set(e.urlAfterRedirects);
+        // MSAL's active account is populated by `provideAppInitializer` on cold load, and again
+        // by `handleRedirectPromise` after a sign-in redirect completes — both of which run
+        // before the first NavigationEnd, so re-reading here catches the post-sign-in identity
+        // without a page reload.
+        this.accountLabel.set(this.resolveAccountLabel());
+      });
+  }
+
+  private resolveAccountLabel(): string {
+    if (!this.authConfigured) {
+      return this.demoEmail;
+    }
+    const account = this.msal.instance.getActiveAccount() ?? this.msal.instance.getAllAccounts()[0];
+    if (!account) {
+      return 'Signing in…';
+    }
+    // Prefer the username (usually preferred_username / UPN); fall back to display name, then id.
+    return account.username || account.name || account.localAccountId;
   }
 }
