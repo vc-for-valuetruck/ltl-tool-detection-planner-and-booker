@@ -279,7 +279,7 @@ public sealed class ConsolidationAutoExecuteServiceTests
 
         return new ConsolidationPlanService(
             loads,
-            Options.Create(options),
+            Microsoft.Extensions.Options.Options.Create(options),
             LtlTestFactory.Options(),
             LtlTestFactory.Clock(),
             LtlTestFactory.StaticPolicyReader(options),
@@ -383,6 +383,7 @@ public sealed class ConsolidationAutoExecuteServiceTests
             OwnerId = "owner@vt.com",
             OperationCode = code,
             PayloadHash = "hash",
+            CorrelationId = $"corr-{Guid.NewGuid():n}",
         };
     }
 

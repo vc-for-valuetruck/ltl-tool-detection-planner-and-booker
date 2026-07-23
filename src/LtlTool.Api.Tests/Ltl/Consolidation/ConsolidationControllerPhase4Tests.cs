@@ -26,6 +26,7 @@ public sealed class ConsolidationControllerPhase4Tests
             laneTemplates: laneTemplates,
             options: Microsoft.Extensions.Options.Options.Create(new ConsolidationOptions()),
             corridorHealth: null!,
+            autoExecute: null!,
             logger: NullLogger<ConsolidationController>.Instance);
 
         var identity = new ClaimsIdentity(
