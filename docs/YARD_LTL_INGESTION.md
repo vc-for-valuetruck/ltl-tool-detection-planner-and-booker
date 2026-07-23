@@ -68,6 +68,12 @@ the unique-key insert is also treated as a duplicate.
 - **Last-writer-wins overlay.** A later event never clears a value an earlier event already set.
 - **Administrative / Unknown events** are persisted to the immutable inbox for audit/replay but never
   create or advance a projection.
+- **Self-healing reclassification.** Every rebuild re-runs the current classifier against each stored
+  event's verbatim `eventType`. An event a prior build shelved as `Unknown` (its classifier didn't yet
+  know the wire type) is healed to its real category — so a `.../replay` after a classifier fix projects
+  a record that had been mis-shelved as non-scheduler-input. The heal only ever moves an event **out of**
+  `Unknown`; a recognized category is never downgraded or re-interpreted, and the verbatim wire fields
+  (`eventType`, `payload`, ids, timestamps) are never rewritten, so replay stays idempotent.
 
 ### Payload fields consumed
 
