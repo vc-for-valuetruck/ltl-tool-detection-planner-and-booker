@@ -31,6 +31,35 @@ public sealed class YardEventClassifierTests
     public void Classifies_canonical_and_tolerated_variants(string eventType, YardEventCategory expected) =>
         Assert.Equal(expected, YardEventClassifier.Classify(eventType));
 
+    // The deployed Yard producer (value-truck-yard YardEventTypes) namespaces every wire type
+    // under `yard.` and uses its own terminal segments. These are the exact strings that arrive
+    // on /api/v1/yard-events in production; each must classify to a freight category, never Unknown.
+    [Theory]
+    [InlineData("yard.truck.arrived", YardEventCategory.Arrival)]
+    [InlineData("yard.load.released", YardEventCategory.Release)]
+    [InlineData("yard.gate.hold-placed", YardEventCategory.Hold)]
+    [InlineData("yard.inspection.completed", YardEventCategory.LoadComplete)]
+    [InlineData("yard.ltl-draft.created", YardEventCategory.Split)]
+    [InlineData("yard.ltl-draft.updated", YardEventCategory.Split)]
+    [InlineData("yard.ltl-draft.submitted", YardEventCategory.Split)]
+    [InlineData("yard.ltl-draft.approved", YardEventCategory.Split)]
+    [InlineData("yard.ltl-draft.rejected", YardEventCategory.Cancellation)]
+    public void Classifies_actual_yard_producer_catalog(string eventType, YardEventCategory expected)
+    {
+        var category = YardEventClassifier.Classify(eventType);
+        Assert.Equal(expected, category);
+        Assert.True(YardEventClassifier.AffectsSchedulerInput(category));
+    }
+
+    // Stripping the producer namespace must not smuggle administrative types into the scheduler.
+    [Fact]
+    public void Prefixed_administrative_type_stays_administrative()
+    {
+        var category = YardEventClassifier.Classify("yard.gate.log");
+        Assert.Equal(YardEventCategory.Administrative, category);
+        Assert.False(YardEventClassifier.AffectsSchedulerInput(category));
+    }
+
     [Theory]
     [InlineData("gate.log")]
     [InlineData("note.added")]
