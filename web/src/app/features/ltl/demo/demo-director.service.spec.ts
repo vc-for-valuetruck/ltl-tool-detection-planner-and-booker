@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { DemoDirectorService } from './demo-director.service';
 import { DEMO_DIRECTOR_SCRIPT } from './demo-director.script';
+import { DIRECTOR_NARRATION_KEY } from './demo-director.speech';
 
 /** Minimal Router stub: records navigations and exposes a settable url. */
 class RouterStub {
@@ -19,6 +20,12 @@ describe('DemoDirectorService', () => {
   let router: RouterStub;
 
   beforeEach(() => {
+    // Reset the persisted narration pref so the "defaults on" expectation is order-independent.
+    try {
+      localStorage.removeItem(DIRECTOR_NARRATION_KEY);
+    } catch {
+      /* storage may be unavailable in some CI sandboxes */
+    }
     router = new RouterStub();
     TestBed.configureTestingModule({
       providers: [DemoDirectorService, { provide: Router, useValue: router }],
@@ -107,5 +114,33 @@ describe('DemoDirectorService', () => {
     expect(service.counter()).toBe(`1 / ${service.total()}`);
     service.next();
     expect(service.counter()).toBe(`2 / ${service.total()}`);
+  });
+
+  it('narration defaults on and toggling flips + persists the preference', () => {
+    expect(service.narrationEnabled()).toBeTrue();
+    service.toggleNarration();
+    expect(service.narrationEnabled()).toBeFalse();
+    try {
+      expect(localStorage.getItem(DIRECTOR_NARRATION_KEY)).toBe('false');
+    } catch {
+      /* storage unavailable — the signal state is still authoritative */
+    }
+    service.toggleNarration();
+    expect(service.narrationEnabled()).toBeTrue();
+  });
+
+  it('a persisted "false" preference is honoured on construction', () => {
+    try {
+      localStorage.setItem(DIRECTOR_NARRATION_KEY, 'false');
+    } catch {
+      return; // storage unavailable — nothing to assert
+    }
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [DemoDirectorService, { provide: Router, useValue: new RouterStub() }],
+    });
+    const fresh = TestBed.inject(DemoDirectorService);
+    expect(fresh.narrationEnabled()).toBeFalse();
+    fresh.exit();
   });
 });

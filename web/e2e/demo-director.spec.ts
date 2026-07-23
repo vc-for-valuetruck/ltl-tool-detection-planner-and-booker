@@ -100,6 +100,64 @@ test.describe('LTL Demo Director', () => {
     }
   });
 
+  test('narration toggle works and the animated pointer tracks the spotlight', async ({ page }) => {
+    // Stub the Web Speech API so narration is deterministic and CI needs no audio device: the
+    // director's narrator will detect `speechSynthesis`, "speak" (immediately ending), and never
+    // stall the run. We only assert the UI wiring, not that audio actually played.
+    await page.addInitScript(() => {
+      const stub = {
+        speak: (u: { onend?: () => void }) => u.onend && setTimeout(() => u.onend!(), 0),
+        cancel: () => {},
+        getVoices: () => [],
+      };
+      Object.defineProperty(window, 'speechSynthesis', { value: stub, configurable: true });
+      // Minimal utterance shim so `new SpeechSynthesisUtterance(text)` works headless.
+      (window as unknown as { SpeechSynthesisUtterance: unknown }).SpeechSynthesisUtterance =
+        class {
+          text: string;
+          lang = '';
+          rate = 1;
+          pitch = 1;
+          volume = 1;
+          voice: unknown = null;
+          onend: (() => void) | null = null;
+          onerror: (() => void) | null = null;
+          constructor(text: string) {
+            this.text = text;
+          }
+        };
+    });
+
+    await page.goto('/ltl/demo/director');
+    await page.getByTestId('director-start-paused').click();
+    await expect(page.getByTestId('director-overlay')).toBeVisible({ timeout: 20_000 });
+
+    // Narration toggle is present (speech stubbed available), defaults ON, and flips on click.
+    const toggle = page.getByTestId('director-narration-toggle');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveText(/Voice: On/i);
+    await toggle.click();
+    await expect(toggle).toHaveText(/Voice: Off/i);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await toggle.click();
+    await expect(toggle).toHaveText(/Voice: On/i);
+
+    // The animated pointer appears once the director spotlights a live target. Walk a few steps
+    // (live-data resilient) and assert it shows up on at least one; screenshot the cue.
+    let pointerSeen = false;
+    for (let i = 0; i < DEMO_STEP_BUDGET; i++) {
+      if (await page.getByTestId('director-pointer').isVisible().catch(() => false)) {
+        pointerSeen = true;
+        break;
+      }
+      const act = (await page.getByTestId('director-act').textContent())?.trim() ?? '';
+      if (act.includes('Lifecycle')) break;
+      await next(page);
+    }
+    expect(pointerSeen, 'animated pointer never appeared over any spotlighted step').toBeTruthy();
+    await page.screenshot({ path: 'test-results/director/06-pointer-voice.png', fullPage: true });
+  });
+
   test('exit tears the overlay down', async ({ page }) => {
     await page.goto('/ltl/demo/director?autostart=1&speed=3');
     await expect(page.getByTestId('director-overlay')).toBeVisible({ timeout: 20_000 });
