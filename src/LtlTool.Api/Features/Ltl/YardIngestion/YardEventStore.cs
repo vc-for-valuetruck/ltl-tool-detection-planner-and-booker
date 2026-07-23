@@ -146,7 +146,19 @@ public sealed class EfYardEventStore(AppDbContext db) : IYardEventStore
     private void RebuildProjection(
         string sourceSystem, string sourceRecordType, string sourceRecordId, YardEventRecord? includeUnsaved)
     {
-        var events = RecordEvents(sourceSystem, sourceRecordType, sourceRecordId).ToList();
+        // Tracked (not AsNoTracking) so a stale classification can be healed in place: an event a
+        // prior build shelved as Unknown — because its classifier didn't yet know the wire type — is
+        // re-run through the current classifier below, and the corrected derived columns are saved in
+        // the same unit of work as the projection upsert.
+        var events = db.YardEvents
+            .Where(e => e.SourceSystem == sourceSystem
+                        && e.SourceRecordType == sourceRecordType
+                        && e.SourceRecordId == sourceRecordId)
+            .ToList();
+
+        foreach (var e in events)
+            HealStaleClassification(e);
+
         if (includeUnsaved is not null)
             events.Add(includeUnsaved);
 
@@ -168,6 +180,27 @@ public sealed class EfYardEventStore(AppDbContext db) : IYardEventStore
         {
             CopyInto(current, built);
         }
+    }
+
+    /// <summary>
+    /// Re-runs the current classifier against an event's verbatim wire <see cref="YardEventRecord.EventType"/>
+    /// when — and only when — it is currently shelved as <see cref="YardEventCategory.Unknown"/>. This
+    /// self-heals events persisted by an older build whose classifier didn't recognize a producer wire
+    /// type yet (the Yard→LTL divergence). It never rewrites the immutable wire fields, and only ever
+    /// moves an event out of Unknown — a recognized category is left untouched, so a rebuild can never
+    /// downgrade or re-interpret an already-classified event. Deterministic, so replay stays idempotent.
+    /// </summary>
+    private static void HealStaleClassification(YardEventRecord evt)
+    {
+        if (!string.Equals(evt.Category, YardEventCategory.Unknown.ToString(), StringComparison.Ordinal))
+            return;
+
+        var reclassified = YardEventClassifier.Classify(evt.EventType);
+        if (reclassified == YardEventCategory.Unknown)
+            return;
+
+        evt.Category = reclassified.ToString();
+        evt.AffectsSchedulerInput = YardEventClassifier.AffectsSchedulerInput(reclassified);
     }
 
     private YardScheduleInput? LoadProjection(YardEventRecord evt) =>

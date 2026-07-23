@@ -192,6 +192,29 @@ public sealed class YardEventProjectionBuilderTests
         Assert.Equal(ScheduleReadiness.Provisional.ToString(), built.Readiness);
     }
 
+    // The producer's LTL-draft lifecycle (yard.ltl-draft.created/updated/submitted/approved) all
+    // classify to Split, so the fold refines the split relationship over the draft's life; a later
+    // yard.ltl-draft.rejected classifies to Cancellation, which is terminal and blocks readiness.
+    [Fact]
+    public void Ltl_draft_lifecycle_refines_split_then_rejection_cancels()
+    {
+        var built = YardEventProjectionBuilder.Build(
+        [
+            Event(YardEventCategory.Split, "{\"parentSourceRecordId\":\"P-1\",\"relatedRecordIds\":[\"C-1\"]}",
+                minutesAfterT0: 10, sequence: 1),
+            Event(YardEventCategory.Split, "{\"parentSourceRecordId\":\"P-1\",\"relatedRecordIds\":[\"C-1\",\"C-2\"]}",
+                minutesAfterT0: 20, sequence: 2),
+            Event(YardEventCategory.Cancellation, minutesAfterT0: 30, sequence: 3),
+        ]);
+
+        Assert.Equal(YardEventCategory.Split.ToString(), built!.RelationshipType);
+        Assert.Equal("P-1", built.ParentSourceRecordId);
+        Assert.Contains("C-2", built.RelatedRecordIdsJson);
+        Assert.Equal(ScheduleHoldState.Cancelled.ToString(), built.HoldState);
+        Assert.Equal(ScheduleReadiness.Provisional.ToString(), built.Readiness);
+        Assert.Equal(3, built.EventCount);
+    }
+
     [Fact]
     public void Exception_event_flags_open_exception()
     {

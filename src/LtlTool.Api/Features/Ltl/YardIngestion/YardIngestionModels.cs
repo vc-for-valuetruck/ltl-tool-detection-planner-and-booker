@@ -34,9 +34,12 @@ public enum ScheduleHoldState
 }
 
 /// <summary>
-/// One immutable, append-only inbox record: the verbatim record of a single accepted Yard event.
-/// Never mutated after insert. The primary key is a stable dedupe key derived from the envelope
-/// <c>eventId</c> plus the source record identity, which makes at-least-once delivery idempotent.
+/// One append-only inbox record: the verbatim record of a single accepted Yard event. The wire fields
+/// (<see cref="EventType"/>, <see cref="PayloadJson"/>, ids, timestamps) are never mutated after insert;
+/// only the derived classification (<see cref="Category"/>/<see cref="AffectsSchedulerInput"/>) may be
+/// healed on a later rebuild when an older build had shelved the type as Unknown. The primary key is a
+/// stable dedupe key derived from the envelope <c>eventId</c> plus the source record identity, which
+/// makes at-least-once delivery idempotent.
 ///
 /// <para>Internal LTL data — Alvys is never read or written here. Yard remains a peer system; this
 /// row is a copy of what Yard pushed over the HTTP contract, not a cross-database read.</para>
@@ -58,7 +61,11 @@ public sealed class YardEventRecord
     /// <summary>The raw event type string Yard sent (preserved verbatim for audit).</summary>
     public required string EventType { get; set; }
 
-    /// <summary>The classified freight meaning, stored as a readable string.</summary>
+    /// <summary>
+    /// The classified freight meaning, stored as a readable string. Derived from <see cref="EventType"/>
+    /// at ingest; a rebuild/replay re-runs the classifier and heals a stale <c>Unknown</c> (an event an
+    /// older build didn't recognize) to its real category. The verbatim wire fields are never rewritten.
+    /// </summary>
     public required string Category { get; set; }
 
     /// <summary>True when this event fed a scheduler projection; false for administrative/unknown.</summary>

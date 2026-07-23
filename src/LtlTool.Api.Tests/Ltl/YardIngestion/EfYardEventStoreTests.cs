@@ -178,6 +178,101 @@ public sealed class EfYardEventStoreTests : IDisposable
         Assert.Equal(2, new EfYardEventStore(readCtx).ListEvents(100).Count);
     }
 
+    // Regression for the live Yard→LTL E2E defect: an older build classified the real producer wire
+    // type `yard.truck.arrived` as Unknown, so the row persisted with AffectsSchedulerInput=false and no
+    // projection. After the classifier fix, replaying that already-stored row must heal the derived
+    // classification off the verbatim EventType and produce the scheduler projection — without a new
+    // event and without touching the wire fields.
+    [Fact]
+    public void ReplayRecord_heals_a_legacy_unknown_arrival_and_projects_it()
+    {
+        const string sys = "value-truck-yard";
+        const string type = "truck-visit";
+        const string recordId = "e2e00000-0000-4000-8000-000000000001";
+
+        using (var seedCtx = NewContext())
+        {
+            // Simulate the row the old build persisted: verbatim wire type, but shelved as Unknown.
+            seedCtx.YardEvents.Add(new YardEventRecord
+            {
+                DedupeKey = $"e2e00000-0000-4000-8000-000000000002:{sys}:{type}:{recordId}",
+                EventId = "e2e00000-0000-4000-8000-000000000002",
+                SchemaVersion = 1,
+                EventType = "yard.truck.arrived",
+                Category = YardEventCategory.Unknown.ToString(),
+                AffectsSchedulerInput = false,
+                OccurredAt = T0,
+                ReceivedAt = T0,
+                SourceSystem = sys,
+                SourceRecordType = type,
+                SourceRecordId = recordId,
+                YardLocationId = "LAREDO-01",
+                PayloadJson = "{\"truckId\":\"T-42\"}",
+                Sequence = 1,
+            });
+            seedCtx.SaveChanges();
+        }
+
+        using (var replayCtx = NewContext())
+        {
+            var projection = new EfYardEventStore(replayCtx).ReplayRecord(sys, type, recordId);
+
+            Assert.NotNull(projection);
+            Assert.True(projection!.SchedulerEligible);
+            Assert.Equal(ScheduleReadiness.Provisional.ToString(), projection.Readiness);
+            Assert.Equal("T-42", projection.TruckId);
+        }
+
+        using var readCtx = NewContext();
+        var store = new EfYardEventStore(readCtx);
+        // Projection now exists...
+        Assert.NotNull(store.GetProjection(sys, type, recordId));
+        // ...and the stored event's derived classification healed to Arrival (wire type untouched).
+        var healed = store.ListEventsForRecord(sys, type, recordId).Single();
+        Assert.Equal("yard.truck.arrived", healed.EventType);
+        Assert.Equal(YardEventCategory.Arrival.ToString(), healed.Category);
+        Assert.True(healed.AffectsSchedulerInput);
+        // No new inbox event was created by the replay.
+        Assert.Single(store.ListEvents(100));
+    }
+
+    // A truly unmodeled type stays Unknown and non-projecting after replay — the heal only ever moves
+    // an event out of Unknown, never fabricates a category.
+    [Fact]
+    public void ReplayRecord_leaves_a_genuinely_unknown_type_unprojected()
+    {
+        const string sys = "value-truck-yard";
+        const string type = "truck-visit";
+        const string recordId = "R-unknown";
+
+        using (var seedCtx = NewContext())
+        {
+            seedCtx.YardEvents.Add(new YardEventRecord
+            {
+                DedupeKey = $"u1:{sys}:{type}:{recordId}",
+                EventId = "u1",
+                SchemaVersion = 1,
+                EventType = "yard.some.type.we.do.not.model",
+                Category = YardEventCategory.Unknown.ToString(),
+                AffectsSchedulerInput = false,
+                OccurredAt = T0,
+                ReceivedAt = T0,
+                SourceSystem = sys,
+                SourceRecordType = type,
+                SourceRecordId = recordId,
+                YardLocationId = "LAREDO-01",
+                PayloadJson = "{}",
+                Sequence = 1,
+            });
+            seedCtx.SaveChanges();
+        }
+
+        using var replayCtx = NewContext();
+        var store = new EfYardEventStore(replayCtx);
+        Assert.Null(store.ReplayRecord(sys, type, recordId));
+        Assert.Equal(YardEventCategory.Unknown.ToString(), store.ListEventsForRecord(sys, type, recordId).Single().Category);
+    }
+
     [Fact]
     public void ListEventsForRecord_orders_oldest_occurrence_first()
     {
