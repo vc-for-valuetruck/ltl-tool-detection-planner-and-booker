@@ -51,6 +51,31 @@ function msalInstanceFactory(config: RuntimeConfig): IPublicClientApplication {
   });
 }
 
+/**
+ * Removes MSAL's session-storage interaction-status lock. MSAL sets this while a
+ * loginRedirect()/acquireTokenRedirect() is in flight and clears it once that flow
+ * completes; if a redirect is interrupted (tab closed mid-flow, a second tab racing the
+ * same sign-in, `handleRedirectPromise()` itself throwing before it finishes) the lock can
+ * be left stuck as "in progress" — which makes every future sign-in attempt fail
+ * immediately with `BrowserAuthError('interaction_in_progress')` until a human clears
+ * browser storage by hand. Matched by key substring (rather than one exact literal)
+ * deliberately, since msal-browser has varied the precise key name across versions.
+ * Exported for unit testing; safe to call even when nothing is stuck.
+ */
+export function clearStuckInteractionLock(): void {
+  try {
+    for (let i = window.sessionStorage.length - 1; i >= 0; i--) {
+      const key = window.sessionStorage.key(i);
+      if (key && key.includes('interaction.status')) {
+        window.sessionStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // sessionStorage can throw in locked-down/private-browsing contexts; this cleanup is
+    // best-effort and must never break app bootstrap.
+  }
+}
+
 function guardConfigFactory(config: RuntimeConfig): MsalGuardConfiguration {
   const scopes = config.apiScope ? [config.apiScope] : [];
   return {
@@ -92,8 +117,20 @@ export function buildAppConfig(rawConfig: RuntimeConfig): ApplicationConfig {
     // also clears any pending redirect state (returning tokens from a completed sign-in)
     // before route guards run — matches the FreightDNA `AuthFacadeService.initializeAsync`
     // pattern.
+    //
+    // A redirect interrupted mid-flight (tab closed while returning from Microsoft, a
+    // second tab racing the same sign-in, `handleRedirectPromise()` itself throwing before
+    // it finishes consuming the response) can leave MSAL's session-storage interaction
+    // lock stuck as "in progress". Once stuck, every future loginRedirect() throws
+    // BrowserAuthError('interaction_in_progress') immediately — sign-in never actually
+    // navigates, the user lands back on /login, and clicking "Sign in" again repeats the
+    // same failure forever ("constant auth reload" until browser storage is cleared by
+    // hand). Clear the lock defensively before initializing, and again if init/redirect
+    // handling itself fails, so a fresh sign-in attempt is never permanently blocked by a
+    // stale lock from an earlier interrupted one.
     provideAppInitializer(async () => {
       const msal = inject(MsalService);
+      clearStuckInteractionLock();
       try {
         await msal.instance.initialize();
         await msal.instance.handleRedirectPromise();
@@ -103,6 +140,7 @@ export function buildAppConfig(rawConfig: RuntimeConfig): ApplicationConfig {
         }
       } catch (err) {
         console.error('[Auth] MSAL initialize failed', err);
+        clearStuckInteractionLock();
       }
     }),
   ];
