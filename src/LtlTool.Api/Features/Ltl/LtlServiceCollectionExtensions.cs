@@ -7,6 +7,7 @@ using LtlTool.Api.Features.Ltl.Consolidation;
 using LtlTool.Api.Features.Ltl.DispatchPlanner;
 using LtlTool.Api.Features.Ltl.Notifications;
 using LtlTool.Api.Features.Ltl.Optimization;
+using LtlTool.Api.Features.Ltl.Reporting;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using LtlTool.Api.Features.Ltl.Signals;
 using LtlTool.Api.Features.Ltl.YardArtifacts;
@@ -57,6 +58,15 @@ public static class LtlServiceCollectionExtensions
         // API today, so the Null provider is registered and ranking falls back to the deterministic
         // factor scorer, clearly labeled. Swap for a real provider when the contract is confirmed.
         services.AddSingleton<IAlvysDriverPredictionProvider, NullAlvysDriverPredictionProvider>();
+
+        // Normalized accessorial/assignment history (Freight DNA recommendation): durable, EF-backed
+        // side-channel tables populated as a byproduct of the load/trip data LtlLoadService.GetDetailAsync
+        // already fetches — no new Alvys calls. Read-only reporting/export surface; nothing here feeds
+        // back into any live decision path, and Alvys stays the sole source of truth for current state.
+        services.AddScoped<IAccessorialStore, EfAccessorialStore>();
+        services.AddScoped<ILoadAssignmentStore, EfLoadAssignmentStore>();
+        services.AddScoped<OperationalHistoryCaptureService>();
+
         services.AddScoped<LtlLoadService>();
         services.AddScoped<CapacitySnapshotService>();
         services.AddScoped<Arrivals.LaredoArrivalsService>();

@@ -1,4 +1,5 @@
 using LtlTool.Api.Features.Integrations.Alvys;
+using LtlTool.Api.Features.Ltl.Reporting;
 using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Features.Ltl;
@@ -20,7 +21,8 @@ public sealed class LtlLoadService(
     AccessorialSignalAnalyzer accessorialAnalyzer, IAccessorialSignalExtractor accessorialExtractor,
     IOptions<LtlOptions> options, TimeProvider clock,
     TenderEnrichmentService? tenderEnrichment = null,
-    AccessorialReviewAnalyzer? accessorialReviewAnalyzer = null)
+    AccessorialReviewAnalyzer? accessorialReviewAnalyzer = null,
+    OperationalHistoryCaptureService? operationalHistory = null)
 {
     private readonly LtlOptions _options = options.Value;
 
@@ -78,6 +80,12 @@ public sealed class LtlLoadService(
         var accessorialReview = _accessorialReviewAnalyzer.Analyze(
             load, tripEcon.Stops ?? [], accessorialContext);
         var ediEnrichment = tenderEnrichment is null ? null : await tenderEnrichment.EnrichOneAsync(load, ct);
+
+        // Side-channel capture into the accessorial/assignment history tables — a byproduct of the
+        // load + trip data already fetched above for this detail view, not a new Alvys call. Never
+        // affects the response: capture is best-effort and swallows its own failures.
+        operationalHistory?.Capture(load, tripEcon.Trip);
+
         return normalizer.Normalize(
             load, documents, invoices, context, visibilityExceptions,
             carrierPayable: tripEcon.CarrierPayable,
@@ -102,7 +110,8 @@ public sealed class LtlLoadService(
         decimal? DriverTripRate,
         decimal? LoadedMiles,
         decimal? CarrierAccessorialsTotal = null,
-        IReadOnlyList<AlvysTripStop>? Stops = null);
+        IReadOnlyList<AlvysTripStop>? Stops = null,
+        AlvysTrip? Trip = null);
 
     /// <summary>
     /// Fetches the inbound + outbound visibility history for a single load (read-only) and turns it
@@ -174,7 +183,8 @@ public sealed class LtlLoadService(
             DriverTripRate: trip.TripValue?.Amount,
             LoadedMiles: trip.LoadedMileage?.Value,
             CarrierAccessorialsTotal: trip.Carrier?.Accessorials?.Amount,
-            Stops: trip.Stops);
+            Stops: trip.Stops,
+            Trip: trip);
     }
 
     /// <summary>

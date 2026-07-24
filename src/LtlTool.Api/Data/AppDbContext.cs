@@ -6,6 +6,7 @@ using LtlTool.Api.Features.Ltl.Assignment;
 using LtlTool.Api.Features.Ltl.Billing;
 using LtlTool.Api.Features.Ltl.Bol;
 using LtlTool.Api.Features.Ltl.Consolidation;
+using LtlTool.Api.Features.Ltl.Reporting;
 using LtlTool.Api.Features.Ltl.SavedViews;
 using LtlTool.Api.Features.Ltl.Signals;
 using LtlTool.Api.Features.Ltl.YardArtifacts;
@@ -64,6 +65,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     /// <summary>Durable assembled customer invoices (see <see cref="EfInvoiceStore"/>). App-side only; never written back to Alvys.</summary>
     public DbSet<InvoiceRecord> Invoices => Set<InvoiceRecord>();
+
+    /// <summary>Normalized accessorial history, captured as a byproduct of existing load/trip reads (see <see cref="EfAccessorialStore"/>). Reporting side-channel only; Alvys stays authoritative for live values.</summary>
+    public DbSet<AccessorialRecord> AccessorialRecords => Set<AccessorialRecord>();
+
+    /// <summary>Normalized assignment history, captured as a byproduct of existing trip reads (see <see cref="EfLoadAssignmentStore"/>). Reporting side-channel only; Alvys stays authoritative for the current assignment.</summary>
+    public DbSet<LoadAssignmentRecord> LoadAssignments => Set<LoadAssignmentRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -388,6 +395,52 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // List view filters by parent load and status, ordered newest-updated first.
             entity.HasIndex(e => e.ParentLoadId);
             entity.HasIndex(e => e.Status);
+        });
+
+        modelBuilder.Entity<AccessorialRecord>(entity =>
+        {
+            entity.ToTable("AccessorialRecords");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(64);
+            entity.Property(e => e.LoadId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.LoadNumber).HasMaxLength(64);
+            entity.Property(e => e.TripId).HasMaxLength(128);
+            // Enum stored as a readable string so the table is legible in the database.
+            entity.Property(e => e.EntityType).HasConversion<string>().HasMaxLength(16);
+            entity.Property(e => e.Type).HasMaxLength(128);
+            entity.Property(e => e.Description).HasMaxLength(1024);
+
+            // Content-key lookup (Capture's dedupe path) and reporting listing by load.
+            entity.HasIndex(e => new { e.LoadId, e.TripId, e.EntityType, e.Type, e.Description, e.Amount });
+            entity.HasIndex(e => e.LastSeenAt);
+        });
+
+        modelBuilder.Entity<LoadAssignmentRecord>(entity =>
+        {
+            entity.ToTable("LoadAssignments");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(64);
+            entity.Property(e => e.LoadId).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.LoadNumber).HasMaxLength(64);
+            entity.Property(e => e.TripId).HasMaxLength(128);
+            entity.Property(e => e.Status).HasMaxLength(32);
+            entity.Property(e => e.CarrierId).HasMaxLength(128);
+            entity.Property(e => e.CarrierName).HasMaxLength(256);
+            entity.Property(e => e.Driver1Id).HasMaxLength(128);
+            entity.Property(e => e.Driver1Name).HasMaxLength(256);
+            entity.Property(e => e.Driver2Id).HasMaxLength(128);
+            entity.Property(e => e.Driver2Name).HasMaxLength(256);
+            entity.Property(e => e.OwnerOperatorId).HasMaxLength(128);
+            entity.Property(e => e.OwnerOperatorName).HasMaxLength(256);
+            entity.Property(e => e.TruckId).HasMaxLength(128);
+            entity.Property(e => e.TrailerId).HasMaxLength(128);
+            entity.Property(e => e.DispatcherId).HasMaxLength(128);
+            entity.Property(e => e.DispatchedBy).HasMaxLength(256);
+
+            // History-by-load (CaptureIfChanged's "latest for this load" lookup + per-load listing)
+            // and the recent-across-loads reporting/export listing.
+            entity.HasIndex(e => new { e.LoadId, e.CapturedAt });
+            entity.HasIndex(e => e.CapturedAt);
         });
     }
 }
