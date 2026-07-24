@@ -55,6 +55,14 @@ LTL_TRAILER_FIT_ENABLED=${LTL_TRAILER_FIT_ENABLED:-true}
 LTL_SOLVER_ENABLED=${LTL_SOLVER_ENABLED:-true}
 LTL_AGENT_COMMANDS_ENABLED=${LTL_AGENT_COMMANDS_ENABLED:-true}
 
+# Read-only notification sweepers (PR #207). Both read only Alvys/internal data already exposed
+# elsewhere (the billing worklist, the Yard-webhook opportunity store) and only ever write an
+# in-app notification record — never Alvys. Defaulted ON for UAT so the new automation is
+# actually exercised there; override to false via the matching GitHub environment var to disable
+# without a code change.
+LTL_BILLING_READY_SWEEPER_ENABLED=${LTL_BILLING_READY_SWEEPER_ENABLED:-true}
+LTL_YARD_OPPORTUNITY_SWEEPER_ENABLED=${LTL_YARD_OPPORTUNITY_SWEEPER_ENABLED:-true}
+
 required=(SQL_PASSWORD AZURE_AD_TENANT_ID AZURE_AD_API_CLIENT_ID AZURE_AD_CLIENT_SECRET AZURE_AD_WEB_CLIENT_ID)
 for name in "${required[@]}"; do
   if [ -z "${!name:-}" ]; then
@@ -171,6 +179,8 @@ az webapp config appsettings set --name "$API_APP" --resource-group "$RG" --sett
   Ltl__Optimization__TrailerFit__BaseUrl="$TRAILER_FIT_URL" \
   Ltl__Optimization__Solver__Enabled="$LTL_SOLVER_ENABLED" \
   Ltl__Optimization__AgentCommands__Enabled="$LTL_AGENT_COMMANDS_ENABLED" \
+  Ltl__Agents__BillingReadySweeper__Enabled="$LTL_BILLING_READY_SWEEPER_ENABLED" \
+  Ltl__Agents__YardOpportunitySweeper__Enabled="$LTL_YARD_OPPORTUNITY_SWEEPER_ENABLED" \
   >/dev/null
 
 # Apply AccessPolicy__AllowedEmailDomains__* via the shared helper so the deploy path and the
