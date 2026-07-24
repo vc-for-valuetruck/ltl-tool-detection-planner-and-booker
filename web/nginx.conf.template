@@ -15,6 +15,17 @@ server {
         proxy_set_header X-Forwarded-Host $host;
         proxy_ssl_server_name on;
         proxy_ssl_name $proxy_host;
+
+        # nginx's 60s default is too short for multi-step endpoints that make several
+        # sequential live-Alvys reads in one request (e.g. Dock combine building a full
+        # parent+siblings plan) — this UAT tenant has documented multi-second cold-read
+        # latency per call, so a handful of siblings can add up past 60s. The browser then
+        # sees a hard connection reset, which surfaces client-side as an opaque "HTTP
+        # failure ... 0 Unknown Error" instead of a real HTTP status. Give the upstream
+        # room to actually finish instead of getting cut off mid-request.
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 180s;
+        proxy_read_timeout 180s;
     }
 
     location / {
