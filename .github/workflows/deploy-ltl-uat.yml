@@ -149,6 +149,10 @@ jobs:
           LTL_TRAILER_FIT_ENABLED: ${{ vars.LTL_TRAILER_FIT_ENABLED || 'true' }}
           LTL_SOLVER_ENABLED: ${{ vars.LTL_SOLVER_ENABLED || 'true' }}
           LTL_AGENT_COMMANDS_ENABLED: ${{ vars.LTL_AGENT_COMMANDS_ENABLED || 'true' }}
+          # Read-only notification sweepers (PR #207) — default ON for UAT. Override to 'false' via
+          # the matching GitHub environment var to disable without a code change.
+          LTL_BILLING_READY_SWEEPER_ENABLED: ${{ vars.LTL_BILLING_READY_SWEEPER_ENABLED || 'true' }}
+          LTL_YARD_OPPORTUNITY_SWEEPER_ENABLED: ${{ vars.LTL_YARD_OPPORTUNITY_SWEEPER_ENABLED || 'true' }}
         run: ./scripts/deploy-azure-uat.sh
 
       - name: Smoke test deployment
