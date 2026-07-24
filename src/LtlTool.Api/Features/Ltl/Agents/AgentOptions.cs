@@ -13,6 +13,7 @@ public sealed class AgentsOptions
     public ExceptionSweeperOptions ExceptionSweeper { get; set; } = new();
     public ArDigestOptions ArDigest { get; set; } = new();
     public BillingReadySweeperOptions BillingReadySweeper { get; set; } = new();
+    public YardOpportunitySweeperOptions YardOpportunitySweeper { get; set; } = new();
 }
 
 /// <summary>OpportunitySweeper: periodically scans consolidation opportunities and alerts on high-uplift ones.</summary>
@@ -58,4 +59,19 @@ public sealed class BillingReadySweeperOptions
 
     /// <summary>Sweep cadence. Default 180s (3 min). Floored at 30s so a mis-set config cannot spin the loop.</summary>
     public int IntervalSeconds { get; set; } = 180;
+}
+
+/// <summary>
+/// YardOpportunitySweeper: periodically scans yard-originated LTL consolidation drafts (received via
+/// the Yard webhook boundary, issue #166) and notifies once per draft. Closes the gap between a dock
+/// worker/Yard system creating a draft and a dispatcher/load planner noticing it — today that draft
+/// only surfaces by opening the Dock screen's incoming-opportunity list. Peer-system data only: never
+/// touches Alvys, matching the Yard boundary rules in docs/BOUNDARIES.md.
+/// </summary>
+public sealed class YardOpportunitySweeperOptions
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>Sweep cadence. Default 60s (1 min) — dock-floor events are time-sensitive. Floored at 30s.</summary>
+    public int IntervalSeconds { get; set; } = 60;
 }
