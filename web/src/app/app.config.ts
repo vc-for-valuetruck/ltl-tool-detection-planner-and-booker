@@ -130,10 +130,13 @@ export function buildAppConfig(rawConfig: RuntimeConfig): ApplicationConfig {
     // legitimate return trip look like a cold load with nothing to process, so the account
     // never gets extracted from the response and the user is bounced straight back to
     // /login on every single attempt (a strictly worse, 100%-reproducible regression this
-    // app shipped and then fixed — see PR history). Only clear it in the catch branch,
-    // i.e. after `initialize()`/`handleRedirectPromise()` has already failed on its own —
-    // that recovers a stale lock left by an earlier interrupted attempt without touching
-    // the normal, successful path.
+    // app shipped and then fixed — see PR history). `handleRedirectPromise()` always gets
+    // first, untouched crack at whatever lock/response state actually exists; the lock is
+    // only ever cleared AFTER that call has already run to completion — in the catch branch
+    // (it threw), or when it resolved without producing an account (e.g. the stored lock
+    // belongs to a different MSAL client id than this page — a stale/mismatched lock that
+    // handleRedirectPromise() silently ignores instead of throwing on, which would otherwise
+    // block every subsequent loginRedirect() with interaction_in_progress forever).
     provideAppInitializer(async () => {
       const msal = inject(MsalService);
       try {
@@ -142,6 +145,8 @@ export function buildAppConfig(rawConfig: RuntimeConfig): ApplicationConfig {
         const account = msal.instance.getAllAccounts()[0];
         if (account) {
           msal.instance.setActiveAccount(account);
+        } else {
+          clearStuckInteractionLock();
         }
       } catch (err) {
         console.error('[Auth] MSAL initialize failed', err);
