@@ -122,15 +122,20 @@ export function buildAppConfig(rawConfig: RuntimeConfig): ApplicationConfig {
     // second tab racing the same sign-in, `handleRedirectPromise()` itself throwing before
     // it finishes consuming the response) can leave MSAL's session-storage interaction
     // lock stuck as "in progress". Once stuck, every future loginRedirect() throws
-    // BrowserAuthError('interaction_in_progress') immediately — sign-in never actually
-    // navigates, the user lands back on /login, and clicking "Sign in" again repeats the
-    // same failure forever ("constant auth reload" until browser storage is cleared by
-    // hand). Clear the lock defensively before initializing, and again if init/redirect
-    // handling itself fails, so a fresh sign-in attempt is never permanently blocked by a
-    // stale lock from an earlier interrupted one.
+    // BrowserAuthError('interaction_in_progress') immediately.
+    //
+    // IMPORTANT: the lock must NOT be cleared before `handleRedirectPromise()` runs.
+    // `handleRedirectPromise()` uses that same flag to recognise "this page load is the
+    // return trip from a redirect I sent the user on" — clearing it first makes every
+    // legitimate return trip look like a cold load with nothing to process, so the account
+    // never gets extracted from the response and the user is bounced straight back to
+    // /login on every single attempt (a strictly worse, 100%-reproducible regression this
+    // app shipped and then fixed — see PR history). Only clear it in the catch branch,
+    // i.e. after `initialize()`/`handleRedirectPromise()` has already failed on its own —
+    // that recovers a stale lock left by an earlier interrupted attempt without touching
+    // the normal, successful path.
     provideAppInitializer(async () => {
       const msal = inject(MsalService);
-      clearStuckInteractionLock();
       try {
         await msal.instance.initialize();
         await msal.instance.handleRedirectPromise();
