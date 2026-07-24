@@ -492,22 +492,12 @@ public sealed class ConsolidationPlanService(
         return _opts.AllowedRegions.Contains(place.State, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static bool IsNear(LtlPlace? place, ConsolidationWarehouseOptions warehouse)
-    {
-        if (place is null) return false;
-        if (!string.IsNullOrWhiteSpace(place.State)
-            && string.Equals(place.State, warehouse.State, StringComparison.OrdinalIgnoreCase))
-        {
-            if (warehouse.NearbyCities.Count == 0) return true;
-            if (string.IsNullOrWhiteSpace(place.City)) return true;
-            foreach (var city in warehouse.NearbyCities)
-            {
-                if (place.City.Contains(city, StringComparison.OrdinalIgnoreCase)) return true;
-                if (city.Contains(place.City, StringComparison.OrdinalIgnoreCase)) return true;
-            }
-        }
-        return false;
-    }
+    // Corridor-nearness evaluation lives in CorridorGeography.IsNear so this service and
+    // ConsolidationCandidateService can never drift again (see CorridorGeography's doc comment
+    // for the incident this fixes: a load could surface as an Auto-suggest candidate but then
+    // fail Review/Combine with a contradictory "not on the corridor" blocker).
+    private static bool IsNear(LtlPlace? place, ConsolidationWarehouseOptions warehouse) =>
+        CorridorGeography.IsNear(place, warehouse);
 
     private static string BuildClickCardText(
         LtlLoadSummary parent,

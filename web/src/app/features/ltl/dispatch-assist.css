@@ -71,9 +71,28 @@
 }
 
 .da-go:disabled,
-.da-assemble:disabled {
+.da-assemble:disabled,
+.da-assign:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.da-assign {
+  cursor: pointer;
+  border: 1px solid var(--accent, #1f5eff);
+  border-radius: 6px;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  background: transparent;
+  color: var(--accent, #1f5eff);
+  margin-left: 0.4rem;
+}
+
+.da-warn-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--muted, #9aa1ac);
 }
 
 .da-alert {

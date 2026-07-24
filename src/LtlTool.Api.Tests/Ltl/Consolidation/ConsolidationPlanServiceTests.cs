@@ -377,6 +377,56 @@ public sealed class ConsolidationPlanServiceTests
         Assert.Contains(response.Blockers, b => b.Contains("Kroger"));
     }
 
+    /// <summary>
+    /// Regression for the Dock UI incident where loads 1002054/1002196 (Vertiv Mexico freight
+    /// picking up in the Santa Catarina, NL / Monterrey cluster and delivering to the Dallas
+    /// metro) surfaced correctly as Auto-suggest candidates but then failed Review/Combine with
+    /// "not on the LAREDO_TO_DALLAS corridor" for both parent and sibling. Root cause: this
+    /// service had its own stale copy of the corridor-nearness check that required
+    /// State-equality-first, which structurally excludes NL (Mexico) pickups even though the
+    /// LAREDO warehouse's NearbyCities whitelist explicitly includes the Monterrey cluster.
+    /// ConsolidationCandidateService got the city-first fix in #100; this service did not. Both
+    /// now delegate to the shared CorridorGeography.IsNear so they can never drift again.
+    /// </summary>
+    [Fact]
+    public async Task Cross_border_Monterrey_cluster_parent_and_sibling_combine_without_corridor_blockers()
+    {
+        var parent = Load(
+            "1002054", "Vertiv Mexico VERUSD CO Data2Logistics",
+            "Santa Catarina", "NL", "Fort Worth", "TX", ParentPickup,
+            rate: 12502.5m, mileage: 582m, weight: 28047m);
+        var sibling = Load(
+            "1002196", "Vertiv Mexico VERUSD CO Data2Logistics",
+            "Santa Catarina", "NL", "Irving", "TX", ParentPickup.AddHours(6),
+            rate: 12514.6m, mileage: 604m, weight: 28047m);
+
+        var client = new StatefulAlvysClient(parent, sibling);
+        var loads = new LtlLoadService(
+            client, LtlTestFactory.Normalizer(), LtlTestFactory.Visibility(),
+            LtlTestFactory.AccessorialAnalyzer(), new NullAccessorialSignalExtractor(),
+            LtlTestFactory.Options(), LtlTestFactory.Clock());
+        var service = new ConsolidationPlanService(
+            loads,
+            Microsoft.Extensions.Options.Options.Create(DefaultOptions()),
+            LtlTestFactory.Options(),
+            LtlTestFactory.Clock(),
+            LtlTestFactory.StaticPolicyReader(DefaultOptions()),
+            new NullTrailerFitService(TimeProvider.System),
+            new LtlTool.Api.Features.Ltl.Optimization.NullStopSequencer(LtlTestFactory.Clock()));
+
+        var response = await service.BuildAsync(
+            new ConsolidationPlanRequest
+            {
+                ParentLoadId = "1002054",
+                SiblingLoadIds = ["1002196"],
+            },
+            default);
+
+        Assert.Empty(response.Blockers);
+        Assert.Single(response.Siblings);
+        Assert.Equal("1002196", response.Siblings[0].LoadNumber);
+    }
+
     [Fact]
     public async Task Click_card_text_includes_sanctioned_alvys_instructions()
     {
