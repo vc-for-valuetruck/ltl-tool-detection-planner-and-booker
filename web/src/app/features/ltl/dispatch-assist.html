@@ -3,7 +3,8 @@
     <h1>Dispatch Assist</h1>
     <p class="da-sub">
       Inform and assemble the right driver and truck. Ranked, explainable candidates from live Alvys
-      fleet data — read-only. Assembling records the decision internally; nothing is written to Alvys.
+      fleet data — read-only. Assemble logs the pick and notifies; Assign runs hard-rule validation
+      and records to assignment history. Neither writes to Alvys.
     </p>
   </header>
 
@@ -124,6 +125,16 @@
               >
                 {{ assemblingId() === rowKey(c) ? 'Recording…' : 'Assemble' }}
               </button>
+              <button
+                type="button"
+                class="da-assign"
+                (click)="assign(c)"
+                [disabled]="assigningId() !== null"
+                title="Validate hard rules (driver, capacity, equipment, credentials) and record the assignment for the /ltl/assignments history."
+                [attr.data-testid]="'da-assign-' + rowKey(c)"
+              >
+                {{ assigningId() === rowKey(c) ? 'Assigning…' : 'Assign' }}
+              </button>
             </td>
           </tr>
         }
@@ -134,6 +145,38 @@
 
   @if (assembleError(); as ae) {
     <div class="da-alert da-alert-bad" role="alert">{{ ae }}</div>
+  }
+
+  @if (assignError(); as ae2) {
+    <div class="da-alert da-alert-bad" role="alert">{{ ae2 }}</div>
+  }
+
+  @if (assignBlockers(); as v) {
+    <div class="da-alert da-alert-bad" data-testid="da-assign-blockers" role="alert">
+      <strong>Assignment blocked.</strong>
+      <ul>
+        @for (b of v.blockers; track b.code) { <li>{{ b.message }}</li> }
+      </ul>
+      @if (v.warnings.length > 0) {
+        <ul class="da-warn-list">
+          @for (w of v.warnings; track w.code) { <li>{{ w.message }}</li> }
+        </ul>
+      }
+    </div>
+  }
+
+  @if (lastAssignment(); as la) {
+    <div class="da-result" data-testid="da-assignment-result">
+      <div class="da-result-head">
+        <strong>Assigned.</strong> Recorded {{ la.recordedAt | date: 'short' }} by {{ la.recordedBy }}.
+        <span class="da-writeback">Alvys: {{ la.alvysWriteback }}</span>
+      </div>
+      @if (la.warnings.length > 0) {
+        <ul class="da-warn-list">
+          @for (w of la.warnings; track w.code) { <li>{{ w.message }}</li> }
+        </ul>
+      }
+    </div>
   }
 
   @if (lastAssembly(); as a) {

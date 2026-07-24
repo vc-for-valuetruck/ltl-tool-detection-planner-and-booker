@@ -8,14 +8,25 @@ import {
   DispatchRecommendationsResponse,
 } from './dispatch-assist.models';
 import { DispatchAssistService } from './dispatch-assist.service';
+import { LtlService } from './ltl.service';
+import { AssignmentAudit, AssignmentValidationResult } from './ltl.models';
 
 /**
  * Dispatch Assist workbench — "inform and assemble the right driver and truck". A dispatcher enters a
- * load number (or an ad-hoc origin/destination lane), gets a ranked, explainable list of
- * driver+truck+trailer candidates, and one-taps **Assemble** to record the decision app-side. The
- * assemble call fires the notify step; its outcome (including the safe-override banner) is shown back.
+ * load number (or an ad-hoc origin/destination lane) and gets a ranked, explainable list of
+ * driver+truck+trailer candidates. Two distinct actions are available per row:
  *
- * Read-only against Alvys: candidates come from live Alvys reads, and an assembly records an internal
+ * <ul>
+ *   <li><b>Assemble</b> — records the picked candidate as a lightweight decision log and fires the
+ *   notify step (email the driver/dispatcher). No hard-rule validation runs.</li>
+ *   <li><b>Assign</b> — runs the full hard-rule validation (no/terminated driver, expired credentials,
+ *   over-capacity, equipment mismatch, yard-presence hold, etc.) via the load-scoped <c>/assign</c>
+ *   endpoint and, when clean, records an <c>AssignmentAudit</c> row. This is the action that backs the
+ *   <c>/ltl/assignments</c> history page — previously nothing in the UI called it, so that page always
+ *   read empty even after dispatchers used Assemble.</li>
+ * </ul>
+ *
+ * Read-only against Alvys: candidates come from live Alvys reads, and both actions record an internal
  * audit only (`alvysWriteback = "NotPerformed"`) — nothing is written to Alvys from here. Missing data
  * renders as "—", never fabricated.
  */
@@ -45,6 +56,19 @@ export class DispatchAssist implements OnInit {
   protected readonly assemblingId = signal<string | null>(null);
   protected readonly lastAssembly = signal<DispatchAssembly | null>(null);
   protected readonly assembleError = signal<string | null>(null);
+
+  /**
+   * Per-row Assign state. Distinct from Assemble: Assign runs the hard-rule validation
+   * (AssignmentValidationService — no driver, terminated/expired credentials, over-capacity,
+   * etc.) and, when clean, records an AssignmentAudit row that feeds the /ltl/assignments
+   * history page. Assemble alone never wrote to that store, so Assignments always read empty
+   * even after a dispatcher picked a candidate here.
+   */
+  protected readonly assigningId = signal<string | null>(null);
+  protected readonly lastAssignment = signal<AssignmentAudit | null>(null);
+  protected readonly assignBlockers = signal<AssignmentValidationResult | null>(null);
+  protected readonly assignError = signal<string | null>(null);
+  private readonly ltl = inject(LtlService);
 
   protected readonly candidates = computed(() => this.result()?.candidates ?? []);
   protected readonly target = computed(() => this.result()?.target ?? null);
@@ -125,6 +149,52 @@ export class DispatchAssist implements OnInit {
         error: () => {
           this.assembleError.set('Could not record the assembly. Please retry.');
           this.assemblingId.set(null);
+        },
+      });
+  }
+
+  /**
+   * Commits the chosen candidate as a real assignment: runs hard-rule validation and, when
+   * clean, records the AssignmentAudit that backs the /ltl/assignments history page. A load
+   * number is required to call the load-scoped /assign endpoint — an ad-hoc lane search with no
+   * resolved load has nothing to assign against. Never writes to Alvys
+   * (AssignmentAudit.alvysWriteback = "NotPerformed").
+   */
+  protected assign(candidate: DispatchCandidate): void {
+    if (this.assigningId()) return;
+    const t = this.target();
+    const loadIdOrNumber = t?.loadNumber ?? t?.loadId ?? this.loadId().trim();
+    if (!loadIdOrNumber) {
+      this.assignError.set('Assign needs a resolved load number — search by Load # first.');
+      return;
+    }
+
+    const rowKey = this.rowKey(candidate);
+    this.assigningId.set(rowKey);
+    this.assignError.set(null);
+    this.assignBlockers.set(null);
+    this.lastAssignment.set(null);
+
+    this.ltl
+      .assign(loadIdOrNumber, {
+        driverId: candidate.driverId ?? undefined,
+        truckId: candidate.truckId ?? undefined,
+        trailerId: candidate.trailerId ?? undefined,
+        matchScore: candidate.score,
+        matchLabel: this.scoreBand(candidate.score),
+      })
+      .subscribe({
+        next: (audit) => {
+          this.lastAssignment.set(audit);
+          this.assigningId.set(null);
+        },
+        error: (err) => {
+          if (err?.status === 422 && err?.error) {
+            this.assignBlockers.set(err.error as AssignmentValidationResult);
+          } else {
+            this.assignError.set('Could not record the assignment. Please retry.');
+          }
+          this.assigningId.set(null);
         },
       });
   }

@@ -300,36 +300,10 @@ public sealed class ConsolidationCandidateService(
         return _opts.AllowedRegions.Contains(place.State, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static bool IsNear(LtlPlace? place, ConsolidationWarehouseOptions warehouse)
-    {
-        if (place is null) return false;
-
-        // An explicit nearby-city hit counts regardless of state: the corridor's NearbyCities
-        // list is a curated whitelist and legitimately spans the border (e.g. the LAREDO yard
-        // lists the Monterrey cluster — Santa Catarina, NL — whose freight crosses at Laredo).
-        // Requiring state equality first structurally excluded that freight (NL != TX) and made
-        // the Monterrey-cluster extension unreachable.
-        if (!string.IsNullOrWhiteSpace(place.City))
-        {
-            foreach (var city in warehouse.NearbyCities)
-            {
-                if (place.City.Contains(city, StringComparison.OrdinalIgnoreCase)) return true;
-                if (city.Contains(place.City, StringComparison.OrdinalIgnoreCase)) return true;
-            }
-        }
-
-        // Same-state fallback keeps the original behavior for in-state freight with no explicit
-        // city hit (empty city list = whole-state match; blank candidate city = honest benefit
-        // of the doubt within the state).
-        if (!string.IsNullOrWhiteSpace(place.State)
-            && string.Equals(place.State, warehouse.State, StringComparison.OrdinalIgnoreCase))
-        {
-            if (warehouse.NearbyCities.Count == 0) return true;
-            if (string.IsNullOrWhiteSpace(place.City)) return true;
-        }
-
-        return false;
-    }
+    // Shared with ConsolidationPlanService via CorridorGeography so Auto-suggest and
+    // Review/Combine can never evaluate corridor-nearness differently again.
+    private static bool IsNear(LtlPlace? place, ConsolidationWarehouseOptions warehouse) =>
+        CorridorGeography.IsNear(place, warehouse);
 
     private static double TimingDeltaMinutes(LtlLoadSummary seed, ConsolidationCandidate candidate)
     {

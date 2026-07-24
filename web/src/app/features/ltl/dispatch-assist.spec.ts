@@ -7,6 +7,8 @@ import {
   DispatchRecommendationsResponse,
 } from './dispatch-assist.models';
 import { DispatchAssistService } from './dispatch-assist.service';
+import { LtlService } from './ltl.service';
+import { AssignmentAudit } from './ltl.models';
 import { DispatchAssist } from './dispatch-assist';
 
 function candidate(partial: Partial<DispatchCandidate> = {}): DispatchCandidate {
@@ -78,12 +80,37 @@ function assembly(partial: Partial<DispatchAssembly> = {}): DispatchAssembly {
   };
 }
 
+function assignmentAudit(partial: Partial<AssignmentAudit> = {}): AssignmentAudit {
+  return {
+    id: 'aa-1',
+    loadId: 'L-1',
+    driverId: 'D-1',
+    truckId: 'T-1',
+    trailerId: null,
+    matchScore: 84,
+    matchLabel: 'excellent',
+    notes: null,
+    reasonType: 'Unspecified',
+    overrideReason: null,
+    warnings: [],
+    recordedBy: 'dispatcher@valuetruck.com',
+    recordedAt: '2026-07-23T10:00:00Z',
+    alvysWriteback: 'NotPerformed',
+    ...partial,
+  };
+}
+
 describe('DispatchAssist', () => {
-  function build(stub: Partial<DispatchAssistService>, presetLoadId: string | null = null): DispatchAssist {
+  function build(
+    stub: Partial<DispatchAssistService>,
+    presetLoadId: string | null = null,
+    ltlStub: Partial<LtlService> = {},
+  ): DispatchAssist {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       providers: [
         { provide: DispatchAssistService, useValue: stub },
+        { provide: LtlService, useValue: ltlStub },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { queryParamMap: { get: () => presetLoadId } } },
@@ -157,6 +184,55 @@ describe('DispatchAssist', () => {
     c['assemble'](candidate());
     expect(c['assembleError']()).toContain('Could not record');
     expect(c['lastAssembly']()).toBeNull();
+  });
+
+  it('assigns a candidate: validates hard rules and records the assignment-history audit', () => {
+    const assignSpy = jasmine.createSpy('assign').and.returnValue(of(assignmentAudit()));
+    const c = build(
+      { recommendations: () => of(recommendations()) },
+      null,
+      { assign: assignSpy },
+    );
+    c['loadId'].set('100482');
+    c['search']();
+    c['assign'](candidate());
+
+    expect(assignSpy).toHaveBeenCalledWith(
+      '100482',
+      jasmine.objectContaining({ driverId: 'D-1', truckId: 'T-1' }),
+    );
+    const a = c['lastAssignment']();
+    expect(a?.id).toBe('aa-1');
+    expect(a?.alvysWriteback).toBe('NotPerformed');
+    expect(c['assigningId']()).toBeNull();
+  });
+
+  it('surfaces hard-rule blockers on a 422 without recording a fabricated assignment', () => {
+    const blockers = {
+      issues: [{ code: 'NO_DRIVER', message: 'No driver selected.', severity: 'Block' }],
+      blockers: [{ code: 'NO_DRIVER', message: 'No driver selected.', severity: 'Block' }],
+      warnings: [],
+      hasBlockers: true,
+    };
+    const c = build(
+      { recommendations: () => of(recommendations()) },
+      null,
+      { assign: () => throwError(() => ({ status: 422, error: blockers })) },
+    );
+    c['loadId'].set('100482');
+    c['search']();
+    c['assign'](candidate());
+
+    expect(c['assignBlockers']()?.blockers.length).toBe(1);
+    expect(c['lastAssignment']()).toBeNull();
+  });
+
+  it('refuses to assign without a resolved load number', () => {
+    const assignSpy = jasmine.createSpy('assign');
+    const c = build({}, null, { assign: assignSpy });
+    c['assign'](candidate());
+    expect(assignSpy).not.toHaveBeenCalled();
+    expect(c['assignError']()).toContain('Load #');
   });
 
   it('bands scores and tones notify states for the UI', () => {
