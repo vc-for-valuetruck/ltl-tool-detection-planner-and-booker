@@ -31,6 +31,10 @@ GET  api/ltl/notifications
 GET  api/ltl/notifications/channels
 GET  api/ltl/reporting/margin-rollup
 GET  api/ltl/reporting/margin-rollup/export
+GET  api/ltl/reporting/accessorials
+GET  api/ltl/reporting/accessorials/export
+GET  api/ltl/reporting/assignments-history
+GET  api/ltl/reporting/assignments-history/export
 GET  api/ltl/dock/warehouses
 GET  api/ltl/dock/arrivals
 GET  api/ltl/dock/candidates

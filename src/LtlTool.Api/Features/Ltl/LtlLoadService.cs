@@ -1,4 +1,5 @@
 using LtlTool.Api.Features.Integrations.Alvys;
+using LtlTool.Api.Features.Ltl.Reporting;
 using Microsoft.Extensions.Options;
 
 namespace LtlTool.Api.Features.Ltl;
@@ -20,7 +21,8 @@ public sealed class LtlLoadService(
     AccessorialSignalAnalyzer accessorialAnalyzer, IAccessorialSignalExtractor accessorialExtractor,
     IOptions<LtlOptions> options, TimeProvider clock,
     TenderEnrichmentService? tenderEnrichment = null,
-    AccessorialReviewAnalyzer? accessorialReviewAnalyzer = null)
+    AccessorialReviewAnalyzer? accessorialReviewAnalyzer = null,
+    OperationalHistoryCaptureService? operationalHistory = null)
 {
     private readonly LtlOptions _options = options.Value;
 
@@ -78,6 +80,15 @@ public sealed class LtlLoadService(
         var accessorialReview = _accessorialReviewAnalyzer.Analyze(
             load, tripEcon.Stops ?? [], accessorialContext);
         var ediEnrichment = tenderEnrichment is null ? null : await tenderEnrichment.EnrichOneAsync(load, ct);
+
+        // Side-channel capture into the accessorial/assignment history tables — a byproduct of the
+        // load + trip data already fetched above for this detail view, not a new Alvys call. Never
+        // affects the response: capture is best-effort and swallows its own failures. Every matching
+        // trip is captured, not just the one economics selected — a load can have more than one trip
+        // (e.g. re-dispatch), and a trip's accessorial/assignment data still matters even when it
+        // isn't the economics-bearing one.
+        operationalHistory?.Capture(load, tripEcon.MatchingTrips ?? []);
+
         return normalizer.Normalize(
             load, documents, invoices, context, visibilityExceptions,
             carrierPayable: tripEcon.CarrierPayable,
@@ -102,7 +113,8 @@ public sealed class LtlLoadService(
         decimal? DriverTripRate,
         decimal? LoadedMiles,
         decimal? CarrierAccessorialsTotal = null,
-        IReadOnlyList<AlvysTripStop>? Stops = null);
+        IReadOnlyList<AlvysTripStop>? Stops = null,
+        IReadOnlyList<AlvysTrip>? MatchingTrips = null);
 
     /// <summary>
     /// Fetches the inbound + outbound visibility history for a single load (read-only) and turns it
@@ -159,22 +171,30 @@ public sealed class LtlLoadService(
         // supposed to do that, but some code paths (test fakes, tolerant client-side filters)
         // may return the full set. Never attribute rate on trip A to miles on trip B by taking
         // FirstOrDefault blind.
-        var trip = response.Items
+        var matchingTrips = response.Items
             .Where(t =>
                 string.Equals(t.LoadNumber, loadNumber, StringComparison.OrdinalIgnoreCase))
-            .FirstOrDefault(t =>
-                t.Carrier?.TotalPayable?.Amount is not null
-                || t.TripValue?.Amount is not null
-                || t.LoadedMileage?.Value is not null);
+            .ToList();
 
-        if (trip is null) return default;
+        // Economics (carrier payable / driver rate / loaded miles) come from whichever matching trip
+        // actually carries them — a load can have more than one trip (e.g. re-dispatch), and only
+        // one is normally economics-bearing. MatchingTrips below carries the FULL set, independent of
+        // this pick, so accessorial/assignment capture never silently drops a trip this selection
+        // didn't choose.
+        var trip = matchingTrips.FirstOrDefault(t =>
+            t.Carrier?.TotalPayable?.Amount is not null
+            || t.TripValue?.Amount is not null
+            || t.LoadedMileage?.Value is not null);
+
+        if (trip is null) return new TripEconomics(default, default, default, MatchingTrips: matchingTrips);
 
         return new TripEconomics(
             CarrierPayable: trip.Carrier?.TotalPayable?.Amount,
             DriverTripRate: trip.TripValue?.Amount,
             LoadedMiles: trip.LoadedMileage?.Value,
             CarrierAccessorialsTotal: trip.Carrier?.Accessorials?.Amount,
-            Stops: trip.Stops);
+            Stops: trip.Stops,
+            MatchingTrips: matchingTrips);
     }
 
     /// <summary>

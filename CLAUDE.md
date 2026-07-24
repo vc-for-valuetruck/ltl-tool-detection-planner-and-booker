@@ -112,6 +112,10 @@ defensible recommendations, and revenue protection.
 - `GET  /api/ltl/notifications/channels` — Phase 6: honest per-channel configuration snapshot (in-app always on; Teams/email config-gated).
 - `GET  /api/ltl/reporting/margin-rollup?groupBy={Customer|Rep|Lane}` — read-only margin/exception rollup over the same normalized load set as the billing worklist, aggregated by customer, rep (Alvys id only — no rep-name field exists), or lane (derived from origin/destination). No external BI connection.
 - `GET  /api/ltl/reporting/margin-rollup/export?groupBy={Customer|Rep|Lane}` — CSV rendering of the same margin rollup, for external reporting tools (e.g. Power BI's Text/CSV connector) to pull Alvys-derived data directly from this tool. Same auth, same read-only data — only the response shape changes.
+- `GET  /api/ltl/reporting/accessorials?loadId=&entityType={Customer|Carrier|Driver1|Driver2|OwnerOperator}&max={n}` — normalized accessorial history (customer + carrier/driver/owner-operator), captured as a byproduct of existing load/trip reads (no dedicated Alvys call). Content-keyed, append-on-change — a durable ledger of observed accessorial lines, not a live re-read. Side-channel only; never feeds back into billing readiness or any live decision path.
+- `GET  /api/ltl/reporting/accessorials/export` — CSV rendering of the same accessorial history for external reporting tools (e.g. Power BI).
+- `GET  /api/ltl/reporting/assignments-history?loadId=&max={n}` — normalized assignment history (carrier/driver/truck/trailer/dispatcher snapshots), captured as a byproduct of existing trip reads. Append-only on change, giving reassignment history Alvys itself does not track. Side-channel only.
+- `GET  /api/ltl/reporting/assignments-history/export` — CSV rendering of the same assignment history for external reporting tools (e.g. Power BI).
 
 ### Yard→LTL scheduler ingestion (versioned; peer-system contract, no Alvys relay)
 
