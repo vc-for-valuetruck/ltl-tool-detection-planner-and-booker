@@ -7,10 +7,11 @@ namespace LtlTool.Api.Tests.Ltl.Reporting;
 
 /// <summary>
 /// Verifies <see cref="OperationalHistoryCaptureService"/> extracts accessorial/assignment data
-/// correctly from an already-fetched <see cref="AlvysLoad"/>/<see cref="AlvysTrip"/> pair, that a
-/// missing trip only skips the trip-derived captures (customer accessorials still capture), that a
-/// trip with nothing assigned records no assignment row, and that a capture-store failure never
-/// propagates to the caller (best-effort side channel).
+/// correctly from an already-fetched <see cref="AlvysLoad"/>/<see cref="AlvysTrip"/> list, that an
+/// empty trip list only skips the trip-derived captures (customer accessorials still capture), that
+/// every matching trip is captured (not just one), that a trip with nothing assigned records no
+/// assignment row, and that a capture-store failure never propagates to the caller (best-effort
+/// side channel).
 /// </summary>
 public sealed class OperationalHistoryCaptureServiceTests
 {
@@ -22,7 +23,7 @@ public sealed class OperationalHistoryCaptureServiceTests
         var (service, accessorials, _) = Build();
         var load = LoadWithCustomerAccessorial();
 
-        service.Capture(load, trip: null);
+        service.Capture(load, []);
 
         var line = Assert.Single(accessorials.Captured);
         Assert.Equal(AccessorialEntityType.Customer, line.Line.EntityType);
@@ -51,7 +52,7 @@ public sealed class OperationalHistoryCaptureServiceTests
             },
         };
 
-        service.Capture(load, trip);
+        service.Capture(load, [trip]);
 
         Assert.Contains(accessorials.Captured, c =>
             c.Line.EntityType == AccessorialEntityType.Carrier && c.Line.Type == "Lumper" && c.TripId == "trip-1");
@@ -60,12 +61,12 @@ public sealed class OperationalHistoryCaptureServiceTests
     }
 
     [Fact]
-    public void Capture_with_no_trip_only_captures_customer_accessorials()
+    public void Capture_with_no_trips_only_captures_customer_accessorials()
     {
         var (service, accessorials, assignments) = Build();
         var load = LoadWithCustomerAccessorial();
 
-        service.Capture(load, trip: null);
+        service.Capture(load, []);
 
         Assert.Single(accessorials.Captured);
         Assert.Empty(assignments.Captured);
@@ -87,7 +88,7 @@ public sealed class OperationalHistoryCaptureServiceTests
             DispatcherId = "US1",
         };
 
-        service.Capture(load, trip);
+        service.Capture(load, [trip]);
 
         var snapshot = Assert.Single(assignments.Captured);
         Assert.Equal("load-1", snapshot.LoadId);
@@ -98,13 +99,44 @@ public sealed class OperationalHistoryCaptureServiceTests
     }
 
     [Fact]
+    public void Capture_records_every_matching_trip_not_just_one()
+    {
+        // A load with two trips (e.g. a re-dispatch) — neither is "the" economics-bearing trip from
+        // the caller's perspective; both must still contribute their own assignment/accessorial data.
+        var (service, accessorials, assignments) = Build();
+        var load = new AlvysLoad { Id = "load-1", LoadNumber = "L-1001" };
+        var tripA = new AlvysTrip
+        {
+            Id = "trip-A",
+            Carrier = new AlvysPartyPay
+            {
+                Id = "C1",
+                AccessorialsDetails = [new AlvysAccessorialDetail { Type = "Lumper", Amount = 50m }],
+            },
+        };
+        var tripB = new AlvysTrip
+        {
+            Id = "trip-B",
+            Carrier = new AlvysPartyPay { Id = "C2" },
+            Truck = new AlvysEquipmentRef { Id = "TRK2" },
+        };
+
+        service.Capture(load, [tripA, tripB]);
+
+        Assert.Contains(accessorials.Captured, c => c.TripId == "trip-A" && c.Line.Type == "Lumper");
+        Assert.Equal(2, assignments.Captured.Count);
+        Assert.Contains(assignments.Captured, a => a.TripId == "trip-A" && a.CarrierId == "C1");
+        Assert.Contains(assignments.Captured, a => a.TripId == "trip-B" && a.CarrierId == "C2");
+    }
+
+    [Fact]
     public void Capture_skips_the_assignment_row_when_the_trip_has_nothing_assigned()
     {
         var (service, _, assignments) = Build();
         var load = new AlvysLoad { Id = "load-1", LoadNumber = "L-1001" };
         var trip = new AlvysTrip { Id = "trip-1", Status = "Pending" };
 
-        service.Capture(load, trip);
+        service.Capture(load, [trip]);
 
         Assert.Empty(assignments.Captured);
     }
@@ -118,7 +150,7 @@ public sealed class OperationalHistoryCaptureServiceTests
             accessorials, assignments, new FixedClock(Now), NullLogger<OperationalHistoryCaptureService>.Instance);
         var load = LoadWithCustomerAccessorial();
 
-        var ex = Record.Exception(() => service.Capture(load, trip: null));
+        var ex = Record.Exception(() => service.Capture(load, []));
 
         Assert.Null(ex);
     }

@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using LtlTool.Api.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -39,13 +42,8 @@ public sealed class EfAccessorialStore(AppDbContext db) : IAccessorialStore
     public void Capture(
         string loadId, string? loadNumber, string? tripId, ObservedAccessorialLine line, DateTimeOffset now)
     {
-        var existing = db.AccessorialRecords.FirstOrDefault(a =>
-            a.LoadId == loadId
-            && a.TripId == tripId
-            && a.EntityType == line.EntityType
-            && a.Type == line.Type
-            && a.Description == line.Description
-            && a.Amount == line.Amount);
+        var contentKey = ComputeContentKey(loadId, tripId, line);
+        var existing = db.AccessorialRecords.FirstOrDefault(a => a.ContentKey == contentKey);
 
         if (existing is not null)
         {
@@ -62,6 +60,7 @@ public sealed class EfAccessorialStore(AppDbContext db) : IAccessorialStore
             db.AccessorialRecords.Add(new AccessorialRecord
             {
                 Id = Guid.NewGuid().ToString("n"),
+                ContentKey = contentKey,
                 LoadId = loadId,
                 LoadNumber = loadNumber,
                 TripId = tripId,
@@ -83,9 +82,39 @@ public sealed class EfAccessorialStore(AppDbContext db) : IAccessorialStore
         if (!string.IsNullOrWhiteSpace(loadId)) query = query.Where(a => a.LoadId == loadId);
         if (entityType is not null) query = query.Where(a => a.EntityType == entityType.Value);
 
+        // AsEnumerable() before ordering: SQLite's EF provider cannot translate ORDER BY over a
+        // DateTimeOffset column to SQL (see EfAssignmentAuditStore.ForLoad for the same constraint).
+        // Pulls the filtered set fully into memory on every provider this runs against — accepted for
+        // a moderate-volume internal reporting table (see ILoadAssignmentStore.ListRecent for the
+        // same tradeoff spelled out).
         return query
+            .AsEnumerable()
             .OrderByDescending(a => a.LastSeenAt)
             .Take(Math.Max(1, max))
             .ToList();
     }
+
+    /// <summary>
+    /// Deterministic content key for the dedupe match — see <see cref="AccessorialRecord.ContentKey"/>
+    /// for why this exists instead of indexing the raw columns. Accessorial <c>Type</c>/<c>Description</c>
+    /// are free-text from Alvys and could contain any character including a plain delimiter, so each
+    /// field is length-prefixed before hashing — two different field splits must never hash
+    /// identically just because a naive join of them would coincide.
+    /// </summary>
+    private static string ComputeContentKey(string loadId, string? tripId, ObservedAccessorialLine line)
+    {
+        var sb = new StringBuilder();
+        AppendField(sb, loadId);
+        AppendField(sb, tripId ?? "");
+        AppendField(sb, line.EntityType.ToString());
+        AppendField(sb, line.Type ?? "");
+        AppendField(sb, line.Description ?? "");
+        AppendField(sb, line.Amount?.ToString(CultureInfo.InvariantCulture) ?? "");
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexStringLower(hash);
+    }
+
+    private static void AppendField(StringBuilder sb, string value) =>
+        sb.Append(value.Length).Append(':').Append(value);
 }

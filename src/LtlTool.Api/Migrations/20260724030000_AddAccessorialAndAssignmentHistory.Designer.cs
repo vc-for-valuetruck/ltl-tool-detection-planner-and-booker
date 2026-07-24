@@ -653,6 +653,11 @@ namespace LtlTool.Api.Migrations
                     b.Property<decimal?>("Amount")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("ContentKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("Description")
                         .HasMaxLength(1024)
                         .HasColumnType("nvarchar(1024)");
@@ -687,9 +692,11 @@ namespace LtlTool.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ContentKey");
+
                     b.HasIndex("LastSeenAt");
 
-                    b.HasIndex("LoadId", "TripId", "EntityType", "Type", "Description", "Amount");
+                    b.HasIndex("LoadId");
 
                     b.ToTable("AccessorialRecords", (string)null);
                 });

@@ -55,8 +55,13 @@ public sealed class EfLoadAssignmentStore(AppDbContext db) : ILoadAssignmentStor
 {
     public void CaptureIfChanged(ObservedAssignment snapshot, DateTimeOffset now)
     {
+        // AsEnumerable() before ordering: SQLite's EF provider cannot translate ORDER BY over a
+        // DateTimeOffset column to SQL (same constraint EfAssignmentAuditStore.ForLoad already works
+        // around). The Where() still runs server-side; only the ordering/first-pick happens in
+        // memory, scoped to one load's (typically small) history.
         var latest = db.LoadAssignments
             .Where(a => a.LoadId == snapshot.LoadId)
+            .AsEnumerable()
             .OrderByDescending(a => a.CapturedAt)
             .FirstOrDefault();
 
@@ -111,12 +116,20 @@ public sealed class EfLoadAssignmentStore(AppDbContext db) : ILoadAssignmentStor
     public IReadOnlyList<LoadAssignmentRecord> ListForLoad(string loadId, int max) =>
         db.LoadAssignments.AsNoTracking()
             .Where(a => a.LoadId == loadId)
+            .AsEnumerable()
             .OrderByDescending(a => a.CapturedAt)
             .Take(Math.Max(1, max))
             .ToList();
 
+    // Unscoped across all loads: AsEnumerable() (the SQLite DateTimeOffset-ordering workaround, see
+    // CaptureIfChanged) pulls the whole table into memory before ordering/limiting, on every
+    // provider this code runs against — Take() cannot push down once the query is client-side.
+    // Accepted for a moderate-volume internal reporting table; if this table grows large enough for
+    // that to matter, the fix is a provider-specific ORDER BY (or a sortable non-DateTimeOffset
+    // column) rather than working around it here.
     public IReadOnlyList<LoadAssignmentRecord> ListRecent(int max) =>
         db.LoadAssignments.AsNoTracking()
+            .AsEnumerable()
             .OrderByDescending(a => a.CapturedAt)
             .Take(Math.Max(1, max))
             .ToList();

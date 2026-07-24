@@ -4,7 +4,8 @@ namespace LtlTool.Api.Features.Ltl.Reporting;
 
 /// <summary>
 /// Normalizes accessorial and assignment data out of an already-fetched <see cref="AlvysLoad"/>
-/// (+ optional <see cref="AlvysTrip"/>) into the durable history tables (<see cref="AccessorialRecord"/>,
+/// (+ every matching <see cref="AlvysTrip"/>, not just whichever one a caller separately treats as
+/// "the" trip) into the durable history tables (<see cref="AccessorialRecord"/>,
 /// <see cref="LoadAssignmentRecord"/>). Deliberately a byproduct of existing reads — this makes no
 /// Alvys calls of its own; callers pass in data they already fetched for another purpose (e.g. the
 /// load detail view). Every capture is best-effort: a store failure is logged and swallowed so this
@@ -25,17 +26,19 @@ public sealed class OperationalHistoryCaptureService(
 {
     /// <summary>
     /// Captures whatever accessorial/assignment data is present on <paramref name="load"/> and
-    /// (if supplied) its matched <paramref name="trip"/>. Safe to call with a null trip — customer
-    /// accessorials still capture; carrier/driver/owner-operator accessorials and the assignment
-    /// snapshot simply have nothing to capture from.
+    /// every trip in <paramref name="trips"/> — not just whichever one a caller might separately
+    /// treat as "the" economics-bearing trip. A load can have more than one matching trip (e.g.
+    /// re-dispatch), and a trip's accessorial/assignment data still matters even when it isn't the
+    /// one selected for economics elsewhere. Safe to call with an empty list — customer accessorials
+    /// still capture; there's simply nothing trip-side to capture from.
     /// </summary>
-    public void Capture(AlvysLoad load, AlvysTrip? trip)
+    public void Capture(AlvysLoad load, IReadOnlyList<AlvysTrip> trips)
     {
         try
         {
             var now = clock.GetUtcNow();
             CaptureCustomerAccessorials(load, now);
-            if (trip is not null)
+            foreach (var trip in trips)
             {
                 CaptureTripAccessorials(load, trip, now);
                 CaptureAssignment(load, trip, now);

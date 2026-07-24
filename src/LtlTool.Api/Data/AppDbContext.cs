@@ -402,6 +402,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.ToTable("AccessorialRecords");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasMaxLength(64);
+            // SHA-256 hex digest (64 chars) — a fixed-width stand-in for the content key so the index
+            // stays well under SQL Server's 1,700-byte nonclustered key limit regardless of how long
+            // Description gets. See AccessorialRecord.ContentKey.
+            entity.Property(e => e.ContentKey).IsRequired().HasMaxLength(64);
             entity.Property(e => e.LoadId).IsRequired().HasMaxLength(128);
             entity.Property(e => e.LoadNumber).HasMaxLength(64);
             entity.Property(e => e.TripId).HasMaxLength(128);
@@ -410,8 +414,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(e => e.Type).HasMaxLength(128);
             entity.Property(e => e.Description).HasMaxLength(1024);
 
-            // Content-key lookup (Capture's dedupe path) and reporting listing by load.
-            entity.HasIndex(e => new { e.LoadId, e.TripId, e.EntityType, e.Type, e.Description, e.Amount });
+            // Content-key lookup (Capture's dedupe path) and reporting listing by load. Not a unique
+            // index: Capture's read-then-write isn't atomic (see the known-limitation note on
+            // ILoadAssignmentStore.CaptureIfChanged's equivalent race), so a concurrent duplicate must
+            // degrade to a harmless extra row, never a constraint-violation exception.
+            entity.HasIndex(e => e.ContentKey);
+            entity.HasIndex(e => e.LoadId);
             entity.HasIndex(e => e.LastSeenAt);
         });
 

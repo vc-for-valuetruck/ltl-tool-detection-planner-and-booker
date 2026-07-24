@@ -15,6 +15,7 @@ public sealed class ReportingHistoryCsvWritersTests
             new AccessorialRecord
             {
                 Id = "a1",
+                ContentKey = "content-key-1",
                 LoadId = "load-1",
                 LoadNumber = "L-1001",
                 TripId = null,
@@ -61,5 +62,33 @@ public sealed class ReportingHistoryCsvWritersTests
             "Id,LoadId,LoadNumber,TripId,Status,CarrierId,CarrierName,Driver1Id,Driver1Name,Driver2Id,Driver2Name,OwnerOperatorId,OwnerOperatorName,TruckId,TrailerId,DispatcherId,DispatchedBy,CarrierAssignedAt,CapturedAt",
             lines[0]);
         Assert.StartsWith("r1,load-1,L-1001,trip-1,Dispatched,C1,Acme,,,,,,,TRK1,TRL1,,,", lines[1]);
+    }
+
+    [Theory]
+    [InlineData("=cmd|'/c calc'!A1")]
+    [InlineData("+1+1")]
+    [InlineData("-2+3")]
+    [InlineData("@SUM(A1:A2)")]
+    public void AccessorialHistoryCsvWriter_neutralizes_a_formula_leading_description(string maliciousDescription)
+    {
+        var rows = new[]
+        {
+            new AccessorialRecord
+            {
+                Id = "a1",
+                ContentKey = "content-key-1",
+                LoadId = "load-1",
+                EntityType = AccessorialEntityType.Customer,
+                Description = maliciousDescription,
+                FirstSeenAt = Now,
+                LastSeenAt = Now,
+            },
+        };
+
+        var csv = AccessorialHistoryCsvWriter.Write(rows);
+
+        // The cell must be prefixed with a leading apostrophe (forces "text" in a spreadsheet) and
+        // must NOT contain the raw formula-leading character at the start of the (unquoted) value.
+        Assert.Contains("'" + maliciousDescription, csv);
     }
 }

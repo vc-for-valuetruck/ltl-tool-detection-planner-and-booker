@@ -37,6 +37,15 @@ public sealed class AccessorialRecord
 {
     public required string Id { get; set; }
 
+    /// <summary>
+    /// SHA-256 hex digest of the content key (<c>LoadId|TripId|EntityType|Type|Description|Amount</c>)
+    /// this row was captured under. A fixed-width, indexable stand-in for the content-key match: the
+    /// raw columns alone (Description up to 1024 chars) would blow past SQL Server's 1,700-byte
+    /// nonclustered index key limit on a legitimately long description, silently dropping the row.
+    /// Recomputed identically by the store on every capture — never persisted independently of it.
+    /// </summary>
+    public required string ContentKey { get; set; }
+
     /// <summary>Alvys load id (GUID). Always present — every accessorial line traces to a load.</summary>
     public required string LoadId { get; set; }
 

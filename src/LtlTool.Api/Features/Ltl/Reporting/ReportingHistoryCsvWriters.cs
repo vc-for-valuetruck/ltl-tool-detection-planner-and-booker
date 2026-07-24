@@ -4,6 +4,28 @@ using System.Text;
 namespace LtlTool.Api.Features.Ltl.Reporting;
 
 /// <summary>
+/// Shared RFC 4180 field formatting for the reporting CSV writers, plus CSV-injection hardening:
+/// a cell whose value starts with <c>=</c>, <c>+</c>, <c>-</c>, or <c>@</c> is prefixed with a
+/// leading apostrophe before quoting. Spreadsheet applications (Excel, Sheets) treat those leading
+/// characters as a formula and can evaluate them on open — since these fields carry upstream
+/// Alvys/Yard text (descriptions, party names) this tool never controls, a value starting with one
+/// of those characters must never be handed to a spreadsheet as live formula input. The apostrophe
+/// itself renders invisibly in spreadsheet UIs (it forces "treat as text") and round-trips as a
+/// normal character to any non-spreadsheet CSV consumer (Power BI's Text/CSV connector included).
+/// </summary>
+internal static class CsvCell
+{
+    private static readonly char[] FormulaLeadChars = ['=', '+', '-', '@'];
+
+    public static string Escape(string value)
+    {
+        var safe = FormulaLeadChars.Contains(value.Length > 0 ? value[0] : '\0') ? "'" + value : value;
+        if (safe.IndexOfAny([',', '"', '\n', '\r']) < 0) return safe;
+        return "\"" + safe.Replace("\"", "\"\"") + "\"";
+    }
+}
+
+/// <summary>
 /// Renders <see cref="AccessorialRecord"/> rows as RFC 4180 CSV for external reporting tools (e.g.
 /// Power BI's Text/CSV connector). Same read-only, Alvys-derived data the JSON endpoint returns —
 /// only the response shape changes. A missing value is written as an empty cell, never "0" or a
@@ -26,13 +48,13 @@ public static class AccessorialHistoryCsvWriter
         {
             var fields = new[]
             {
-                Escape(row.Id),
-                Escape(row.LoadId),
-                Escape(row.LoadNumber ?? ""),
-                Escape(row.TripId ?? ""),
+                CsvCell.Escape(row.Id),
+                CsvCell.Escape(row.LoadId),
+                CsvCell.Escape(row.LoadNumber ?? ""),
+                CsvCell.Escape(row.TripId ?? ""),
                 row.EntityType.ToString(),
-                Escape(row.Type ?? ""),
-                Escape(row.Description ?? ""),
+                CsvCell.Escape(row.Type ?? ""),
+                CsvCell.Escape(row.Description ?? ""),
                 FormatDecimal(row.Amount),
                 row.FirstSeenAt.ToString("O", CultureInfo.InvariantCulture),
                 row.LastSeenAt.ToString("O", CultureInfo.InvariantCulture),
@@ -45,12 +67,6 @@ public static class AccessorialHistoryCsvWriter
 
     private static string FormatDecimal(decimal? value) =>
         value?.ToString(CultureInfo.InvariantCulture) ?? "";
-
-    private static string Escape(string value)
-    {
-        if (value.IndexOfAny([',', '"', '\n', '\r']) < 0) return value;
-        return "\"" + value.Replace("\"", "\"\"") + "\"";
-    }
 }
 
 /// <summary>
@@ -76,23 +92,23 @@ public static class LoadAssignmentHistoryCsvWriter
         {
             var fields = new[]
             {
-                Escape(row.Id),
-                Escape(row.LoadId),
-                Escape(row.LoadNumber ?? ""),
-                Escape(row.TripId ?? ""),
-                Escape(row.Status ?? ""),
-                Escape(row.CarrierId ?? ""),
-                Escape(row.CarrierName ?? ""),
-                Escape(row.Driver1Id ?? ""),
-                Escape(row.Driver1Name ?? ""),
-                Escape(row.Driver2Id ?? ""),
-                Escape(row.Driver2Name ?? ""),
-                Escape(row.OwnerOperatorId ?? ""),
-                Escape(row.OwnerOperatorName ?? ""),
-                Escape(row.TruckId ?? ""),
-                Escape(row.TrailerId ?? ""),
-                Escape(row.DispatcherId ?? ""),
-                Escape(row.DispatchedBy ?? ""),
+                CsvCell.Escape(row.Id),
+                CsvCell.Escape(row.LoadId),
+                CsvCell.Escape(row.LoadNumber ?? ""),
+                CsvCell.Escape(row.TripId ?? ""),
+                CsvCell.Escape(row.Status ?? ""),
+                CsvCell.Escape(row.CarrierId ?? ""),
+                CsvCell.Escape(row.CarrierName ?? ""),
+                CsvCell.Escape(row.Driver1Id ?? ""),
+                CsvCell.Escape(row.Driver1Name ?? ""),
+                CsvCell.Escape(row.Driver2Id ?? ""),
+                CsvCell.Escape(row.Driver2Name ?? ""),
+                CsvCell.Escape(row.OwnerOperatorId ?? ""),
+                CsvCell.Escape(row.OwnerOperatorName ?? ""),
+                CsvCell.Escape(row.TruckId ?? ""),
+                CsvCell.Escape(row.TrailerId ?? ""),
+                CsvCell.Escape(row.DispatcherId ?? ""),
+                CsvCell.Escape(row.DispatchedBy ?? ""),
                 row.CarrierAssignedAt?.ToString("O", CultureInfo.InvariantCulture) ?? "",
                 row.CapturedAt.ToString("O", CultureInfo.InvariantCulture),
             };
@@ -100,11 +116,5 @@ public static class LoadAssignmentHistoryCsvWriter
         }
 
         return sb.ToString();
-    }
-
-    private static string Escape(string value)
-    {
-        if (value.IndexOfAny([',', '"', '\n', '\r']) < 0) return value;
-        return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 }

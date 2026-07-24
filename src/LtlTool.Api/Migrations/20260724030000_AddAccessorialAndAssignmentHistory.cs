@@ -16,6 +16,7 @@ namespace LtlTool.Api.Migrations
                 columns: table => new
                 {
                     Id = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
+                    ContentKey = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
                     LoadId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
                     LoadNumber = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: true),
                     TripId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
@@ -61,9 +62,14 @@ namespace LtlTool.Api.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_AccessorialRecords_LoadId_TripId_EntityType_Type_Description_Amount",
+                name: "IX_AccessorialRecords_ContentKey",
                 table: "AccessorialRecords",
-                columns: new[] { "LoadId", "TripId", "EntityType", "Type", "Description", "Amount" });
+                column: "ContentKey");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AccessorialRecords_LoadId",
+                table: "AccessorialRecords",
+                column: "LoadId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_AccessorialRecords_LastSeenAt",
